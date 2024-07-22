@@ -1,0 +1,3 @@
+[submodule "data/arc_dataset_collection"]
+	path = data/arc_dataset_collection
+	url = git@github.com:neoneye/arc-dataset-collection.git
