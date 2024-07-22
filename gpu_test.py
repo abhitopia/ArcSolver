@@ -64,6 +64,7 @@ PROG_WD_SCALE = 0.0
 PROGRAM_SCALE = 0.1   # <1 So program embeddings are moved slower across batches.
 
 device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using device:", device)
 
 BS = 32
 SEQ_LEN = 1024
@@ -92,6 +93,7 @@ for step, batch in enumerate(train_dl):
     t0 = time.time()
     (p, i), o = batch
 
+    bs, sl = o.shape
     p = p.to(device)
     i = i.to(device)
     o = o.to(device)
@@ -116,6 +118,5 @@ for step, batch in enumerate(train_dl):
     if device.type == "mps":
         torch.mps.empty_cache()
 
-    print(f"step {step:5d} | loss: {loss.item():.6f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
-
+    print(f"step {step:5d} | loss: {loss.item():.6f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f} | BS: {bs:3d} | SL: {sl:5d}")
 # %%
