@@ -164,6 +164,7 @@ class ArcTasksLoader:
     def __init__(self, name: str, path: str):
         base_path = Path(__file__).resolve().parent.parent    
         self.path = base_path / Path(path)
+        assert self.path.exists(), f'Path does not exist: {self.path}'
         self.name = name
 
     def __lt__(self, other):
@@ -206,21 +207,21 @@ class ArcTasksLoader:
 
 
 # Training Tasks
-ARC_1D = ArcTasksLoader(name='1D-ARC', path='datasets/arc-dataset-collection/dataset/1D-ARC/data')
-ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='datasets/arc-dataset-collection/dataset/ARC/data/training')
-ARC_SYTH_EXTEND = ArcTasksLoader(name='ARC_SYTH_EXTEND', path='datasets/arc-dataset-collection/dataset/ARC_synthetic_extend/data')
-ARC_COMMUNITY = ArcTasksLoader(name='ARC_COMMUNITY', path='datasets/arc-dataset-collection/dataset/arc-community/data')
-ARC_DIVA = ArcTasksLoader(name='ARC_DIVA', path='datasets/arc-dataset-collection/dataset/arc-dataset-diva/data')
-ARC_CONCEPT = ArcTasksLoader(name='ARC_CONCEPT', path='datasets/arc-dataset-collection/dataset/ConceptARC/data')
-ARC_DBIGHAM = ArcTasksLoader(name='ARC_DBIGHAM', path='datasets/arc-dataset-collection/dataset/dbigham/data')
-ARC_MINI = ArcTasksLoader(name='ARC_MINI', path='datasets/arc-dataset-collection/dataset/Mini-ARC/data')
-ARC_NOSOUND = ArcTasksLoader(name='ARC_NOSOUND', path='datasets/arc-dataset-collection/dataset/nosound/data')
-ARC_PQA = ArcTasksLoader(name='ARC_PQA', path='datasets/arc-dataset-collection/dataset/PQA/data')
-ARC_REARC_EASY = ArcTasksLoader(name='ARC_REARC_EASY', path='datasets/arc-dataset-collection/dataset/RE-ARC/data/easy')
-ARC_REARC_HARD = ArcTasksLoader(name='ARC_REARC_HARD', path='datasets/arc-dataset-collection/dataset/RE-ARC/data/hard')
-ARC_SEQUENCE = ArcTasksLoader(name='ARC_SEQUENCE', path='datasets/arc-dataset-collection/dataset/Sequence_ARC/data')
-ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='datasets/arc-dataset-collection/dataset/synth_riddles/data')
-ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='datasets/arc-dataset-collection/dataset/ARC/data/evaluation')
+ARC_1D = ArcTasksLoader(name='1D-ARC', path='data/arc_dataset_collection/dataset/1D-ARC/data')
+ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
+ARC_SYTH_EXTEND = ArcTasksLoader(name='ARC_SYTH_EXTEND', path='data/arc_dataset_collection/dataset/ARC_synthetic_extend/data')
+ARC_COMMUNITY = ArcTasksLoader(name='ARC_COMMUNITY', path='data/arc_dataset_collection/dataset/arc-community/data')
+ARC_DIVA = ArcTasksLoader(name='ARC_DIVA', path='data/arc_dataset_collection/dataset/arc-dataset-diva/data')
+ARC_CONCEPT = ArcTasksLoader(name='ARC_CONCEPT', path='data/arc_dataset_collection/dataset/ConceptARC/data')
+ARC_DBIGHAM = ArcTasksLoader(name='ARC_DBIGHAM', path='data/arc_dataset_collection/dataset/dbigham/data')
+ARC_MINI = ArcTasksLoader(name='ARC_MINI', path='data/arc_dataset_collection/dataset/Mini-ARC/data')
+ARC_NOSOUND = ArcTasksLoader(name='ARC_NOSOUND', path='data/arc_dataset_collection/dataset/nosound/data')
+ARC_PQA = ArcTasksLoader(name='ARC_PQA', path='data/arc_dataset_collection/dataset/PQA/data')
+ARC_REARC_EASY = ArcTasksLoader(name='ARC_REARC_EASY', path='data/arc_dataset_collection/dataset/RE-ARC/data/easy')
+ARC_REARC_HARD = ArcTasksLoader(name='ARC_REARC_HARD', path='data/arc_dataset_collection/dataset/RE-ARC/data/hard')
+ARC_SEQUENCE = ArcTasksLoader(name='ARC_SEQUENCE', path='data/arc_dataset_collection/dataset/Sequence_ARC/data')
+ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_dataset_collection/dataset/synth_riddles/data')
+ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dataset/ARC/data/evaluation')
 
 
 TRAINING_TASKLOADER = ARC_TRAIN
