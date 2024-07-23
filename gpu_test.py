@@ -65,17 +65,17 @@ print("Using device:", device)
 
 BS = 128
 SEQ_LEN = 1024
-DYNAMMIC_BATCHING = False
-PIN_MEMORY = False
-USE_COMPILE = True
-DATA_DEVICE = device
+DYNAMIC_BATCHING = False
+PIN_MEMORY = True
+USE_COMPILE = False
+DATA_DEVICE = torch.device('cpu')
 
 
 
 trains_ds = training_data.train_ds
 train_dl = trains_ds.get_dataloader(batch_size=BS,
                                     seq_len=SEQ_LEN,
-                                    batch_by_token_count=DYNAMMIC_BATCHING,
+                                    batch_by_token_count=DYNAMIC_BATCHING,
                                     device=DATA_DEVICE,
                                     pin_memory=PIN_MEMORY)
 
@@ -91,7 +91,7 @@ model.to(device)
 model.train()
 
 if USE_COMPILE:
-    if DYNAMMIC_BATCHING:
+    if DYNAMIC_BATCHING:
         model = torch.compile(model, dynamic=True)
     else:
         model = torch.compile(model)

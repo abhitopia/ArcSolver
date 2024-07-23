@@ -10,13 +10,13 @@ from src.utils import nearest_greater_power_of_2
 #%%
 
 # Training Data Configuration
-BS = 2
+BS = 128
 SEQ_LEN = 1024
 DYNAMMIC_BATCHING = True
 AUGMENTATION_FACTOR = 2
 JOIN_VERSION = False
 DATA_DEVICE = 'cpu'
-PIN_MEMORY = False
+PIN_MEMORY = True
 
 # Global Configuration
 SEED = 42
@@ -26,8 +26,12 @@ training_data = TrainingData(augmentation_factor=AUGMENTATION_FACTOR,
                             join_version=JOIN_VERSION, 
                             seed=SEED).load()
 
-trains_ds = training_data.train_ds.subset(0, 2000)
-eval_ds = training_data.eval_ds.subset(0, 2000)
+# trains_ds = training_data.train_ds.subset(0, 2000)
+# eval_ds = training_data.eval_ds.subset(0, 2000)
+
+trains_ds = training_data.train_ds
+eval_ds = training_data.eval_ds
+
 train_dl = trains_ds.get_dataloader(batch_size=BS,
                                     seq_len=SEQ_LEN,
                                     batch_by_token_count=DYNAMMIC_BATCHING,
@@ -52,11 +56,11 @@ print(f"Grid Vocab Size: {GRID_VOCAB_SIZE}")
 
 ## Model Set up
 
-N_LAYERS = 1
-N_MIXERS = 1
-N_BLOCKS = 1
-N_HEADS = 8
-N_DIM = 64
+N_LAYERS = 3
+N_MIXERS = 3
+N_BLOCKS = 3
+N_HEADS = 16
+N_DIM = 128
 
 model_config = InterpreterConfig(
     prog_vocab_size = PROGRAM_VOCAB_SIZE,
@@ -72,19 +76,19 @@ model = Interpreter(model_config,
                     prog_tokenizer=program_tokenizer,
                     grid_tokenizer=grid_tokenizer)
 
-
+model.to(torch.device('cuda'))
 # Training Set up
 
 MODEL_WD = 0.01
-MODEL_LR = 1
-PROG_LR_SCALE = 10
+MODEL_LR = 0.001            # Get's trained in all batches
+PROG_LR_SCALE = 10      # Get's trained only a few times per epoch
 PROG_WD_SCALE = 0.0
-PROGRAM_SCALE = 0.1   # <1 So program embeddings are moved slower across batches.
-TRAIN_DEVICE = 'cpu'
+TRAIN_DEVICE = 'cuda'
 
 optimizer = model.get_optimizer(model_weight_decay=MODEL_WD,
                                 model_lr=MODEL_LR,
-                                prog_lr_scale=PROGRAM_SCALE,
+                                prog_lr_scale=PROG_LR_SCALE,
+                                prog_wd_scale=PROG_WD_SCALE,
                                 device_type=TRAIN_DEVICE)
 #%%
 
@@ -231,7 +235,8 @@ config = {
     'grid_vocab_size': GRID_VOCAB_SIZE,
     'weight_decay': MODEL_WD,
     'learning_rate': MODEL_LR,
-    'program_scale': PROGRAM_SCALE,
+    'prog_lr_scale': PROG_LR_SCALE,
+    'prog_wd_scale': PROG_WD_SCALE,
     'train_device': TRAIN_DEVICE,
     'lr_warmup_epochs': 1,
     'lr_decay_epochs': 4,
@@ -239,10 +244,10 @@ config = {
 
     
 trainer = ArcTrainer(
-        experiment_name='arc_setup',
-        run_name='one',
-        eval_interval=50,
-        num_epochs=4,
+        experiment_name='FirstExperiment',
+        run_name='1',
+        eval_interval=None,
+        num_epochs=20,
         model=model,
         hparams=config,
         optimizer=optimizer,
@@ -252,5 +257,6 @@ trainer = ArcTrainer(
     )
 
 trainer.train()
+# trainer.find_lr()
 
 # %%

@@ -297,7 +297,9 @@ class TrainerBase:
             self.pre_eval_step(batch)
             batch = map_to_tensors(batch, lambda x: x.to(self.device) if x.device.type != self.device.type else x)
             with torch.no_grad():
-                self.eval_step(batch)
+                with torch.autocast(device_type= 'cpu' if self.device.type == 'mps' else self.device.type, dtype=torch.bfloat16):
+                    self.eval_step(batch)
+                    
             self.post_eval_step(batch)
 
             step_metrics = self.eval_metrics.last_metrics()
@@ -378,28 +380,36 @@ class TrainerBase:
         losses = []
         lrs = [[] for _ in range(len(optimizer.param_groups))]  # List to hold learning rates for each group
 
-        for batch in self.train_dl:
-            batch = map_to_tensors(batch, lambda x: x.to(self.device) if x.device.type != self.device.type else x)
-            optimizer.zero_grad()
-            # Forward pass to compute the loss
-            loss = self.train_step(batch)
+        while True:
+            for bidx, batch in enumerate(self.train_dl):
+                batch = map_to_tensors(batch, lambda x: x.to(self.device) if x.device.type != self.device.type else x)
+                optimizer.zero_grad()
 
-            # Backward pass to compute the gradients
-            loss.backward()
-            # Update weights
-            optimizer.step()
-            # Step the learning rate scheduler
-            scheduler.step()
-            
-            # Record the loss
-            losses.append(loss.item())
-            # Record the current learning rates for all parameter groups
-            for i, lr in enumerate(scheduler.get_last_lr()):
-                lrs[i].append(lr)
-            
-            # Check the first parameter group as an example, adjust if necessary
+                with torch.autocast(device_type= 'cpu' if self.device.type == 'mps' else self.device.type, dtype=torch.bfloat16):
+                    # Forward pass to compute the loss
+                    loss = self.train_step(batch)
+
+                # Backward pass to compute the gradients
+                loss.backward()
+                # Update weights
+                optimizer.step()
+                # Step the learning rate scheduler
+                scheduler.step()
+                
+                # Record the loss
+                losses.append(loss.item())
+                # Record the current learning rates for all parameter groups
+                for i, lr in enumerate(scheduler.get_last_lr()):
+                    lrs[i].append(lr)
+                
+                    # Check the first parameter group as an example, adjust if necessary
+                if all(lr > 1 for lr in scheduler.get_last_lr()):  # Stop if the LR gets too high
+                    break
+
+                print(f"{bidx} | Max LR:", max(lr for lr in scheduler.get_last_lr()))
             if all(lr > 1 for lr in scheduler.get_last_lr()):  # Stop if the LR gets too high
                 break
+            
 
         # Plotting
         num_groups = len(optimizer.param_groups)
