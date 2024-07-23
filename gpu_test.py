@@ -14,7 +14,6 @@ from src.utils import nearest_greater_power_of_2
 
 AUGMENTATION_FACTOR = 2
 JOIN_VERSION = False
-DATA_DEVICE = 'cpu'
 
 # Global Configuration
 SEED = 42
@@ -38,8 +37,8 @@ GRID_VOCAB_SIZE = nearest_greater_power_of_2(len(grid_tokenizer))
 N_LAYERS = 3
 N_MIXERS = 3
 N_BLOCKS = 3
-N_HEADS = 8
-N_DIM = 64
+N_HEADS = 16
+N_DIM = 128
 
 model_config = InterpreterConfig(
     prog_vocab_size = PROGRAM_VOCAB_SIZE,
@@ -51,9 +50,7 @@ model_config = InterpreterConfig(
     n_rec_layers = N_LAYERS # number of recurrences
 )
 
-model = Interpreter(model_config,
-                    prog_tokenizer=program_tokenizer,
-                    grid_tokenizer=grid_tokenizer)
+
 
 
 # Training Set up
@@ -66,17 +63,38 @@ PROGRAM_SCALE = 0.1   # <1 So program embeddings are moved slower across batches
 device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
-BS = 32
+BS = 128
 SEQ_LEN = 1024
-DYNAMMIC_BATCHING = True
+DYNAMMIC_BATCHING = False
 PIN_MEMORY = False
+USE_COMPILE = True
+DATA_DEVICE = device
+
+
 
 trains_ds = training_data.train_ds
 train_dl = trains_ds.get_dataloader(batch_size=BS,
                                     seq_len=SEQ_LEN,
                                     batch_by_token_count=DYNAMMIC_BATCHING,
-                                    device=torch.device(DATA_DEVICE),
+                                    device=DATA_DEVICE,
                                     pin_memory=PIN_MEMORY)
+
+
+print(len(train_dl))
+
+# %%
+torch.set_float32_matmul_precision('high')
+model = Interpreter(model_config,
+                    prog_tokenizer=program_tokenizer,
+                    grid_tokenizer=grid_tokenizer)
+model.to(device)
+model.train()
+
+if USE_COMPILE:
+    if DYNAMMIC_BATCHING:
+        model = torch.compile(model, dynamic=True)
+    else:
+        model = torch.compile(model)
 
 optimizer = model.get_optimizer(model_weight_decay=MODEL_WD,
                                 model_lr=MODEL_LR,
@@ -84,10 +102,8 @@ optimizer = model.get_optimizer(model_weight_decay=MODEL_WD,
                                 device_type=device.type)
 
 
-# %%
-torch.set_float32_matmul_precision('high')
-model.to(device)
-model.train()
+total_time = 0 
+total_tokens = 0
 
 for step, batch in enumerate(train_dl):
     t0 = time.time()
@@ -115,8 +131,21 @@ for step, batch in enumerate(train_dl):
     tokens_processed = o.numel()
     tokens_per_sec = tokens_processed / dt
 
+    if step != 0:
+        total_time += dt
+        total_tokens += tokens_processed
+
     if device.type == "mps":
         torch.mps.empty_cache()
 
-    print(f"step {step:5d} | loss: {loss.item():.6f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f} | BS: {bs:3d} | SL: {sl:5d}")
+    print(f"step {step:5d} | loss: {loss.item():.6f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f} | BS: {bs:3d} | SL: {sl:5d} | TOKENS: {tokens_processed}")
+
+    if step == 50:
+        break
+
+
+print("Average Tokens/Sec", total_tokens / total_time)
+# %%
+
+torch.cuda.empty_cache()
 # %%
