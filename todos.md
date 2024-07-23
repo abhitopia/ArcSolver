@@ -1,5 +1,7 @@
 # TODOS
 - [x] Wrap with torch.autocast even during evaluation
+- [ ] Add BatchSize metric (in Tokens)
+- [ ] Weird formatting Tokens(/s)
 - [ ] Run Cuda Empty Cache After each train and eval epoch
 
 
