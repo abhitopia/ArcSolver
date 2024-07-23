@@ -257,7 +257,7 @@ class ArcExamplesDataset(Dataset):
                                     drop_last=False)
 
         else:
-            if seq_len <= 0:
+            if seq_len is not None and seq_len <= 0:
                 seq_len = self.max_example_seq_len
                 
             dataloader = DataLoader(dataset=self,
