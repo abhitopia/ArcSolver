@@ -1,5 +1,5 @@
 # TODOS
-- [ ] Wrap with torch.autocast even during evaluation
+- [x] Wrap with torch.autocast even during evaluation
 - [ ] Run Cuda Empty Cache After each train and eval epoch
 
 
@@ -313,3 +313,31 @@ step    48 | loss: 2.354471 | dt: 575.18ms | tok/sec: 228208.76 | BS: 334 | SL: 
 step    49 | loss: 2.443728 | dt: 2647.49ms | tok/sec: 49390.61 | BS: 167 | SL:   783 | TOKENS: 130761
 step    50 | loss: 2.478902 | dt: 703.33ms | tok/sec: 186340.52 | BS: 162 | SL:   809 | TOKENS: 131058
 Average Tokens/Sec 159780.92950690264
+
+
+
+## Dynamic SEQ_LEN , and fixed BS
+
+BS = 128
+SEQ_LEN = None
+DYNAMMIC_BATCHING = False
+PIN_MEMORY = True
+USE_COMPILE = False
+DATA_DEVICE = torch.device('cpu')
+
+
+step    37 | loss: 0.924907 | dt: 480.27ms | tok/sec: 201755.12 | BS: 128 | SL:   757 | TOKENS: 96896
+step    38 | loss: 0.874325 | dt: 725.98ms | tok/sec: 164499.58 | BS: 128 | SL:   933 | TOKENS: 119424
+step    39 | loss: 0.948443 | dt: 478.61ms | tok/sec: 201381.85 | BS: 128 | SL:   753 | TOKENS: 96384
+step    40 | loss: 1.049533 | dt: 593.03ms | tok/sec: 182170.35 | BS: 128 | SL:   844 | TOKENS: 108032
+step    41 | loss: 0.895600 | dt: 593.71ms | tok/sec: 181744.73 | BS: 128 | SL:   843 | TOKENS: 107904
+step    42 | loss: 0.822723 | dt: 585.87ms | tok/sec: 178060.62 | BS: 128 | SL:   815 | TOKENS: 104320
+step    43 | loss: 0.824941 | dt: 585.93ms | tok/sec: 178042.58 | BS: 128 | SL:   815 | TOKENS: 104320
+step    44 | loss: 0.976548 | dt: 602.13ms | tok/sec: 185582.31 | BS: 128 | SL:   873 | TOKENS: 111744
+step    45 | loss: 0.826149 | dt: 717.94ms | tok/sec: 160816.66 | BS: 128 | SL:   902 | TOKENS: 115456
+step    46 | loss: 0.854831 | dt: 717.90ms | tok/sec: 161003.50 | BS: 128 | SL:   903 | TOKENS: 115584
+step    47 | loss: 0.921785 | dt: 717.58ms | tok/sec: 160896.60 | BS: 128 | SL:   902 | TOKENS: 115456
+step    48 | loss: 0.951824 | dt: 479.72ms | tok/sec: 201985.85 | BS: 128 | SL:   757 | TOKENS: 96896
+step    49 | loss: 0.746024 | dt: 718.07ms | tok/sec: 160965.87 | BS: 128 | SL:   903 | TOKENS: 115584
+step    50 | loss: 0.893467 | dt: 726.42ms | tok/sec: 164401.10 | BS: 128 | SL:   933 | TOKENS: 119424
+Average Tokens/Sec 176726.92224335115
