@@ -3,6 +3,7 @@
 - [x] Load model from another model
 - [x] Add BatchSize metric (in Tokens)
 - [x] Weird formatting Tokens(/s)
+- [x] Add Trainer.state_dict() and Trainer.load_state_dict()
 - [ ] Add CLI
 - [ ] Run Cuda Empty Cache After each train and eval epoch
 

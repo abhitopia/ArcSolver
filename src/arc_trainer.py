@@ -84,21 +84,25 @@ class ArcTrainer(TrainerBase):
         eval_batch_time = (time.time() - self.__eval_batch_time_start)*1000
         self.add_post_step_metrics(self.eval_metrics, eval_batch_time, num_tokens)
 
-    def pre_checkpoint_save(self, state_dict):
+    def state_dict(self):
+        state_dict = super().state_dict()
         tokenizers = {
             'program_tokenizer': self.model.prog_tokenizer.to_dict(),
             'grid_tokenizer': self.model.grid_tokenizer.to_dict()
         }
         state_dict['tokenizers'] = tokenizers
         state_dict['model_config'] = self.model.config.to_dict()
-
-    def post_load_checkpoint(self, state_dict):
+        return state_dict
+    
+    def load_state_dict(self, state_dict):
         prog_tokenizer = ProgramTokenizer.from_dict(state_dict['tokenizers']['program_tokenizer'])
         grid_tokenizer = GridTokenizer.from_dict(state_dict['tokenizers']['grid_tokenizer'])
         model_config = InterpreterConfig.from_dict(state_dict['model_config'])
         assert model_config == self.model.config, "Cannot resume, Model Configs do not match!"
         assert prog_tokenizer == self.model.prog_tokenizer, "Cannot resume, Program Tokenizers do not match!"
         assert grid_tokenizer == self.model.grid_tokenizer, "Cannot resume, Grid Tokenizers do not match!"
+        return super().load_state_dict(state_dict)
+       
 
     def multiplicative_lr_factor_schedule(self, step):
         max_lr = 1.0

@@ -117,19 +117,24 @@ class TrainerBase:
         self.train_metrics = MetricLogger()
         self.eval_metrics = MetricLogger()
         self.seed = seed
-        self.device = device
+        self._device = device
         self.clip_grad_norm = clip_grad_norm
         self.scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=self.multiplicative_lr_factor_schedule)
 
+    @property
+    def device(self):
+        if self._device is None:
+            self._device = self._init_device(self._device)
+        return self._device
 
-    def _init_device(self):
-        if self.device is None:
-            self.device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        elif isinstance(self.device, str):
-            self.device = torch.device(self.device)
-        elif isinstance(self.device, torch.device):
-            self.device = self.device
-        self.logger.info(f'Using device: {self.device}')
+    @staticmethod
+    def _init_device(_device):
+        if _device is None:
+            return torch.device("mps") if torch.backends.mps.is_available() else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        elif isinstance(_device, str):
+            return torch.device(_device)
+        elif isinstance(_device, torch.device):
+            return _device
 
     def _seed_everything(self):
         self.logger.info(f'Seeding everything with seed: {self.seed}')
@@ -147,24 +152,21 @@ class TrainerBase:
             torch.mps.manual_seed(seed)
 
 
-    def post_load_checkpoint(self, state_dict):
-        self.warning('load_checkpoint method not implemented, using default checkpoint loading')
-
-
     def _load_checkpoint(self, checkpoint_file):
         state_dict = torch.load(checkpoint_file, map_location=self.device)
-        self.post_load_checkpoint(state_dict)
+        self.load_state_dict(state_dict)
+        self.info(f"Loaded checkpoint from: {checkpoint_file}")
 
+    def load_state_dict(self, state_dict):
         hparams = state_dict['hparams']
         assert hparams == self.hparams, 'Hparams do not match! Cannot resume training.'
-
         self.step = state_dict['step']
         self.epoch = state_dict['epoch']
         self.model.load_state_dict(state_dict['model_state_dict'])
         self.model.to(self.device)
         self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
         self.scheduler.load_state_dict(state_dict['scheduler_state_dict'])
-        self.info(f'Resuming training from step {self.step} and epoch {self.epoch}')
+
 
     def _resume(self):
         # Check if there is a checkpoint to resume from
@@ -172,8 +174,8 @@ class TrainerBase:
         if len(checkpoint_files) > 0:
             checkpoint_files = sorted(checkpoint_files, key=lambda x: int(x.stem.split('_')[-1]))
             checkpoint_file = checkpoint_files[-1]
-            self.logger.info(f'Resuming from checkpoint: {checkpoint_file}')
             self._load_checkpoint(checkpoint_file)
+            self.info(f'Resuming training from step {self.step} and epoch {self.epoch}')
         else:
             self.model.to(self.device)
         self.debug(f'Moved model to device: {self.device}')
@@ -192,7 +194,8 @@ class TrainerBase:
         self.debug(f'Setting torch float32 matmul precision to high for faster training!')
         torch.set_float32_matmul_precision('high')
         self._seed_everything()
-        self._init_device()
+        self._device = self._init_device(self._device)
+        self.logger.info(f'Using device: {self._device}')
         self._resume()
         self.model.train()
 
@@ -317,12 +320,8 @@ class TrainerBase:
     def pre_checkpoint_save(self, state_dict):
         self.debug('pre_checkpoint_save method not implemented, using default state_dict')
 
-    def _save_checkpoint(self):
-        if self.disable_checkpointing:
-            return
-        checkpoint_path = self.checkpoint_dir / f'checkpoint_{self.step:06d}.pth'
-        self.debug(f'Saving checkpoint to {checkpoint_path}')
-        state_dict = {
+    def state_dict(self):
+        return {
             'step': self.step,
             'epoch': self.epoch,
             'model_state_dict': self.model.state_dict(),
@@ -330,7 +329,14 @@ class TrainerBase:
             'scheduler_state_dict': self.scheduler.state_dict(),
             'hparams': self.hparams
         }
-        self.pre_checkpoint_save(state_dict)
+
+    def _save_checkpoint(self):
+        if self.disable_checkpointing:
+            return
+        checkpoint_path = self.checkpoint_dir / f'checkpoint_{self.step:06d}.pth'
+        self.debug(f'Saving checkpoint to {checkpoint_path}')
+        state_dict = self.state_dict()
+        # self.pre_checkpoint_save(state_dict)
         torch.save(state_dict, checkpoint_path)
 
     def multiplicative_lr_factor_schedule(self, step):
@@ -478,4 +484,8 @@ class TrainerBase:
             self.warning('Training interrupted by user')
             self._at_training_end()
 
+
+    @staticmethod
+    def from_checkpoint(checkpoint_path):
+        raise NotImplementedError('from_checkpoint method must be implemented')
 #%%
