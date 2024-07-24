@@ -86,8 +86,7 @@ def add_logger(obj, log_level, name, file_path):
     obj.info = lambda msg: logger.info(msg)
     obj.error = lambda msg: logger.error(msg)
     obj.warning = lambda msg: logger.warning(msg)
-    obj.debug(f'Logger: {name}')
-    obj.debug(f'Log File: {file_path}')
+    obj.info(f'Log File: {file_path}')
     return logger
 
 

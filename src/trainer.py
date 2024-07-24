@@ -1,4 +1,5 @@
 #%%
+import math
 from torch import nn
 import torch
 import torch.optim as optim
@@ -11,6 +12,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Union
 from collections import defaultdict
+from tqdm import tqdm
 from .utils import add_logger, map_to_tensors
 
 
@@ -93,6 +95,7 @@ class TrainerBase:
                 name=self.run_name,
                 file_path=self.log_dir / f'training.log')
 
+        self.info(f"Checkpoint directory: {self.checkpoint_dir}")
         self.disable_checkpointing = disable_checkpointing_and_logging
         if self.disable_checkpointing:
             self.warning(f'It is a trial run. No checkpoints or Tensorboard summaries will be saved!')
@@ -178,18 +181,15 @@ class TrainerBase:
             self.info(f'Resuming training from step {self.step} and epoch {self.epoch}')
         else:
             self.model.to(self.device)
-        self.debug(f'Moved model to device: {self.device}')
-
 
     def _at_training_start(self):
         if not self.disable_checkpointing:
             self.writer = SummaryWriter(log_dir=self.log_dir)
 
-        self.info(f'Starting training run: {self.run_name}')
-        self.info(f'Training Epochs: {self.num_epochs}')
-        self.info(f"Number of trainning batches: {len(self.train_dl)}")
-        self.info(f"Number of evaluation batches: {len(self.eval_dl)}")
-        self.info(f'Evaluating every {self.eval_interval} steps')
+        self.info(f'Epochs: {self.num_epochs}')
+        self.info(f"Training batches: {len(self.train_dl)}")
+        self.info(f"Evaluation batches: {len(self.eval_dl)}")
+        self.info(f'Evaluation Interval (Steps): {self.eval_interval}')
 
         self.debug(f'Setting torch float32 matmul precision to high for faster training!')
         torch.set_float32_matmul_precision('high')
@@ -202,7 +202,6 @@ class TrainerBase:
     def _log_metrics(self, suffix, metrics):
         if self.disable_checkpointing:
             return
-        self.debug(f'Writing metrics to tensorboard: {suffix} at step {self.step}')
         for k, v in metrics.items():
             self.writer.add_scalar(f'{k}/{suffix}', v, self.step)
 
@@ -211,20 +210,14 @@ class TrainerBase:
             return
         
         if self.hparams is not None:
-            self.debug(f'Writing hparams to tensorboard at step {self.step}')
             hparams = {k: v for k, v in self.hparams.items()}
             self.writer.add_hparams(hparams, metrics, run_name='.', global_step=self.step)
 
         self.writer.flush()
 
-
     def _at_epoch_start(self):
-        self.debug(f'Starting epoch {self.epoch}')
-        self.debug('Setting model to train mode')
         self.model.train()
-        self.debug('Resetting train metrics')
         self.train_metrics.reset()
-        
 
     def pre_train_step(self, batch):
         pass
@@ -236,7 +229,6 @@ class TrainerBase:
         pass
     
     def _train_step(self, batch):
-        self.debug(f'Starting train iteration {self.step} in epoch {self.epoch}')
         # move the batch to the device
 
         self.pre_train_step(batch)
@@ -265,7 +257,6 @@ class TrainerBase:
         self._log_metrics(suffix='step_train', metrics=step_metrics)
 
     def _at_epoch_end(self):
-        self.debug(f'Ending epoch {self.epoch}')
         epoch_metrics = self.train_metrics.mean_metrics()
         self.info(self._metrics_string("(TRAIN-EPOCH)", epoch_metrics))
         self._log_metrics(suffix='epoch_train', metrics=epoch_metrics)
@@ -276,7 +267,7 @@ class TrainerBase:
         epoch_progress = f'{(self.epoch_step*100/num_batches):6.2f}%'
         text = prefix + f" S: {self.step:4d} | Epoch: {self.epoch:2d} ({epoch_progress})" 
 
-        skip_prefix = ['LR/ParamGroup']
+        skip_prefix = ['LR/ParamGroup', 'GradientNorm']
         for k, v in metrics.items():
             if any([k.startswith(p) for p in skip_prefix]):
                 continue
@@ -293,7 +284,6 @@ class TrainerBase:
         pass
     
     def _eval_loop(self, save_checkpoint=True):
-        self.debug(f'Starting evaluation at step {self.step}')
         self.model.eval()
         self.eval_metrics.reset()
         for batch in self.eval_dl:
@@ -334,7 +324,6 @@ class TrainerBase:
         if self.disable_checkpointing:
             return
         checkpoint_path = self.checkpoint_dir / f'checkpoint_{self.step:06d}.pth'
-        self.debug(f'Saving checkpoint to {checkpoint_path}')
         state_dict = self.state_dict()
         # self.pre_checkpoint_save(state_dict)
         torch.save(state_dict, checkpoint_path)
@@ -345,7 +334,6 @@ class TrainerBase:
         return 1.0
 
     def _at_training_end(self):
-        self.debug('Training ended')
         self.writer.flush()
         self.writer.close()
 
@@ -356,7 +344,7 @@ class TrainerBase:
         self._at_training_start()
 
         import matplotlib.pyplot as plt
-        self.info('Running Learning Rate Finder instead!')
+        self.info('Running Learning Rate Finder!')
         self.info('This will plot loss vs learning for each parameter group in the optimizer')
         instructions = [
         "- Look for the learning rate where the loss starts to decrease and note where the loss stops decreasing or starts to increase rapidly. This is often considered the \"optimal\" range.",
@@ -368,13 +356,9 @@ class TrainerBase:
         # Assuming `optimizer` and `train_dl` are defined
         optimizer = self.optimizer
 
-        if only_param_group is None:
-            self.info(f'Finding LR for all parameter groups')
-        else:
-            self.info(f'Finding LR for only parameter group : {only_param_group}')
-
         lr_lamdbdas = []
 
+        total_steps = math.ceil(20*math.log10(1e7))
         for pg_idx in range(len(optimizer.param_groups)):
             lr_lambda = lambda step: 1e-7 * (10 ** (step / 20))
             if only_param_group is not None and pg_idx != only_param_group:
@@ -386,6 +370,7 @@ class TrainerBase:
         losses = []
         lrs = [[] for _ in range(len(optimizer.param_groups))]  # List to hold learning rates for each group
 
+        progress = tqdm(total=total_steps, desc='Finding LR', leave=False)
         while True:
             for bidx, batch in enumerate(self.train_dl):
                 batch = map_to_tensors(batch, lambda x: x.to(self.device) if x.device.type != self.device.type else x)
@@ -401,6 +386,7 @@ class TrainerBase:
                 optimizer.step()
                 # Step the learning rate scheduler
                 scheduler.step()
+                progress.update(1)
                 
                 # Record the loss
                 losses.append(loss.item())
@@ -412,7 +398,6 @@ class TrainerBase:
                 if all(lr > 1 for lr in scheduler.get_last_lr()):  # Stop if the LR gets too high
                     break
 
-                print(f"{bidx} | Max LR:", max(lr for lr in scheduler.get_last_lr()))
             if all(lr > 1 for lr in scheduler.get_last_lr()):  # Stop if the LR gets too high
                 break
             
