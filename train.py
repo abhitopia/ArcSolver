@@ -85,10 +85,10 @@ PROG_LR_SCALE = 10      # Get's trained only a few times per epoch
 PROG_WD_SCALE = 0.0
 TRAIN_DEVICE = 'cpu'
 
-optimizer = model.get_optimizer(model_weight_decay=MODEL_WD,
+optimizer = model.get_optimizer(model_wd=MODEL_WD,
                                 model_lr=MODEL_LR,
-                                prog_lr_scale=PROG_LR_SCALE,
-                                prog_wd_scale=PROG_WD_SCALE,
+                                prog_lr=PROG_LR_SCALE,
+                                prog_wd=PROG_WD_SCALE,
                                 device_type=TRAIN_DEVICE)
 #%%
 
