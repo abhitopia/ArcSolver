@@ -4,6 +4,8 @@ import inspect
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+
+from src.utils import is_power_of_two
 from .dataset import ProgramTokenizer, GridTokenizer
 
 
@@ -23,9 +25,13 @@ class InterpreterConfig:
 
 
     def __post_init__(self):
+        assert is_power_of_two(self.prog_vocab_size), "Program vocab size must be a power of 2"
+        assert is_power_of_two(self.grid_vocab_size), "Grid vocab size must be a power of 2"
+        assert is_power_of_two(self.n_dim), "Model dimension must be a power of 2"
+
         if self.n_dim % self.n_head != 0:
             raise ValueError("n_dim must be divisible by n_head")
-        
+
         if self.n_embd <= 0:
             self.n_embd = self.n_dim
 
@@ -289,6 +295,8 @@ class Interpreter(nn.Module):
         assert self.check_compatible(src_model, compare_prog_vocab=False), "Models are not compatible"
 
         # keep_vars=True to keep the requires_grad flag
+        config_trg = self.config
+        config_src = src_model.config
         trg_sd = self.state_dict(keep_vars=True) 
         src_sd = src_model.state_dict()
         trg_grid_token2idx = self.grid_tokenizer.token2idx
