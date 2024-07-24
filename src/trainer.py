@@ -261,13 +261,13 @@ class TrainerBase:
 
         self.post_train_step(batch)
         step_metrics = self.train_metrics.last_metrics()
-        self.info(self._metrics_string("(TRAINING)", step_metrics))
+        self.info(self._metrics_string("(TRAIN-STEP) ", step_metrics))
         self._log_metrics(suffix='step_train', metrics=step_metrics)
 
     def _at_epoch_end(self):
         self.debug(f'Ending epoch {self.epoch}')
         epoch_metrics = self.train_metrics.mean_metrics()
-        self.info(self._metrics_string("(TRAINSET)", epoch_metrics))
+        self.info(self._metrics_string("(TRAIN-EPOCH)", epoch_metrics))
         self._log_metrics(suffix='epoch_train', metrics=epoch_metrics)
 
 
@@ -307,10 +307,10 @@ class TrainerBase:
 
             step_metrics = self.eval_metrics.last_metrics()
             if len(step_metrics) > 0:
-                self.info(self._metrics_string("(EVALUATING)", step_metrics))
+                self.info(self._metrics_string(" (EVAL-STEP) ", step_metrics))
 
         epoch_metrics = self.eval_metrics.mean_metrics()
-        self.info(self._metrics_string("(EVAL-SET)", epoch_metrics))
+        self.info(self._metrics_string(" (EVAL-EPOCH)", epoch_metrics))
         self._log_metrics(suffix='epoch_eval', metrics=epoch_metrics)
         self._log_hparams(metrics=epoch_metrics)
         self.model.train()
