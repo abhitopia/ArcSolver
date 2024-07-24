@@ -226,12 +226,14 @@ class Interpreter(nn.Module):
         return loss
     
 
-    def get_optimizer(self, 
-                    model_lr,
-                    model_weight_decay,
-                    device_type,
-                    prog_lr_scale=1.0,
-                    prog_wd_scale=0.0):
+    def get_optimizer(
+                self, 
+                model_lr,
+                prog_lr,
+                model_wd,
+                prog_wd=0.0,
+                device_type=None,
+            ):
         # Separate the embedding parameters
         program_params = [p for n, p in self.named_parameters() if 'pte' in n and p.requires_grad]
         model_params = [p for n, p in self.named_parameters() if 'pte' not in n and p.requires_grad]
@@ -242,18 +244,21 @@ class Interpreter(nn.Module):
         nodecay_params = [p for p in model_params if p.dim() < 2]
         optim_groups = [
             {'params': program_params,
-             'lr': model_lr * prog_lr_scale,
-              'weight_decay': model_weight_decay * prog_wd_scale},
+             'lr': prog_lr,
+              'weight_decay': prog_wd},
             {'params': decay_params,
               'lr': model_lr,
-              'weight_decay': model_weight_decay},
+              'weight_decay': model_wd},
             {'params': nodecay_params,
               'lr': model_lr,
               'weight_decay': 0.0}]
         # Create AdamW optimizer and use the fused version if it is available
-        fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
-        use_fused = fused_available and device_type == "cuda"
-        print(f"Using fused AdamW: {use_fused}")
+        use_fused = False
+        if torch.cuda.is_available() and (device_type is None or device_type == 'cuda'):
+            fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+            use_fused = fused_available
+            print(f"Using fused AdamW: {use_fused}")
+            
         optimizer = torch.optim.AdamW(optim_groups, lr=model_lr, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
         return optimizer
 

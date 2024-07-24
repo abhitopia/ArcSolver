@@ -53,6 +53,7 @@ class MetricLogger:
 class TrainerBase:
     def __init__(self,
                 experiment_name: str,
+                run_name: str,
                 num_epochs,
                 model: nn.Module,
                 optimizer: optim.Optimizer,
@@ -60,7 +61,6 @@ class TrainerBase:
                 eval_dl: DataLoader,
                 eval_interval=None,
                 device=None,
-                run_name: Optional[str] = None,
                 log_level=logging.INFO,
                 seed=1337,
                 log_dir: Optional[Union[str, Path]] = None,
