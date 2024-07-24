@@ -26,11 +26,11 @@ training_data = TrainingData(augmentation_factor=AUGMENTATION_FACTOR,
                             join_version=JOIN_VERSION, 
                             seed=SEED).load()
 
-# trains_ds = training_data.train_ds.subset(0, 2000)
-# eval_ds = training_data.eval_ds.subset(0, 2000)
+trains_ds = training_data.train_ds.subset(0, 2000)
+eval_ds = training_data.eval_ds.subset(0, 2000)
 
-trains_ds = training_data.train_ds
-eval_ds = training_data.eval_ds
+# trains_ds = training_data.train_ds
+# eval_ds = training_data.eval_ds
 
 train_dl = trains_ds.get_dataloader(batch_size=BS,
                                     seq_len=SEQ_LEN,
@@ -56,11 +56,11 @@ print(f"Grid Vocab Size: {GRID_VOCAB_SIZE}")
 
 ## Model Set up
 
-N_LAYERS = 3
-N_MIXERS = 3
-N_BLOCKS = 3
-N_HEADS = 16
-N_DIM = 128
+N_LAYERS = 1
+N_MIXERS = 1
+N_BLOCKS = 1
+N_HEADS = 1
+N_DIM = 8
 
 model_config = InterpreterConfig(
     prog_vocab_size = PROGRAM_VOCAB_SIZE,
@@ -76,14 +76,14 @@ model = Interpreter(model_config,
                     prog_tokenizer=program_tokenizer,
                     grid_tokenizer=grid_tokenizer)
 
-model.to(torch.device('cuda'))
+# model.to(torch.device('cuda'))
 # Training Set up
 
 MODEL_WD = 0.01
 MODEL_LR = 0.001            # Get's trained in all batches
 PROG_LR_SCALE = 10      # Get's trained only a few times per epoch
 PROG_WD_SCALE = 0.0
-TRAIN_DEVICE = 'cuda'
+TRAIN_DEVICE = 'cpu'
 
 optimizer = model.get_optimizer(model_weight_decay=MODEL_WD,
                                 model_lr=MODEL_LR,
@@ -247,7 +247,7 @@ config = {
 trainer = ArcTrainer(
         experiment_name='FirstExperiment',
         run_name='1',
-        eval_interval=None,
+        eval_interval=10,
         num_epochs=20,
         model=model,
         hparams=config,
@@ -261,3 +261,4 @@ trainer.train()
 # trainer.find_lr()
 
 # %%
+
