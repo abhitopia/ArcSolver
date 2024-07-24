@@ -15,6 +15,9 @@ def nearest_greater_power_of_2(n):
     return power
 
 
+def is_power_of_two(n):
+    return n > 0 and (n & (n - 1)) == 0
+
 class Timer:
     def __enter__(self):
         self.start = time.time()
