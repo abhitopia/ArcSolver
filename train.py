@@ -125,13 +125,14 @@ class ArcTrainer(TrainerBase):
                             batch_metrics['total_correct_tokens']*100, 
                             batch_metrics['total_tokens'])
         
+        metrics_obj.add_metric('BatchSize(#Tokens)', batch_metrics['total_tokens'])
         metrics_obj.add_metric('SampleAcc(%)',
                             batch_metrics['total_correct_samples']*100,
                             batch_metrics['total_samples'])
 
     def add_post_step_metrics(self, metrics_obj, batch_time, num_tokens):
         # Batch Metrics
-        metrics_obj.add_metric('#Tokens(/s)', num_tokens, (batch_time / 1000))
+        metrics_obj.add_metric('#TokensPerSec', num_tokens, (batch_time / 1000))
         metrics_obj.add_metric('ΔT(ms)', batch_time)
 
     def pre_train_step(self, batch):
