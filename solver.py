@@ -5,6 +5,8 @@ import typer
 from src.dataset import TrainingData
 from src.interpreter import Interpreter, InterpreterConfig
 from src.utils import nearest_greater_power_of_2
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich import print
 
 app = typer.Typer()
 train_app = typer.Typer()
@@ -13,16 +15,18 @@ app.add_typer(train_app, name="train")
 
 
 def create_training_data(data_aug: Optional[int] = 3, sep_task_version: bool = True, seed: int = 42):
-    print("--"*40)
+
+
+    print("--"*20)
     print("TRAINING DATA CONFIGURATION")
-    print("--"*40)
+    print("--"*20)
     print(f"Data Augmentation Level: {data_aug}")
     print(f"Separate Task Version: {sep_task_version}")
     print(f"Seed: {seed}")
     training_data = TrainingData(augmentation_factor=data_aug,
                                 join_version=not sep_task_version, 
                                 seed=seed).load()
-    print("--"*40)
+    print("--"*20)
     return training_data
     
 
@@ -40,16 +44,16 @@ def create_model(prog_tokenizer, grid_tokenizer, n_dim, n_heads, n_mixers, n_blo
         n_rec_layers = n_layers, # number of recurrences
         share_mixer=share_mixer
     )
-    print("--"*40)
-    print("MODEL")
-    print("--"*40)
+    print("--"*20)
+    print("MODEL CONFIGURATION")
+    print("--"*20)
     print(f"{json.dumps(config.to_dict(), indent=4)}")
 
 
     model = Interpreter(config,
                     prog_tokenizer=prog_tokenizer,
                     grid_tokenizer=grid_tokenizer)
-    print("--"*40)
+    print("--"*20)
     return model
 
 
@@ -69,18 +73,22 @@ def train(
         share_mixer: bool = typer.Option(True, help="Share mixer within each mixing block"),
     ):
 
-    training_data = create_training_data(data_aug, sep_task_version, seed)
-    program_tokenizer = training_data.program_tokenizer
-    grid_tokenizer = training_data.grid_tokenizer
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True, ) as progress:
+        progress.add_task(description="Loading Training Data ...", total=None)
+        training_data = create_training_data(data_aug, sep_task_version, seed)
+        
+        program_tokenizer = training_data.program_tokenizer
+        grid_tokenizer = training_data.grid_tokenizer
 
-    model = create_model(prog_tokenizer=program_tokenizer,
-                        grid_tokenizer=grid_tokenizer,
-                        n_dim=n_dim,
-                        n_heads=n_heads,
-                        n_blocks=n_blocks,
-                        n_mixers=n_mixers,
-                        n_layers=n_layers,
-                        share_mixer=share_mixer)
+        progress.add_task(description="Initialising Model ...", total=None)
+        model = create_model(prog_tokenizer=program_tokenizer,
+                            grid_tokenizer=grid_tokenizer,
+                            n_dim=n_dim,
+                            n_heads=n_heads,
+                            n_blocks=n_blocks,
+                            n_mixers=n_mixers,
+                            n_layers=n_layers,
+                            share_mixer=share_mixer)
 
 
 @train_app.command("resume")
