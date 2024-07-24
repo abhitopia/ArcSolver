@@ -59,8 +59,8 @@ def create_model(prog_tokenizer, grid_tokenizer, n_dim, n_heads, n_mixers, n_blo
 
 @train_app.command("new")
 def train(
-        name: str = typer.Argument(..., help="Name of the experiment. Added to `./runs/`"),
-        run: str = typer.Argument(..., help="Name of the run within the experiment. Created as subdirectory within experiment directory"),
+        name: str = typer.Argument(..., help="Name of the experiment saved at `./runs/{name}`"),
+        run: str = typer.Argument(..., help="Name of the run within the experiment saved at `./runs/{name}/{run}`"),
         n_dim: int = typer.Argument(128, min=8, max=512, help="Dimension of the model"),
         n_heads: int = typer.Argument(16, min=1, max=64, help="Number of heads within each self-attention block"),
         n_blocks: int = typer.Argument(3, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
