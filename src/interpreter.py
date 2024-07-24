@@ -118,7 +118,8 @@ class MixingBlock(nn.Module):
             if config.share_mixer:
                 self.mixers.append(shared_mixer)
             else:
-                self.mixers(nn.Sequential(nn.LayerNorm(config.n_dim), SelfAttention(config)))
+                self.mixers.append(nn.Sequential(nn.LayerNorm(config.n_dim),
+                                                SelfAttention(config)))
 
         self.normed_mlp = nn.Sequential(
                                 nn.LayerNorm(config.n_dim),
