@@ -5,6 +5,8 @@ import torch
 import hashlib
 import logging
 import time
+from rich.logging import RichHandler
+
 
 
 def nearest_greater_power_of_2(n):
@@ -69,7 +71,8 @@ def add_logger(obj, log_level, name, file_path):
         file_handler.setFormatter(file_format)
 
         # Create a stream handler that logs messages to the console
-        stream_handler = logging.StreamHandler()
+        # stream_handler = logging.StreamHandler()
+        stream_handler = RichHandler(show_time=False, show_path=False, show_level=False)
         stream_handler.setLevel(log_level)  # Set the minimum logging level for the stream handler
         stream_format = logging.Formatter('%(message)s')
         stream_handler.setFormatter(stream_format)
