@@ -283,7 +283,67 @@ class Interpreter(nn.Module):
             and_conditions.append(config.prog_vocab_size == other_config.prog_vocab_size)
 
         return all(and_conditions)
+    
 
+    def load_from_model(self, src_model: "Interpreter") -> None:
+        assert self.check_compatible(src_model, compare_prog_vocab=False), "Models are not compatible"
+
+        # keep_vars=True to keep the requires_grad flag
+        trg_sd = self.state_dict(keep_vars=True) 
+        src_sd = src_model.state_dict()
+        trg_grid_token2idx = self.grid_tokenizer.token2idx
+        src_grid_token2idx = src_model.grid_tokenizer.token2idx
+        trg_prog_token2idx = self.prog_tokenizer.token2idx
+        src_prog_token2idx = src_model.prog_tokenizer.token2idx
+
+        def copy_(prefix, idx_mapping=None):
+            for name, t in trg_sd.items():
+                if name.startswith(prefix):
+                    s = src_sd[name]
+                    trg_ptr_b4 = t.data_ptr()
+                    if idx_mapping is None:
+                        t.data.copy_(s)
+                    else:
+                        for trg_idx, src_idx in idx_mapping.items():
+                            trg_sd[name].data[trg_idx].copy_(s.data[src_idx])
+                    trg_ptr_after = t.data_ptr()
+                    assert trg_ptr_b4 == trg_ptr_after, f"Data pointer changed for {prefix}"
+
+        def copy_embedding_weights(key, trg_token2idx, src_token2idx):
+            common_tokens = set(src_token2idx.keys()).intersection(set(src_token2idx.keys()))
+            token_idx_mapping = {trg_token2idx[token]: src_token2idx[token] for token in common_tokens}
+            copy_(key, token_idx_mapping)
+
+        # Copy positional embeddings (wpe)
+        max_seq_len = min(config_trg.max_seq_len, config_src.max_seq_len)
+        copy_('wpe.', {i: i for i in range(max_seq_len)})
+
+        # wte and lm_head (tied weights)
+        copy_embedding_weights('wte.weight', trg_grid_token2idx, src_grid_token2idx)
+        assert trg_sd['wte.weight'].data_ptr() == trg_sd['lm_head.weight'].data_ptr(), "wte and lm_head should be tied"
+        assert src_sd['wte.weight'].data_ptr() == src_sd['lm_head.weight'].data_ptr(), "wte and lm_head should be tied"
+
+
+        # copy program embeddings
+        copy_embedding_weights('pte.', trg_prog_token2idx, src_prog_token2idx)
+
+        # Copy mixer blocks
+        assert config_trg.n_blocks == config_src.n_blocks, "Number of blocks should be the same"
+        for block_idx in range(config_trg.n_blocks):
+            block_key = f'recurrent_block.blocks.{block_idx}'
+            copy_(f'{block_key}.normed_mlp.')
+            if config_trg.n_mixers == config_src.n_mixers:
+                assert config_trg.share_mixer == config_src.share_mixer, "Share mixer should be the same"
+                # Simply copy all the mixers
+                copy_(f'{block_key}.mixers.')
+            elif config_trg.share_mixer and (config_src.share_mixer or config_src.n_mixers == 1):
+                # Copy the shared mixer
+                copy_(f'{block_key}.mixers.0.')
+            else:
+                raise RuntimeError("Cannot copy mixers! Check the model configurations")
+
+        # ln_f
+        copy_('ln_f.')
         
 #%%
 # %%
