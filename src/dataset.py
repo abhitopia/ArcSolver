@@ -292,6 +292,10 @@ class TrainingData:
     def _load_tasks_from_loader(self, loader: ArcTasksLoader):
         assert isinstance(loader, ArcTasksLoader), 'loader must be an instance of ArcTasksLoader'
         tasks = []
+        if self.augmentation_factor is None or self.augmentation_factor <= 0:
+            tasks.extend(loader.load_tasks(augmentation_id=None))
+            return tasks
+        
         for af in range(self.augmentation_factor):
             tasks.extend(loader.load_tasks(augmentation_id=af))
         return tasks
