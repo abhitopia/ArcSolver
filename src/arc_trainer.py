@@ -108,8 +108,8 @@ class ArcTrainer(TrainerBase):
         max_lr = 1.0
         min_lr = max_lr * 0.05
         num_step_in_epoch = len(self.train_dl)
-        warmup_steps = num_step_in_epoch * self.hparams['optimizer_config']['lr_warmup_epochs']
-        max_steps = num_step_in_epoch * self.hparams['optimizer_config']['lr_decay_epochs']
+        warmup_steps = num_step_in_epoch * self.hparams['optimizer.lr_warmup_epochs']
+        max_steps = num_step_in_epoch * self.hparams['optimizer.lr_decay_epochs']
 
         # 1) linear warmup for warmup_iters steps
         if step < warmup_steps:
