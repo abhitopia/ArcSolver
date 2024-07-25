@@ -66,11 +66,9 @@ class ArcHparams(Hparams):
                             prog_tokenizer=self.state['prog_tokenizer'],
                             grid_tokenizer=self.state['grid_tokenizer'])
         
-        self.state['model'] = model
         return model
     
-    def init_optimizer(self)-> optim.Optimizer:
-        model = self.state['model']
+    def init_optimizer(self, model)-> optim.Optimizer:
         config = self.optim
         optimizer = model.get_optimizer(
                                     model_lr=config.model_lr,
@@ -79,10 +77,9 @@ class ArcHparams(Hparams):
                                     prog_wd=config.prog_wd,
                                     device_type=self.device)
 
-        self.state['optimizer'] = optimizer
         return optimizer
     
-    def init_scheduler(self)-> optim.lr_scheduler.LambdaLR:
+    def init_scheduler(self, optimizer)-> optim.lr_scheduler.LambdaLR:
         config = self.optim
         def multiplicative_schedule(step):
             max_lr = 1.0
@@ -103,7 +100,7 @@ class ArcHparams(Hparams):
             coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
             return min_lr + coeff * (max_lr - min_lr)
         
-        scheduler = optim.lr_scheduler.LambdaLR(self.state['optimizer'], lr_lambda=multiplicative_schedule)
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=multiplicative_schedule)
         scheduler._step_count = -1 # To prevent warning because initialation makes a first call to step automatically
         return scheduler
 
@@ -196,10 +193,23 @@ class ArcTrainer(TrainerBase):
         prog_tokenizer = ProgramTokenizer.from_dict(state_dict['tokenizers']['program_tokenizer'])
         grid_tokenizer = GridTokenizer.from_dict(state_dict['tokenizers']['grid_tokenizer'])
         model_config = InterpreterConfig.from_dict(state_dict['model_config'])
-        assert model_config == self.model.config, "Cannot resume, Model Configs do not match!"
-        assert prog_tokenizer == self.model.prog_tokenizer, "Cannot resume, Program Tokenizers do not match!"
-        assert grid_tokenizer == self.model.grid_tokenizer, "Cannot resume, Grid Tokenizers do not match!"
-        return super().load_state_dict(state_dict, resume=resume)
+
+        if resume: # Make sure that the model is exactly the same
+            assert model_config == self.model.config, "Cannot resume, Model Configs do not match!"
+            assert prog_tokenizer == self.model.prog_tokenizer, "Cannot resume, Program Tokenizers do not match!"
+            assert grid_tokenizer == self.model.grid_tokenizer, "Cannot resume, Grid Tokenizers do not match!"
+            super().load_state_dict(state_dict, resume=True)    
+        else:
+            # We don't want default behavior of loading model state dict. We want special 
+            # which is able to copy the weights from a compatible model
+            checkpoint_model = Interpreter(model_config, prog_tokenizer, grid_tokenizer)
+            checkpoint_model.load_state_dict(state_dict['model_state_dict'])
+            self.info("Loading model from checkpoint using load_from_model method")
+            self.model.load_from_model(checkpoint_model)
+
+            if prog_tokenizer != self.model.prog_tokenizer or grid_tokenizer != self.model.grid_tokenizer:
+                self.warning("Loaded model has different tokenizers than the current model. Loading anyway as the models are compatible.")
+                self.warning("If this is not intened, stop and re-evaluate the situation.")
        
 
     @staticmethod

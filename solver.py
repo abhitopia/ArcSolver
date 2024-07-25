@@ -97,7 +97,7 @@ def resume(
     checkpoint_dir = ArcTrainer.get_checkpoint_dir(name, run)
     assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
     checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)       
-    trainer = ArcTrainer.from_checkpoint(checkpoint, resume=False)
+    trainer = ArcTrainer.from_checkpoint(checkpoint, resume=True)
     trainer.train()
 
 

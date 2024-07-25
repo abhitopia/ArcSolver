@@ -103,10 +103,10 @@ class Hparams:
     def init_model(self)-> nn.Module:
         raise NotImplementedError('init_model method must be implemented')
     
-    def init_optimizer(self)-> optim.Optimizer:
+    def init_optimizer(self, model)-> optim.Optimizer:
         raise NotImplementedError('init_optimizer method must be implemented')
     
-    def init_scheduler(self)-> optim.lr_scheduler.LambdaLR:
+    def init_scheduler(self, optimizer)-> optim.lr_scheduler.LambdaLR:
         raise NotImplementedError('init_scheduler method must be implemented')
 
     def as_dict(self):
@@ -137,7 +137,8 @@ class TrainerBase:
                 hparams: Hparams,
                 log_level=logging.INFO,
                 parent_dir: Optional[Union[str, Path]] = None,
-                disable_checkpointing_and_logging=False
+                disable_checkpointing_and_logging=False,
+                prevent_overwrite=True
             ):
         
 
@@ -146,6 +147,11 @@ class TrainerBase:
 
         self.log_dir = self.get_log_dir(self.hparams.experiment, self.hparams.run, parent_dir=parent_dir)
         self.checkpoint_dir = self.get_checkpoint_dir(self.hparams.experiment, self.hparams.run, parent_dir=parent_dir)
+
+        if prevent_overwrite:
+            assert not self.log_dir.exists(), f'Log directory {self.log_dir} already exists.'
+            assert not self.checkpoint_dir.exists(), f'Checkpoint directory {self.checkpoint_dir} already exists.'
+
 
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -205,13 +211,13 @@ class TrainerBase:
     @property
     def optimizer(self):
         if self._optimizer is None:
-            self._optimizer = self.hparams.init_optimizer()
+            self._optimizer = self.hparams.init_optimizer(self.model)
         return self._optimizer
     
     @property
     def scheduler(self):
         if self._scheduler is None:
-            self._scheduler = self.hparams.init_scheduler()
+            self._scheduler = self.hparams.init_scheduler(self.optimizer)
         return self._scheduler
     
     @property
@@ -280,7 +286,10 @@ class TrainerBase:
             self.scheduler.load_state_dict(state_dict['scheduler_state_dict'])
             self.info(f"Resuming from Step: {self.step}, Epoch: {self.epoch}")
         else:
-            self.info(f"Loaded model from state dict. Starting with Step: {self.step}, Epoch: {self.epoch}")
+            # Resetting those just to be safe!!
+            self._optimizer = None
+            self._scheduler = None
+            self.info(f"Loaded only model from state dict. Starting with Step: {self.step}, Epoch: {self.epoch}")
 
     def state_dict(self):
         return {
@@ -592,7 +601,8 @@ class TrainerBase:
         trainer = cls(hparams,
                     log_level=log_level,
                     disable_checkpointing_and_logging=disable_checkpointing_and_logging,
-                    parent_dir=parent_dir
+                    parent_dir=parent_dir,
+                    prevent_overwrite=False
                 )
         if resume:
             trainer.info(f"Resuming from checkpoint: {checkpoint_path}")
