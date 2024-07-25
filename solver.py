@@ -7,7 +7,7 @@ import logging
 from src.dataset import TrainingData
 from src.interpreter import Interpreter, InterpreterConfig
 from src.arc_trainer import ArcTrainer
-from src.utils import nearest_greater_power_of_2
+from src.utils import flatten_dict, nearest_greater_power_of_2
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich import print
 
@@ -58,8 +58,8 @@ def train(
         layers: int = typer.Option(3, min=1, max=10, help="Number of recurrent layers"),
         mlr: float = typer.Option(0.01, min=-1.0, help="Learning Rate. If -1, then learning rate finder is invoked in debug model."),
         plr: Optional[float] = typer.Option(None, min=-1.0, help="Program Learning Rate. If None, then it is scaled according to data augmentation level"),
-        lr_warmup: int = typer.Option(1, min=0, help="Number of epochs for learning rate warmup"),
-        lr_decay: int = typer.Option(4, min=0, help="Number of epochs for learning rate decay"),
+        lr_warmup: int = typer.Option(2, min=0, help="Number of epochs for learning rate warmup"),
+        lr_decay: int = typer.Option(8, min=0, help="Number of epochs for learning rate decay"),
         mwd: float = typer.Option(0.01, min=0.0, help="Weight Decay"),
         pwd: float = typer.Option(0.0, min=0.0, help="Program Weight Decay"),
         data_aug: int = typer.Option(3, min=0, help="Data Augmentation Level. 0 means no augmentation"),
@@ -118,11 +118,10 @@ def train(
     }
 
     hparams = {
-        "data_config": data_config,
-        "model_config": model_config,
-        "optimizer_config": optimizer_config
+        "data": data_config,
+        "model": model_config,
+        "optimizer": optimizer_config
     }
-
 
     train_dl = training_data.train_ds.get_dataloader(batch_size=bs,
                                                     seq_len=model.config.max_seq_len,
@@ -141,7 +140,7 @@ def train(
         optimizer=optimizer,
         eval_interval=None,
         num_epochs=1000,
-        hparams=hparams,
+        hparams=flatten_dict(hparams),
         train_dl=train_dl,
         eval_dl=eval_dl,
         log_level=logging.INFO,

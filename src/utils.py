@@ -72,7 +72,7 @@ def add_logger(obj, log_level, name, file_path):
 
         # Create a stream handler that logs messages to the console
         # stream_handler = logging.StreamHandler()
-        stream_handler = RichHandler(show_time=False, show_path=False, show_level=False)
+        stream_handler = RichHandler(show_time=False, show_path=False, show_level=False, tracebacks_word_wrap=False)
         stream_handler.setLevel(log_level)  # Set the minimum logging level for the stream handler
         stream_format = logging.Formatter('%(message)s')
         stream_handler.setFormatter(stream_format)
@@ -153,7 +153,7 @@ def flatten_dict(config_dict: dict) -> dict:
             # Flatten nested dictionaries by prefixing keys with the parent key
             flat_dict = flatten_dict(value)
             for subkey, subvalue in flat_dict.items():
-                flat_config_dict[f"{key}/{subkey}"] = subvalue
+                flat_config_dict[f"{key}.{subkey}"] = subvalue
         elif isinstance(value, list):
             # Convert lists to string
             flat_config_dict[key] = ', '.join(value)
