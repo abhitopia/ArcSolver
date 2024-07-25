@@ -275,7 +275,7 @@ class TrainerBase:
         current_commit_hash = get_git_commit_hash()
         saved_commit_hash = state_dict.get('git_commit_hash', None)
         if saved_commit_hash is not None and saved_commit_hash != current_commit_hash:
-            self.warning(f'Git commit hash mismatch: Current: {current_commit_hash}, Saved: {saved_commit_hash}')
+            self.warning(f'Git commit hash mismatch: Current: {current_commit_hash}, Checkpoint: {saved_commit_hash}')
 
         if resume:
             hparams_dict = state_dict['hparams']
