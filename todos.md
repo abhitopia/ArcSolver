@@ -6,6 +6,8 @@
 - [x] Add Trainer.state_dict() and Trainer.load_state_dict()
 - [x] Make trainer take trainer config and nothing else
 - [x] Add CLI
+- [x] If resume, do extra checks and use special copy!
+- [ ] Add --checkpint option to train new
 - [ ] Add gitcommmit to hparams for the purposes of reproduction
 - [ ] Run Cuda Empty Cache After each train and eval epoch
 
