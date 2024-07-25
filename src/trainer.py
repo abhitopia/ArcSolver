@@ -152,10 +152,6 @@ class TrainerBase:
             assert not self.log_dir.exists(), f'Log directory {self.log_dir} already exists.'
             assert not self.checkpoint_dir.exists(), f'Checkpoint directory {self.checkpoint_dir} already exists.'
 
-
-        self.log_dir.mkdir(parents=True, exist_ok=True)
-        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
         add_logger(obj=self,
                 log_level=log_level,
                 name=self.hparams.run,
@@ -309,6 +305,8 @@ class TrainerBase:
         if self.disable_checkpointing:
             return
         checkpoint_path = self.checkpoint_path(self.checkpoint_dir, self.step)
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        assert checkpoint_path.exists() == False, f'Checkpoint file already exists: {checkpoint_path}'
         state_dict = self.state_dict()
         torch.save(state_dict, checkpoint_path)
         self.debug(f'Checkpoint saved for step: {self.step} at: {checkpoint_path}')
@@ -584,6 +582,13 @@ class TrainerBase:
             self._at_training_end()
 
 
+    def initialise_from_checkpoint(self, checkpoint_path: Union[str, Path]):
+        checkpoint_path = Path(checkpoint_path)
+        assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
+        state_dict = torch.load(checkpoint_path, map_location='cpu')
+        self.load_state_dict(state_dict, resume=False) # Prevent loading optimizer and scheduler state
+
+
     @classmethod
     def from_checkpoint(cls, Hparams_cls,
                     checkpoint_path: Union[str, Path],
@@ -607,7 +612,7 @@ class TrainerBase:
         if resume:
             trainer.info(f"Resuming from checkpoint: {checkpoint_path}")
         else:
-            trainer.info(f"Loading model from: {checkpoint_path}")
+            trainer.info(f"Initialising model from: {checkpoint_path}")
         trainer.load_state_dict(state_dict, resume=resume)
         return trainer        
 #%%
