@@ -211,16 +211,6 @@ class ArcTrainer(TrainerBase):
                 self.warning("Loaded model has different tokenizers than the current model. Loading anyway as the models are compatible.")
                 self.warning("If this is not intened, stop and re-evaluate the situation.")
        
-
-    @staticmethod
-    def load_model_from_checkpoint(checkpoint_path, device='cpu'):
-        state_dict = torch.load(checkpoint_path, map_location='cpu')
-        model_config = InterpreterConfig.from_dict(state_dict['model_config'])
-        prog_tokenizer = ProgramTokenizer.from_dict(state_dict['tokenizers']['program_tokenizer'])
-        grid_tokenizer = GridTokenizer.from_dict(state_dict['tokenizers']['grid_tokenizer'])
-        model = Interpreter(model_config, prog_tokenizer, grid_tokenizer)
-        model.load_state_dict(state_dict['model_state_dict'])
-        return model.to(device)
     
     @classmethod
     def from_checkpoint(

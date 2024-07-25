@@ -38,6 +38,7 @@ def train(
         device: Optional[str] = typer.Option(None, help="Device to run the training on. If None, then it is automatically selected"),
         eval_int: Optional[int] = typer.Option(None, help="Number of steps between evaluations. None means evaluation at the end of each epoch"),
         num_max_examples: int = typer.Option(-1, min=-1, help="For test runs. Takes the subset of the training and evaluation data. value <= 0 means all data"),
+        checkpoint: Optional[str] = typer.Option(None, help="Initialize the model from the given checkpoint. Training will start from the beginning"),
     ):
 
 
@@ -79,9 +80,11 @@ def train(
     hparams.add_params(prefix="optim", **optimizer_config)
 
     trainer = ArcTrainer(hparams=hparams)
-    checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
-    assert checkpoint is None, f"Checkpoint {checkpoint} already exists. Use the train resume command to resume training"
-    
+    if checkpoint is not None:
+        existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
+        assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
+        trainer.initialise_from_checkpoint(checkpoint)    # NO RESUME, start from the beginning 
+
     if lr_find:
         trainer.find_lr()
     else:

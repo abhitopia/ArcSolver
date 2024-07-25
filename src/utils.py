@@ -65,6 +65,7 @@ def add_logger(obj, log_level, name, file_path):
 
     if not logger.handlers:
         # Create a file handler that logs messages to a file
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(file_path)
         file_handler.setLevel(logging.DEBUG)  # Set the minimum logging level for the file handler
         file_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
