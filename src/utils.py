@@ -1,3 +1,4 @@
+import subprocess
 import torch.nn as nn
 import random
 import numpy as np
@@ -8,6 +9,15 @@ import time
 from rich.logging import RichHandler
 
 
+def get_git_commit_hash():
+    try:
+        # Run the git command to get the current commit hash
+        commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
+        return commit_hash
+    except subprocess.CalledProcessError:
+        # Handle the case where the git command fails (e.g., not a git repository)
+        print("Failed to retrieve git commit hash")
+        return None
 
 def nearest_greater_power_of_2(n):
     if n <= 0:

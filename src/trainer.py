@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional, Tuple, Union
 from collections import defaultdict
 from tqdm import tqdm
-from .utils import add_logger, map_to_tensors
+from .utils import add_logger, get_git_commit_hash, map_to_tensors
 from dataclasses import dataclass
 
 
@@ -272,6 +272,11 @@ class TrainerBase:
     def load_state_dict(self, state_dict, resume=True):
         self.model.load_state_dict(state_dict['model_state_dict'])
 
+        current_commit_hash = get_git_commit_hash()
+        saved_commit_hash = state_dict.get('git_commit_hash', None)
+        if saved_commit_hash is not None and saved_commit_hash != current_commit_hash:
+            self.warning(f'Git commit hash mismatch: Current: {current_commit_hash}, Saved: {saved_commit_hash}')
+
         if resume:
             hparams_dict = state_dict['hparams']
             assert hparams_dict == self.hparams.as_dict(), 'Hparams do not match! Cannot resume training.'
@@ -294,7 +299,8 @@ class TrainerBase:
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
-            'hparams': self.hparams.as_dict()
+            'hparams': self.hparams.as_dict(),
+            'git_commit_hash': get_git_commit_hash()
         }
     
     @staticmethod
