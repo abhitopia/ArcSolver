@@ -77,8 +77,9 @@ class Hparams:
         self._state = {}
 
     def add_params(self, prefix='', **kwargs):
-        if len(prefix) > 0 and not hasattr(self, 'prefix'):
-            setattr(self, prefix, Box())
+        if len(prefix) > 0:
+            if not hasattr(self, prefix):
+                setattr(self, prefix, Box())
 
         for k, v in kwargs.items():
             assert isinstance(v, (int, float, str)), f'Value of {k} must be int, float or str'
@@ -121,10 +122,12 @@ class Hparams:
     
     @classmethod
     def from_dict(cls, hparams_dict):
-        hparams = cls(**{hparams_dict for k, v in hparams_dict.items() if not isinstance(v, Box)})
+        args = {k: v for k, v in hparams_dict.items() if '.' not in k} 
+        hparams = cls(**args)
         for k, v in hparams_dict.items():
-            if isinstance(v, dict):
-                setattr(hparams, k, Box(v))
+            if '.' in k:
+                prefix, key = k.split('.')
+                hparams.add_params(prefix, **{key: v})
         return hparams
 
 
@@ -143,6 +146,9 @@ class TrainerBase:
 
         self.log_dir = self.get_log_dir(self.hparams.experiment, self.hparams.run, parent_dir=parent_dir)
         self.checkpoint_dir = self.get_checkpoint_dir(self.hparams.experiment, self.hparams.run, parent_dir=parent_dir)
+
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
         add_logger(obj=self,
                 log_level=log_level,
@@ -179,6 +185,8 @@ class TrainerBase:
 
         self.train_metrics = MetricLogger()
         self.eval_metrics = MetricLogger()
+
+        self.hparams.init_dataloaders()
 
 
     @property
@@ -226,14 +234,12 @@ class TrainerBase:
             calling_script = Path(__main__.__file__)
             parent_dir = calling_script.parent / 'runs'
         log_dir =  parent_dir / experiment_name / run_name
-        log_dir.mkdir(parents=True, exist_ok=True)
         return log_dir
 
     @staticmethod
     def get_checkpoint_dir(experiment_name, run_name, parent_dir=None):
         log_dir = TrainerBase.get_log_dir(experiment_name, run_name, parent_dir=parent_dir)
         checkpoint_dir = log_dir / 'checkpoints'
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
         return checkpoint_dir
 
 
@@ -261,33 +267,52 @@ class TrainerBase:
         if torch.backends.mps.is_available():
             torch.mps.manual_seed(seed)
 
-
-    def _load_checkpoint(self, checkpoint_file):
-        state_dict = torch.load(checkpoint_file, map_location=self.device)
-        self.load_state_dict(state_dict)
-        self.info(f"Loaded checkpoint from: {checkpoint_file}")
-
-    def load_state_dict(self, state_dict):
-        hparams_dict = state_dict['hparams']
-        assert hparams_dict == self.hparams.as_dict(), 'Hparams do not match! Cannot resume training.'
-        self.step = state_dict['step']
-        self.epoch = state_dict['epoch']
+    def load_state_dict(self, state_dict, resume=True):
         self.model.load_state_dict(state_dict['model_state_dict'])
-        self.model.to(self.device)
-        self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
-        self.scheduler.load_state_dict(state_dict['scheduler_state_dict'])
 
+        if resume:
+            hparams_dict = state_dict['hparams']
+            assert hparams_dict == self.hparams.as_dict(), 'Hparams do not match! Cannot resume training.'
 
-    def _resume(self):
-        # Check if there is a checkpoint to resume from
-        checkpoint_files = list(self.checkpoint_dir.glob('checkpoint_*.pth'))
-        if len(checkpoint_files) > 0:
-            checkpoint_files = sorted(checkpoint_files, key=lambda x: int(x.stem.split('_')[-1]))
-            checkpoint_file = checkpoint_files[-1]
-            self._load_checkpoint(checkpoint_file)
-            self.info(f'Resuming training from step {self.step} and epoch {self.epoch}')
+            self.step = state_dict['step']
+            self.epoch = state_dict['epoch']
+            self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
+            self.scheduler.load_state_dict(state_dict['scheduler_state_dict'])
+            self.info(f"Resuming from Step: {self.step}, Epoch: {self.epoch}")
         else:
-            self.model.to(self.device)
+            self.info(f"Loaded model from state dict. Starting with Step: {self.step}, Epoch: {self.epoch}")
+
+    def state_dict(self):
+        return {
+            'step': self.step,
+            'epoch': self.epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict(),
+            'hparams': self.hparams.as_dict()
+        }
+    
+    @staticmethod
+    def checkpoint_path(checkpoint_dir, step):
+        return checkpoint_dir / f'checkpoint_{step:06d}.pth'
+
+    def _save_checkpoint(self):
+        if self.disable_checkpointing:
+            return
+        checkpoint_path = self.checkpoint_path(self.checkpoint_dir, self.step)
+        state_dict = self.state_dict()
+        torch.save(state_dict, checkpoint_path)
+        self.debug(f'Checkpoint saved for step: {self.step} at: {checkpoint_path}')
+
+
+    @staticmethod
+    def get_latest_checkpoint(checkpoint_dir):
+        checkpoint_files = list(checkpoint_dir.glob('checkpoint_*.pth'))
+        if len(checkpoint_files) == 0:
+            return None
+        checkpoint_files = sorted(checkpoint_files, key=lambda x: int(x.stem.split('_')[-1]))
+        return checkpoint_files[-1]
+
 
     def _at_training_start(self):
         if not self.disable_checkpointing:
@@ -302,7 +327,7 @@ class TrainerBase:
         self._seed_everything()
         self._device = self._init_device(self._device)
         self.logger.info(f'Using device: {self._device}')
-        self._resume()
+        self.model.to(self.device)
         self.model.train()
 
     def _log_metrics(self, suffix, metrics):
@@ -417,23 +442,6 @@ class TrainerBase:
         if save_checkpoint:
             self._save_checkpoint()
 
-
-    def state_dict(self):
-        return {
-            'step': self.step,
-            'epoch': self.epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),
-            'hparams': self.hparams.as_dict()
-        }
-
-    def _save_checkpoint(self):
-        if self.disable_checkpointing:
-            return
-        checkpoint_path = self.checkpoint_dir / f'checkpoint_{self.step:06d}.pth'
-        state_dict = self.state_dict()
-        torch.save(state_dict, checkpoint_path)
 
 
     def _at_training_end(self):
@@ -567,7 +575,29 @@ class TrainerBase:
             self._at_training_end()
 
 
-    @staticmethod
-    def from_checkpoint(checkpoint_path):
-        raise NotImplementedError('from_checkpoint method must be implemented')
+    @classmethod
+    def from_checkpoint(cls, Hparams_cls,
+                    checkpoint_path: Union[str, Path],
+                    resume=True,
+                    log_level=logging.INFO,
+                    disable_checkpointing_and_logging=False,
+                    parent_dir=None
+                ):
+        checkpoint_path = Path(checkpoint_path)
+        assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
+
+        state_dict = torch.load(checkpoint_path, map_location='cpu')
+        hparams_dict = state_dict['hparams']
+        hparams = Hparams_cls.from_dict(hparams_dict)
+        trainer = cls(hparams,
+                    log_level=log_level,
+                    disable_checkpointing_and_logging=disable_checkpointing_and_logging,
+                    parent_dir=parent_dir
+                )
+        if resume:
+            trainer.info(f"Resuming from checkpoint: {checkpoint_path}")
+        else:
+            trainer.info(f"Loading model from: {checkpoint_path}")
+        trainer.load_state_dict(state_dict, resume=resume)
+        return trainer        
 #%%

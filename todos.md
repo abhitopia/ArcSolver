@@ -4,7 +4,9 @@
 - [x] Add BatchSize metric (in Tokens)
 - [x] Weird formatting Tokens(/s)
 - [x] Add Trainer.state_dict() and Trainer.load_state_dict()
-- [ ] Add CLI
+- [x] Make trainer take trainer config and nothing else
+- [x] Add CLI
+- [ ] Add gitcommmit to hparams for the purposes of reproduction
 - [ ] Run Cuda Empty Cache After each train and eval epoch
 
 
