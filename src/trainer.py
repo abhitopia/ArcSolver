@@ -1,5 +1,7 @@
 #%%
+import json
 import math
+from box import Box
 from torch import nn
 import torch
 import torch.optim as optim
@@ -10,10 +12,11 @@ import random
 import numpy as np
 import logging
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 from collections import defaultdict
 from tqdm import tqdm
 from .utils import add_logger, map_to_tensors
+from dataclasses import dataclass
 
 
 class MetricLogger:
@@ -52,49 +55,101 @@ class MetricLogger:
         self._tags = defaultdict(set)
 
 
+
+@dataclass
+class Hparams:
+    experiment: str
+    run: str
+    num_epochs: Optional[int] = None # Number of epochs to train, None means infinite
+    clip_grad_norm: Optional[float] = 1.0 # Clip gradient norm, None means no clipping
+    seed: int = 1337  # Seed everything for reproducibility
+    device: str = None # Device to use for training, None means automatically determine the best device
+    eval_interval: Optional[int] = None # Evaluate every n steps, None means evaluate after every epoch
+
+    def __post_init__(self):
+        assert isinstance(self.experiment, str), 'experiment must be a string'
+        assert isinstance(self.run, str), 'run must be a string'
+        assert self.num_epochs is None or self.num_epochs > 0, 'num_epochs must be None or a positive integer'
+        assert self.clip_grad_norm is None or self.clip_grad_norm > 0, 'clip_grad_norm must be None or a positive float'
+        assert isinstance(self.seed, int), 'seed must be an integer'
+        assert self.device is None or isinstance(self.device, str), 'device must be a string or None'
+        assert self.eval_interval is None or self.eval_interval > 0, 'eval_interval must be None or a positive integer'
+        self._state = {}
+
+    def add_params(self, prefix='', **kwargs):
+        if len(prefix) > 0 and not hasattr(self, 'prefix'):
+            setattr(self, prefix, Box())
+
+        for k, v in kwargs.items():
+            assert isinstance(v, (int, float, str)), f'Value of {k} must be int, float or str'
+            assert not k.startswith('_'), f'Parameter name cannot start with _'
+            if len(prefix) == 0:
+                setattr(self, k, v)
+            else:
+                prefix_dict = getattr(self, prefix)
+                prefix_dict[k] = v
+    
+    def reset_state(self):
+        self._state = {}
+
+    @property
+    def state(self):
+        return self._state
+
+    def init_dataloaders(self)-> Tuple[DataLoader, DataLoader]:
+        raise NotImplementedError('init_data_loaders method must be implemented')
+
+    def init_model(self)-> nn.Module:
+        raise NotImplementedError('init_model method must be implemented')
+    
+    def init_optimizer(self)-> optim.Optimizer:
+        raise NotImplementedError('init_optimizer method must be implemented')
+    
+    def init_scheduler(self)-> optim.lr_scheduler.LambdaLR:
+        raise NotImplementedError('init_scheduler method must be implemented')
+
+    def as_dict(self):
+        flat_dict = {}
+        for k, v in self.__dict__.items():
+            if not k.startswith('_') and not callable(v) and v is None or isinstance(v, (int, float, str)):
+                flat_dict[k] = v
+            elif isinstance(v, Box):
+                for subk, subv in v.items():
+                    flat_dict[f'{k}.{subk}'] = subv
+
+        return flat_dict
+    
+    @classmethod
+    def from_dict(cls, hparams_dict):
+        hparams = cls(**{hparams_dict for k, v in hparams_dict.items() if not isinstance(v, Box)})
+        for k, v in hparams_dict.items():
+            if isinstance(v, dict):
+                setattr(hparams, k, Box(v))
+        return hparams
+
+
+
 class TrainerBase:
     def __init__(self,
-                experiment_name: str,
-                run_name: str,
-                num_epochs,
-                model: nn.Module,
-                optimizer: optim.Optimizer,
-                train_dl: DataLoader,
-                eval_dl: DataLoader,
-                eval_interval=None,
-                device=None,
+                hparams: Hparams,
                 log_level=logging.INFO,
-                seed=1337,
-                log_dir: Optional[Union[str, Path]] = None,
-                hparams=None,
-                clip_grad_norm: Optional[float] = 1.0,
+                parent_dir: Optional[Union[str, Path]] = None,
                 disable_checkpointing_and_logging=False
-                ):
+            ):
         
 
-        # Set up logging
-        if log_dir is None:
-            import __main__
-            calling_script = Path(__main__.__file__)
-            log_dir = calling_script.parent / 'runs'
+        assert isinstance(hparams, Hparams), 'hparams must be an instance of Hparams'
+        self.hparams = hparams
 
-
-        assert experiment_name is not None, 'experiment_name must be provided'
-
-        self.exp_name = experiment_name
-        self.run_name = run_name
-        assert self.run_name is not None, 'run_name must be provided'
-
-        self.log_dir = Path(log_dir) / self.exp_name / self.run_name
-        self.log_dir.mkdir(parents=True, exist_ok=True)
-        self.checkpoint_dir = self.log_dir / 'checkpoints'
-        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self.log_dir = self.get_log_dir(self.hparams.experiment, self.hparams.run, parent_dir=parent_dir)
+        self.checkpoint_dir = self.get_checkpoint_dir(self.hparams.experiment, self.hparams.run, parent_dir=parent_dir)
 
         add_logger(obj=self,
                 log_level=log_level,
-                name=self.run_name,
+                name=self.hparams.run,
                 file_path=self.log_dir / f'training.log')
 
+        self.info(f"Hparams: {json.dumps(self.hparams.as_dict(), indent=4)}")
         self.info(f"Checkpoint directory: {self.checkpoint_dir}")
         self.disable_checkpointing = disable_checkpointing_and_logging
         if self.disable_checkpointing:
@@ -105,30 +160,82 @@ class TrainerBase:
         self.step = 0
         self.epoch = 0 
         self.epoch_step = 0
-        self.model = model
-        self.optimizer = optimizer
-        self.num_epochs = num_epochs
-        self.log_level = log_level
-        self.train_dl = train_dl
-        self.eval_dl = eval_dl
-        self.eval_interval = eval_interval
-        self.hparams = hparams
+        
+        # From Hparams (Direct)
+        self.seed = self.hparams.seed
+        self.clip_grad_norm = self.hparams.clip_grad_norm
+        self.num_epochs = self.hparams.num_epochs
+        self.eval_interval = self.hparams.eval_interval
 
-        if self.eval_interval is None:
-            self.eval_interval = len(self.train_dl)
+
+        # From Hparams (Indirect) - Lazy loading
+        self._device = None
+        self._model = None
+        self._optimizer = None
+        self._scheduler = None
+        self._train_dl = None
+        self._eval_dl = None
+        
 
         self.train_metrics = MetricLogger()
         self.eval_metrics = MetricLogger()
-        self.seed = seed
-        self._device = device
-        self.clip_grad_norm = clip_grad_norm
-        self.scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=self.multiplicative_lr_factor_schedule)
+
 
     @property
     def device(self):
         if self._device is None:
-            self._device = self._init_device(self._device)
+            self._device = self._init_device(self.hparams.device)
         return self._device
+
+    @property
+    def model(self):
+        if self._model is None:
+            self._model = self.hparams.init_model()
+            self._model.to(self.device)
+        return self._model
+    
+    @property
+    def optimizer(self):
+        if self._optimizer is None:
+            self._optimizer = self.hparams.init_optimizer()
+        return self._optimizer
+    
+    @property
+    def scheduler(self):
+        if self._scheduler is None:
+            self._scheduler = self.hparams.init_scheduler()
+        return self._scheduler
+    
+    @property
+    def train_dl(self):
+        if self._train_dl is None:
+            self._train_dl, self._eval_dl = self.hparams.init_dataloaders()
+        return self._train_dl
+    
+    @property
+    def eval_dl(self):
+        if self._eval_dl is None:
+            self._train_dl, self._eval_dl = self.hparams.init_dataloaders()
+        return self._eval_dl
+    
+
+    @staticmethod
+    def get_log_dir(experiment_name, run_name, parent_dir=None):
+        if parent_dir is None:
+            import __main__
+            calling_script = Path(__main__.__file__)
+            parent_dir = calling_script.parent / 'runs'
+        log_dir =  parent_dir / experiment_name / run_name
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir
+
+    @staticmethod
+    def get_checkpoint_dir(experiment_name, run_name, parent_dir=None):
+        log_dir = TrainerBase.get_log_dir(experiment_name, run_name, parent_dir=parent_dir)
+        checkpoint_dir = log_dir / 'checkpoints'
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        return checkpoint_dir
+
 
     @staticmethod
     def _init_device(_device):
@@ -161,8 +268,8 @@ class TrainerBase:
         self.info(f"Loaded checkpoint from: {checkpoint_file}")
 
     def load_state_dict(self, state_dict):
-        hparams = state_dict['hparams']
-        assert hparams == self.hparams, 'Hparams do not match! Cannot resume training.'
+        hparams_dict = state_dict['hparams']
+        assert hparams_dict == self.hparams.as_dict(), 'Hparams do not match! Cannot resume training.'
         self.step = state_dict['step']
         self.epoch = state_dict['epoch']
         self.model.load_state_dict(state_dict['model_state_dict'])
@@ -186,7 +293,6 @@ class TrainerBase:
         if not self.disable_checkpointing:
             self.writer = SummaryWriter(log_dir=self.log_dir)
 
-        self.info(f'Epochs: {self.num_epochs}')
         self.info(f"Training batches: {len(self.train_dl)}")
         self.info(f"Evaluation batches: {len(self.eval_dl)}")
         self.info(f'Evaluation Interval (Steps): {self.eval_interval}')
@@ -210,7 +316,7 @@ class TrainerBase:
             return
         
         if self.hparams is not None:
-            hparams = {k: v for k, v in self.hparams.items()}
+            hparams = {k: v for k, v in self.hparams.as_dict().items()}
             self.writer.add_hparams(hparams, metrics, run_name='.', global_step=self.step)
 
         self.writer.flush()
@@ -230,28 +336,25 @@ class TrainerBase:
     
     def _train_step(self, batch):
         # move the batch to the device
-
         self.pre_train_step(batch)
         batch = map_to_tensors(batch, lambda x: x.to(self.device, non_blocking=True) if x.device.type != self.device.type else x)
 
         self.optimizer.zero_grad()
         with torch.autocast(device_type= 'cpu' if self.device.type == 'mps' else self.device.type, dtype=torch.bfloat16):
             loss = self.train_step(batch)
+        self.post_train_step(batch)
 
         loss.backward()
-
         if self.clip_grad_norm is not None:
             norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             self.train_metrics.add_metric('GradientNorm', norm.item())
 
         self.optimizer.step()
-
+        self.scheduler.step()
+        
         for idx, last_lr in enumerate(self.scheduler.get_last_lr()):
             self.train_metrics.add_metric(f'LR/ParamGroup_{idx}', last_lr)
 
-        self.scheduler.step()
-
-        self.post_train_step(batch)
         step_metrics = self.train_metrics.last_metrics()
         self.info(self._metrics_string("(TRAIN-STEP) ", step_metrics))
         self._log_metrics(suffix='step_train', metrics=step_metrics)
@@ -262,9 +365,16 @@ class TrainerBase:
         self._log_metrics(suffix='epoch_train', metrics=epoch_metrics)
 
 
-    def _metrics_string(self, prefix, metrics):
-        num_batches = len(self.train_dl)
-        epoch_progress = f'{(self.epoch_step*100/num_batches):6.2f}%'
+    def _metrics_string(self, prefix, metrics, eval=False):
+
+        if eval:
+            num_batches = len(self.eval_dl)
+            epoch_step  = self.eval_epoch_step
+        else:
+            num_batches = len(self.train_dl)
+            epoch_step  = self.epoch_step
+
+        epoch_progress = f'{(epoch_step*100/num_batches):6.2f}%'
         text = prefix + f" S: {self.step:4d} | Epoch: {self.epoch:2d} ({epoch_progress})" 
 
         skip_prefix = ['LR/ParamGroup', 'GradientNorm']
@@ -281,34 +391,32 @@ class TrainerBase:
         raise NotImplementedError('eval_step must be implemented')
     
     def post_eval_step(self, batch):
-        pass
+        pass  
     
     def _eval_loop(self, save_checkpoint=True):
         self.model.eval()
         self.eval_metrics.reset()
-        for batch in self.eval_dl:
+        self.eval_epoch_step = 0
+        for epoch_step, batch in enumerate(self.eval_dl):
+            self.eval_epoch_step = epoch_step
             self.pre_eval_step(batch)
             batch = map_to_tensors(batch, lambda x: x.to(self.device) if x.device.type != self.device.type else x)
             with torch.no_grad():
                 with torch.autocast(device_type= 'cpu' if self.device.type == 'mps' else self.device.type, dtype=torch.bfloat16):
                     self.eval_step(batch)
-                    
+            
             self.post_eval_step(batch)
-
             step_metrics = self.eval_metrics.last_metrics()
-            if len(step_metrics) > 0:
-                self.info(self._metrics_string(" (EVAL-STEP) ", step_metrics))
+            self.info(self._metrics_string(" (EVAL-STEP) ", step_metrics, eval=True))
 
         epoch_metrics = self.eval_metrics.mean_metrics()
-        self.info(self._metrics_string(" (EVAL-EPOCH)", epoch_metrics))
+        self.info(self._metrics_string("(EVAL-EPOCH) ", epoch_metrics, eval=True))
         self._log_metrics(suffix='epoch_eval', metrics=epoch_metrics)
         self._log_hparams(metrics=epoch_metrics)
         self.model.train()
         if save_checkpoint:
             self._save_checkpoint()
 
-    def pre_checkpoint_save(self, state_dict):
-        self.debug('pre_checkpoint_save method not implemented, using default state_dict')
 
     def state_dict(self):
         return {
@@ -317,7 +425,7 @@ class TrainerBase:
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
-            'hparams': self.hparams
+            'hparams': self.hparams.as_dict()
         }
 
     def _save_checkpoint(self):
@@ -325,17 +433,13 @@ class TrainerBase:
             return
         checkpoint_path = self.checkpoint_dir / f'checkpoint_{self.step:06d}.pth'
         state_dict = self.state_dict()
-        # self.pre_checkpoint_save(state_dict)
         torch.save(state_dict, checkpoint_path)
 
-    def multiplicative_lr_factor_schedule(self, step):
-        if step == 1:
-            self.warning('multiplicative_lr_factor_schedule method not implemented. Using a constant factor 1')
-        return 1.0
 
     def _at_training_end(self):
-        self.writer.flush()
-        self.writer.close()
+        if self.writer is not None:
+            self.writer.flush()
+            self.writer.close()
 
     def find_lr(self, only_param_group: Optional[int] = None):
         assert isinstance(only_param_group, int) or only_param_group is None, 'only_param_group must be an integer or None'
@@ -425,44 +529,37 @@ class TrainerBase:
 
 
 
-    def train(self, max_steps=None):
-        if max_steps is None:
-            max_steps = len(self.train_dl) * self.num_epochs
+    def train(self):
         try:
             self._at_training_start()
 
+            max_steps = len(self.train_dl) * self.num_epochs if self.num_epochs is not None else float('inf')
+            eval_interval = self.eval_interval if self.eval_interval is not None else len(self.train_dl)
             self.info(f'Total training steps: {max_steps}')
-            # Run Evaluation before training starts
-            if self.step > 0:
-                # Only run evaluation if we are resuming from a checkpoint
-                self._eval_loop(save_checkpoint=False)
+                
+            # Run Evaluation before training starts if step > 0 (probably due to resuming from checkpoint)
+            run_eval_at_start = True if self.step > 0 else False 
 
-            for epoch in range(self.num_epochs):
-                if epoch < self.epoch:
-                    self.debug(f'Skipping epoch {epoch}')
-                    continue
-                self.epoch = epoch
-
+            while self.step <= max_steps:
                 self.epoch_step = 0
                 self._at_epoch_start()
                 for epoch_step, batch in enumerate(self.train_dl):
                     step = epoch_step + len(self.train_dl) * self.epoch
                     if step <= self.step:
                         continue
-                    
-                    self._train_step(batch)
-                    self.step += 1
+
+                    if (self.step > 0 or run_eval_at_start) and self.step % eval_interval == 0:
+                        self._eval_loop(save_checkpoint=False if run_eval_at_start else True)
+
+                    self._train_step(batch)                    
                     self.epoch_step = epoch_step
 
-                    if self.step % self.eval_interval == 0:
-                        self._eval_loop(save_checkpoint=True)
-
+                    self.step += 1
                     if self.step >= max_steps:
                         break
                     
                 self._at_epoch_end()
-                if self.step >= max_steps:
-                    break
+                self.epoch += 1
 
             self._eval_loop(save_checkpoint=True)
         except KeyboardInterrupt:
