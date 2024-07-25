@@ -198,11 +198,14 @@ class ArcExamplesDataset(Dataset):
     def __getitem__(self, idx):
         return self.examples[idx]
     
-    def subset(self, *range_args):
+    def subset(self, num_examples: int):
         """
         Returns a subset of the dataset
         """
-        indices = list(range(*range_args))
+        if num_examples <= 0:
+            return self
+        
+        indices = list(range(num_examples))
         return ArcExamplesDataset([self.examples[i] for i in indices], pad_idx=self.pad_idx)
     
     @property

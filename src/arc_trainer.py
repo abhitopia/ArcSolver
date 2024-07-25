@@ -4,6 +4,7 @@ import torch
 from .dataset import GridTokenizer, ProgramTokenizer
 from .interpreter import Interpreter, InterpreterConfig
 from .trainer import TrainerBase
+# from .trainer_copy import TrainerBase
 
 class ArcTrainer(TrainerBase):
 
@@ -13,14 +14,12 @@ class ArcTrainer(TrainerBase):
         correct_token_predictions = (predicted_tokens == y)
         total_correct_tokens = correct_token_predictions.sum()
         total_tokens = y.numel()
-        # token_accuracy = total_correct_tokens / total_tokens
 
         # Sample-level accuracy
         # Check if all tokens in a sequence are correct for each sample
         correct_samples = correct_token_predictions.all(dim=1)
         total_correct_samples = correct_samples.sum()
         total_samples = y.shape[0]
-        # sample_accuracy = total_correct_samples / total_samples
 
         return {
             'total_correct_tokens': total_correct_tokens.item(),
@@ -29,7 +28,7 @@ class ArcTrainer(TrainerBase):
             'total_samples': total_samples
         }
     
-    def add_step_metrics(self, metrics_obj, loss, logits, y):
+    def _add_step_metrics(self, metrics_obj, loss, logits, y):
         batch_metrics = self._output_target_metrics(logits, y)
         metrics_obj.add_metric('Loss', loss.item())
         metrics_obj.add_metric('TokenAcc(%)',
@@ -41,11 +40,6 @@ class ArcTrainer(TrainerBase):
                             batch_metrics['total_correct_samples']*100,
                             batch_metrics['total_samples'])
 
-    def add_post_step_metrics(self, metrics_obj, batch_time, num_tokens):
-        # Batch Metrics
-        metrics_obj.add_metric('#TokensPerSec', num_tokens, (batch_time / 1000))
-        metrics_obj.add_metric('ΔT(ms)', batch_time)
-
     def pre_train_step(self, batch):
         self.__train_batch_time_start = time.time()
 
@@ -56,21 +50,22 @@ class ArcTrainer(TrainerBase):
         (p, i), t = batch
         logits = self.model(p, i)
         loss = self.model.loss_fn(logits, t)
-        self.add_step_metrics(self.train_metrics, loss, logits, t)
+        self._add_step_metrics(self.train_metrics, loss, logits, t)
         return loss
     
     def eval_step(self, batch):
         (p, i), t = batch
         logits = self.model(p, i)
         loss = self.model.loss_fn(logits, t)    
-        self.add_step_metrics(self.eval_metrics, loss, logits, t)
+        self._add_step_metrics(self.eval_metrics, loss, logits, t)
         return loss
     
     def post_train_step(self, batch):
         (_, _), t = batch
         num_tokens = t.numel()
         train_batch_time = (time.time() - self.__train_batch_time_start)*1000
-        self.add_post_step_metrics(self.train_metrics, train_batch_time, num_tokens)
+        self.train_metrics.add_metric('ΔT(ms)', train_batch_time)
+        self.train_metrics.add_metric('#TokensPerSec', num_tokens, (train_batch_time / 1000))
 
         if torch.cuda.is_available():
             torch.cuda.synchronize() # wait for the GPU to finish work
@@ -82,7 +77,8 @@ class ArcTrainer(TrainerBase):
         (_, _), t = batch
         num_tokens = t.numel()
         eval_batch_time = (time.time() - self.__eval_batch_time_start)*1000
-        self.add_post_step_metrics(self.eval_metrics, eval_batch_time, num_tokens)
+        self.eval_metrics.add_metric('ΔT(ms)', eval_batch_time)
+        self.eval_metrics.add_metric('#TokensPerSec', num_tokens, (eval_batch_time / 1000))
 
     def state_dict(self):
         state_dict = super().state_dict()
@@ -103,26 +99,6 @@ class ArcTrainer(TrainerBase):
         assert grid_tokenizer == self.model.grid_tokenizer, "Cannot resume, Grid Tokenizers do not match!"
         return super().load_state_dict(state_dict)
        
-
-    def multiplicative_lr_factor_schedule(self, step):
-        max_lr = 1.0
-        min_lr = max_lr * 0.05
-        num_step_in_epoch = len(self.train_dl)
-        warmup_steps = num_step_in_epoch * self.hparams['optimizer.lr_warmup_epochs']
-        max_steps = num_step_in_epoch * self.hparams['optimizer.lr_decay_epochs']
-
-        # 1) linear warmup for warmup_iters steps
-        if step < warmup_steps:
-            return max_lr * (step + 1) / warmup_steps
-        # 2) if it > lr_decay_iters, return min learning rate
-        if step > max_steps:
-            return min_lr
-        # 3) in between, use cosine decay down to min learning rate
-        decay_ratio = (step - warmup_steps) / (max_steps - warmup_steps)
-        assert 0 <= decay_ratio <= 1
-        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
-        return min_lr + coeff * (max_lr - min_lr)
-        
 
     @staticmethod
     def load_model_from_checkpoint(checkpoint_path, device='cpu'):
