@@ -38,12 +38,12 @@ class ArcHparams(Hparams):
         eval_ds = training_data.eval_ds.subset(config.max_examples)
         
         train_dl = train_ds.get_dataloader(batch_size=config.batch_size,
-                                           seq_len=self.state['grid_vocab_size'],
+                                           seq_len=1024,
                                            batch_by_token_count=True,
                                            pin_memory=True)
 
         eval_dl = eval_ds.get_dataloader(batch_size=config.batch_size,
-                                        seq_len=self.state['grid_vocab_size'],
+                                        seq_len=1024,
                                         batch_by_token_count=True,
                                         pin_memory=True)
         
