@@ -83,7 +83,7 @@ class ArcHparams(Hparams):
         config = self.optim
         def multiplicative_schedule(step):
             max_lr = 1.0
-            min_lr = max_lr * 0.05
+            min_lr = max_lr * 0.1
             num_step_in_epoch = self.state['num_train_batches']
             warmup_steps = num_step_in_epoch * config.lr_warmup_epochs
             max_steps = num_step_in_epoch * config.lr_decay_epochs
