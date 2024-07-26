@@ -162,4 +162,5 @@ cython_debug/
 #.idea/
 
 # Place where tensorboard logs and checkpoints are saved
-runs
+runs/**
+lightning_runs/**
