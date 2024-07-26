@@ -594,6 +594,7 @@ class TrainerBase:
         checkpoint_path = Path(checkpoint_path)
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
         state_dict = torch.load(checkpoint_path, map_location='cpu')
+        self.info(f"Initialising model from checkpoint: {checkpoint_path}")
         self.load_state_dict(state_dict, resume=False) # Prevent loading optimizer and scheduler state
 
 

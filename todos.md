@@ -13,7 +13,7 @@
 - [x] Figure out how to copy the checkpoint from remote to local
 - [x] Test training on the GPU
 - [x] Make evaluation run right before training starts (always?)
-- [ ] Print checkpoint path when loading model from a checkpoint
+- [x] Print checkpoint path when loading model from a checkpoint
 - [ ] Create simplied experiment running with automatic run name
 - [ ] Allow for easy lr_finding (without needed to delete the run)
 - [ ] Allow for easy compute bump
