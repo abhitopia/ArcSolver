@@ -189,6 +189,7 @@ class TrainerBase:
         self.eval_metrics = MetricLogger()
 
         self.hparams.init_dataloaders()
+        self._eval_at_start = False
 
 
     @property
@@ -271,7 +272,7 @@ class TrainerBase:
 
     def load_state_dict(self, state_dict, resume=True):
         self.model.load_state_dict(state_dict['model_state_dict'], map_location='cpu')
-
+        self._eval_at_start = True
         current_commit_hash = get_git_commit_hash()
         saved_commit_hash = state_dict.get('git_commit_hash', None)
         if saved_commit_hash is not None and saved_commit_hash != current_commit_hash:
@@ -559,7 +560,7 @@ class TrainerBase:
             self.info(f'Total training steps: {max_steps}')
                 
             # Run Evaluation before training starts if step > 0 (probably due to resuming from checkpoint)
-            run_eval_at_start = True if self.step > 0 else False 
+            run_eval_at_start = True if self.step > 0 or self._eval_at_start else False 
 
             while self.step <= max_steps:
                 self.epoch_step = 0
@@ -571,6 +572,7 @@ class TrainerBase:
 
                     if (self.step > 0 or run_eval_at_start) and self.step % eval_interval == 0:
                         self._eval_loop(save_checkpoint=False if run_eval_at_start else True)
+                        run_eval_at_start = False
 
                     self._train_step(batch)                    
                     self.epoch_step = epoch_step

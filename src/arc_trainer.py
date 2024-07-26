@@ -210,6 +210,8 @@ class ArcTrainer(TrainerBase):
             if prog_tokenizer != self.model.prog_tokenizer or grid_tokenizer != self.model.grid_tokenizer:
                 self.warning("Loaded model has different tokenizers than the current model. Loading anyway as the models are compatible.")
                 self.warning("If this is not intened, stop and re-evaluate the situation.")
+
+            self._eval_at_start = True
        
     
     @classmethod
