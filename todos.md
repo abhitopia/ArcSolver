@@ -17,7 +17,17 @@
 
 
 # Experimentation Strategy
-- Load the model from the previous checkpoint everytime
+- Find_LR
+- After training stagnates
+    - Find a new LR on the loaded model
+    - Increase n_mixers (until the loss stops getting better)
+    - Increase n_layers (until the loss stops getting better)
+    
+## Start with dim 64, heads 8, layers 3, mixers 3, blocks 3
+
+
+## Move to dim 128, heads 16, layers 3, mixers 3, blocks 3
+- Load the model from the previous checkpoint everytime (FirstExperiment in lightning_runs)
 - Start with dim 128, heads 16, layers 3, mixers 3, blocks 3
 - Find_LR
 - After training stagnates
