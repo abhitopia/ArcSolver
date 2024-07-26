@@ -270,7 +270,7 @@ class TrainerBase:
             torch.mps.manual_seed(seed)
 
     def load_state_dict(self, state_dict, resume=True):
-        self.model.load_state_dict(state_dict['model_state_dict'])
+        self.model.load_state_dict(state_dict['model_state_dict'], map_location='cpu')
 
         current_commit_hash = get_git_commit_hash()
         saved_commit_hash = state_dict.get('git_commit_hash', None)

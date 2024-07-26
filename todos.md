@@ -10,9 +10,20 @@
 - [x] Add --checkpint option to train new
 - [x] Add gitcommmit to hparams for the purposes of reproduction
 - [x] Add script to sync runs from remote to local
+- [x] Figure out how to copy the checkpoint from remote to local
+- [ ] Migrate lightning checkpoint
 - [ ] Test training on the GPU
-- [ ] Figure out how to copy the checkpoint from remote to local
 - [ ] Run Cuda Empty Cache After each train and eval epoch
+
+
+# Experimentation Strategy
+- Load the model from the previous checkpoint everytime
+- Start with dim 128, heads 16, layers 3, mixers 3, blocks 3
+- Find_LR
+- After training stagnates
+    - Find a new LR on the loaded model
+    - Increase n_mixers (until the loss stops getting better)
+    - Increase n_layers (until the loss stops getting better)
 
 
 # GPU Stats
