@@ -9,6 +9,9 @@
 - [x] If resume, do extra checks and use special copy!
 - [x] Add --checkpint option to train new
 - [x] Add gitcommmit to hparams for the purposes of reproduction
+- [x] Add script to sync runs from remote to local
+- [ ] Test training on the GPU
+- [ ] Figure out how to copy the checkpoint from remote to local
 - [ ] Run Cuda Empty Cache After each train and eval epoch
 
 
