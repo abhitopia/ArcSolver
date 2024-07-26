@@ -11,8 +11,14 @@
 - [x] Add gitcommmit to hparams for the purposes of reproduction
 - [x] Add script to sync runs from remote to local
 - [x] Figure out how to copy the checkpoint from remote to local
-- [ ] Migrate lightning checkpoint
-- [ ] Test training on the GPU
+- [x] Test training on the GPU
+- [ ] Make evaluation run right before training starts (always?)
+- [ ] Create simplied experiment running with automatic run name
+- [ ] Allow for easy lr_finding (without needed to delete the run)
+- [ ] Allow for easy compute bump
+- [ ] Allow for easy test run (for GPU)
+- [ ] AvgSeqLen for the correct samples (to see whether that is changing even if the sample accuracy goes down) (May be this can be done as part of analysis as opposed to metric during training?)
+- [ ] Analyse trained model on the dataset
 - [ ] Run Cuda Empty Cache After each train and eval epoch
 
 
@@ -22,7 +28,7 @@
     - Find a new LR on the loaded model
     - Increase n_mixers (until the loss stops getting better)
     - Increase n_layers (until the loss stops getting better)
-    
+
 ## Start with dim 64, heads 8, layers 3, mixers 3, blocks 3
 
 
