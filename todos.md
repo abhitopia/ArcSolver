@@ -12,13 +12,15 @@
 - [x] Add script to sync runs from remote to local
 - [x] Figure out how to copy the checkpoint from remote to local
 - [x] Test training on the GPU
-- [ ] Make evaluation run right before training starts (always?)
+- [x] Make evaluation run right before training starts (always?)
+- [ ] Print checkpoint path when loading model from a checkpoint
 - [ ] Create simplied experiment running with automatic run name
 - [ ] Allow for easy lr_finding (without needed to delete the run)
 - [ ] Allow for easy compute bump
 - [ ] Allow for easy test run (for GPU)
 - [ ] AvgSeqLen for the correct samples (to see whether that is changing even if the sample accuracy goes down) (May be this can be done as part of analysis as opposed to metric during training?)
 - [ ] Analyse trained model on the dataset
+- [ ] Consider alternative learning rates per epoch? (Training mode)
 - [ ] Run Cuda Empty Cache After each train and eval epoch
 
 
