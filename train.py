@@ -1,264 +1,244 @@
+from copy import deepcopy
+from enum import Enum
+from pathlib import Path
+from typing import Optional, Tuple
 
-#%%
-import time
-import math
-import torch
-import logging
-from src.dataset import TrainingData, ProgramTokenizer, GridTokenizer
-from src.interpreter import Interpreter, InterpreterConfig
-from src.utils import nearest_greater_power_of_2
-#%%
-
-# Training Data Configuration
-BS = 128
-SEQ_LEN = 1024
-DYNAMMIC_BATCHING = True
-AUGMENTATION_FACTOR = 2
-JOIN_VERSION = False
-DATA_DEVICE = 'cpu'
-PIN_MEMORY = True
-
-# Global Configuration
-SEED = 42
+import typer
 
 
-training_data = TrainingData(augmentation_factor=AUGMENTATION_FACTOR,
-                            join_version=JOIN_VERSION, 
-                            seed=SEED).load()
+from src.arc_trainer import ArcTrainer, ArcHparams
+from rich import print
 
-trains_ds = training_data.train_ds.subset(0, 2000)
-eval_ds = training_data.eval_ds.subset(0, 2000)
+from src.utils import get_diff_dict, get_logger
 
-# trains_ds = training_data.train_ds
-# eval_ds = training_data.eval_ds
+app = typer.Typer(pretty_exceptions_show_locals=False)
+train_app = typer.Typer()
+change_app = typer.Typer()
+lr_app = typer.Typer()
+app.add_typer(train_app, name="train")
+train_app.add_typer(change_app, name="change")
 
-train_dl = trains_ds.get_dataloader(batch_size=BS,
-                                    seq_len=SEQ_LEN,
-                                    batch_by_token_count=DYNAMMIC_BATCHING,
-                                    device=torch.device(DATA_DEVICE),
-                                    pin_memory=PIN_MEMORY)
-eval_dl = eval_ds.get_dataloader(batch_size=BS,
-                                seq_len=SEQ_LEN,
-                                batch_by_token_count=DYNAMMIC_BATCHING,
-                                device=torch.device(DATA_DEVICE),
-                                pin_memory=PIN_MEMORY)
+logger = get_logger()
+
+_DEV_MODE = True
+_BASE_DIR = "./runs"
 
 
-program_tokenizer = training_data.program_tokenizer
-grid_tokenizer = training_data.grid_tokenizer
+def train_from_hparams(hparams, checkpoint, lr_find, debug=False, parent_dir=_BASE_DIR):
+    if lr_find or debug:
+        hparams.run = f"{hparams.run}/debug"
 
-PROGRAM_VOCAB_SIZE = nearest_greater_power_of_2(len(program_tokenizer))
-GRID_VOCAB_SIZE = nearest_greater_power_of_2(len(grid_tokenizer))
+    trainer = ArcTrainer(hparams=hparams,
+                        parent_dir=parent_dir,
+                        prevent_overwrite=True,
+                        disable_checkpointing_and_logging=True if (lr_find or debug) else False)
+    if checkpoint is not None:
+        existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
+        assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
+        trainer.initialise_from_checkpoint(checkpoint)    # NO RESUME, start from the beginning 
 
-print(f"Program Vocab Size: {PROGRAM_VOCAB_SIZE}")
-print(f"Grid Vocab Size: {GRID_VOCAB_SIZE}")
-#%%
+    if lr_find:
+        trainer.find_lr()
+    else:
+        trainer.train()
 
-## Model Set up
+def get_checkpoint(name, run, checkpoint, parent_dir=_BASE_DIR):
+    checkpoint_dir = ArcTrainer.get_checkpoint_dir(name, run, parent_dir=parent_dir)
+    assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
 
-N_LAYERS = 1
-N_MIXERS = 1
-N_BLOCKS = 1
-N_HEADS = 1
-N_DIM = 8
+    if checkpoint is None:
+        checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)
+        assert checkpoint is not None, f"No checkpoint found in {checkpoint_dir}"
 
-model_config = InterpreterConfig(
-    prog_vocab_size = PROGRAM_VOCAB_SIZE,
-    grid_vocab_size = GRID_VOCAB_SIZE,
-    n_dim = N_DIM, # dimension of the model
-    n_head = N_HEADS, # number of heads within each self-attention block
-    n_mixers = N_MIXERS, # number of self-attention layers within each transformer block
-    n_blocks = N_BLOCKS, # number of transformer blocks within each recurrence block
-    n_rec_layers = N_LAYERS # number of recurrences
-)
+    checkpoint = Path(checkpoint)
+    assert checkpoint.parent == checkpoint_dir, f"Checkpoint {checkpoint} is not in the checkpoint directory {checkpoint_dir}"
+    return checkpoint
 
-model = Interpreter(model_config,
-                    prog_tokenizer=program_tokenizer,
-                    grid_tokenizer=grid_tokenizer)
+def split_run_path(run_path: str) -> Tuple[str, str]:
+    run_path = Path(run_path)
+    assert run_path.exists(), f"Path {run_path} does not exist"
+    assert run_path.is_dir(), f"Path {run_path} is not a directory"
+    run = run_path.name
+    experiment = run_path.parent.name
+    parent_dir = run_path.parent.parent
+    return experiment, run, parent_dir
 
-# model.to(torch.device('cuda'))
-# Training Set up
+class LRSchedule(str, Enum):
+    noam = "noam"
+    alt = "alt"
+    const = "const"
 
-MODEL_WD = 0.01
-MODEL_LR = 0.001            # Get's trained in all batches
-PROG_LR_SCALE = 10      # Get's trained only a few times per epoch
-PROG_WD_SCALE = 0.0
-TRAIN_DEVICE = 'cpu'
+@train_app.command("new")
+def train(
+        experiment: str = typer.Argument(..., help="Name of the experiment saved at `./runs/{name}`"),
+        run: str = typer.Argument(..., help="Name of the run within the experiment saved at `./runs/{name}/{run}`"),
+        bs: int = typer.Option(32, min=1, help="Batch Size"),
+        dim: int = typer.Option(128, min=8, max=512, help="Dimension of the model"),
+        heads: int = typer.Option(16, min=1, max=64, help="Number of heads within each self-attention block"),
+        blocks: int = typer.Option(3, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
+        mixers: int = typer.Option(3, min=1, max=10, help="Number of mixers within each mixing block"),
+        layers: int = typer.Option(3, min=1, max=10, help="Number of recurrent layers"),
+        mlr: float = typer.Option(0.001, min=-1.0, help="Learning Rate"),
+        plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is automatically determined based on the schedule and data augmentation"),
+        lr_warmup: int = typer.Option(2, min=0, help="Number of epochs for learning rate warmup. Only used for noam scheduler"),
+        lr_decay: int = typer.Option(8, min=0, help="Number of epochs for learning rate decay. Only used for noam scheduler"),
+        lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
+        mwd: float = typer.Option(0.01, min=0.0, help="Weight Decay"),
+        pwd: float = typer.Option(0.0, min=0.0, help="Program Weight Decay"),
+        data_aug: int = typer.Option(3, min=0, help="Data Augmentation Level. 0 means no augmentation"),
+        seed: int = typer.Option(42, min=0, help="Random seed for the data and experiment"),
+        sep_task_version: bool = typer.Option(True, help="If set, task ID and task version are given separate embeddings"),
+        share_mixer: bool = typer.Option(True, help="Share mixer within each mixing block"),
+        lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
+        device: Optional[str] = typer.Option(None, help="Device to run the training on. If None, then it is automatically selected"),
+        eval_int: Optional[int] = typer.Option(None, help="Number of steps between evaluations. None means evaluation at the end of each epoch"),
+        debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved"),
+        checkpoint: Optional[str] = typer.Option(None, help="Initialize the model from the given checkpoint. Training will start from the beginning")
+    ):
 
-optimizer = model.get_optimizer(model_wd=MODEL_WD,
-                                model_lr=MODEL_LR,
-                                prog_lr=PROG_LR_SCALE,
-                                prog_wd=PROG_WD_SCALE,
-                                device_type=TRAIN_DEVICE)
-#%%
+    hparams = ArcHparams(experiment=experiment, run=run, seed=seed, device=device, eval_interval=eval_int)
+    data_config = {
+        "data_aug": data_aug,
+        "sep_task_version": sep_task_version,
+    }
 
-from src.trainer import TrainerBase
+    model_config = {
+        "n_dim": dim,
+        "n_heads": heads,
+        "n_blocks": blocks,
+        "n_mixers": mixers,
+        "n_layers": layers,
+        "share_mixer": share_mixer
+    }
 
-class ArcTrainer(TrainerBase):
+    optimizer_config = {
+        "batch_size": bs,  # Yes, this is optimizer config
+        "model_lr": mlr if not lr_find else 1,
+        "model_wd": mwd,
+        "prog_lr": plr if not lr_find else 1,
+        "prog_wd": pwd,
+        "lr_schedule": lr_schedule.value,
+        "lr_warmup_epochs": lr_warmup,
+        "lr_decay_epochs": lr_decay,
+        "max_examples": 1000 if _DEV_MODE else None # Yes, this is optimizer config
+    }
 
-    @staticmethod
-    def _output_target_metrics(logits: torch.Tensor, y: torch.Tensor):
-        _, predicted_tokens = torch.max(logits, dim=2)
-        correct_token_predictions = (predicted_tokens == y)
-        total_correct_tokens = correct_token_predictions.sum()
-        total_tokens = y.numel()
-        # token_accuracy = total_correct_tokens / total_tokens
+    hparams.add_params(prefix="data", **data_config)
+    hparams.add_params(prefix="model", **model_config)
+    hparams.add_params(prefix="optim", **optimizer_config)
+    train_from_hparams(hparams, checkpoint, lr_find, debug)
 
-        # Sample-level accuracy
-        # Check if all tokens in a sequence are correct for each sample
-        correct_samples = correct_token_predictions.all(dim=1)
-        total_correct_samples = correct_samples.sum()
-        total_samples = y.shape[0]
-        # sample_accuracy = total_correct_samples / total_samples
 
+@train_app.command("resume")
+def resume(
+       run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
+    ):
+
+    experiment, run, parent_dir = split_run_path(run_path)
+    checkpoint_dir = ArcTrainer.get_checkpoint_dir(experiment, run, parent_dir=parent_dir)
+    assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
+    checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)       
+    trainer = ArcTrainer.from_checkpoint(checkpoint, resume=True)
+    trainer.train()
+
+
+@train_app.command("info")
+def info(
+       run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
+    ):
+    experiment, run, parent_dir = split_run_path(run_path)
+    checkpoint_dir = ArcTrainer.get_checkpoint_dir(experiment, run, parent_dir=parent_dir)
+    assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
+    checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)       
+    hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
+    print(hparams_dict)
+
+
+@change_app.command("lr")
+def lr_change(
+        run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
+        mlr: float = typer.Argument(..., min=-1.0, help="Model Learning Rate"),
+        plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is scaled according to data augmentation level"),
+        lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
+        lr_warmup: int = typer.Option(2, min=0, help="Number of epochs for learning rate warmup. Only used for noam scheduler"),
+        lr_decay: int = typer.Option(8, min=0, help="Number of epochs for learning rate decay. Only used for noam scheduler"),
+        lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
+        debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved")
+    ):
+    experiment, run, parent_dir = split_run_path(run_path)
+    checkpoint = get_checkpoint(experiment, run, checkpoint, parent_dir=parent_dir)
+    logger.info(f"Base Checkpoint: {checkpoint}")
+
+    hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
+    logger.info(f"Base Hparams: {hparams_dict}")
+
+    update_dict =  {
+        "lr_model": mlr if not lr_find else 1,
+        "lr_prog": plr if not lr_find else 1,
+        "lr_schedule": lr_schedule.value,
+        "lr_warmup_epochs": lr_warmup,
+        "lr_decay_epochs": lr_decay,
+    }
+
+    new_hparams_dict = deepcopy(hparams_dict)
+    new_hparams_dict.update(update_dict)
+    diff_dict = get_diff_dict(hparams_dict, new_hparams_dict)
+    new_run = hparams_dict['run'] 
+    for key, value in diff_dict.items():
+        char = key.split("_")[1][0]
+        new_run += f"_lr{char}{value}"
+
+    new_hparams_dict['run'] = new_run
+    diff_dict['run'] = f"{hparams_dict['run']} -> {new_hparams_dict['run']}"
+
+    logger.info(f"Changed Hparams: {get_diff_dict(hparams_dict, new_hparams_dict)}")
+    new_params = ArcHparams.from_dict(new_hparams_dict)
+    train_from_hparams(new_params, checkpoint, lr_find, debug, parent_dir=parent_dir)
+
+
+class ModelSize(str, Enum):
+    mixers = "mixers"
+    blocks = "blocks"
+    layers = "layers"
+
+    @property
+    def param(self):
         return {
-            'total_correct_tokens': total_correct_tokens.item(),
-            'total_tokens': total_tokens,
-            'total_correct_samples': total_correct_samples.item(),
-            'total_samples': total_samples
-        }
+            ModelSize.mixers.value: "model.n_mixers",
+            ModelSize.blocks.value: "model.n_blocks",
+            ModelSize.layers.value: "model.n_layers"
+        }[self.value]
+
+
+@change_app.command("model")
+def change_model_size(
+        run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
+        key: ModelSize = typer.Argument(ModelSize.mixers, help="Key to change"),
+        value: int = typer.Argument(..., help="Number of mixers within each mixing block"),
+        checkpoint: Optional[str] = typer.Option(None, help="Use this specific checkpoint"),
+        lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
+        debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved")
+    ):
+
+    experiment, run, parent_dir = split_run_path(run_path)
+    checkpoint = get_checkpoint(experiment, run, checkpoint, parent_dir=parent_dir)
+    logger.info(f"Base Checkpoint: {checkpoint}")
+
+    hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
+    logger.info(f"Base Hparams: {hparams_dict}")
+
+    update_dict = {
+                key.param: value,
+                'run': hparams_dict['run'] + f"_{key.name[0]}{value}"
+                }
     
-    def add_step_metrics(self, metrics_obj, loss, logits, y):
-        batch_metrics = self._output_target_metrics(logits, y)
-        metrics_obj.add_metric('Loss', loss.item())
-        metrics_obj.add_metric('TokenAcc(%)',
-                            batch_metrics['total_correct_tokens']*100, 
-                            batch_metrics['total_tokens'])
-        
-        metrics_obj.add_metric('BatchSize(#Tokens)', batch_metrics['total_tokens'])
-        metrics_obj.add_metric('SampleAcc(%)',
-                            batch_metrics['total_correct_samples']*100,
-                            batch_metrics['total_samples'])
+    new_hparams_dict = deepcopy(hparams_dict)
+    new_hparams_dict.update(update_dict)
+    logger.info(f"Changed Hparams: {get_diff_dict(hparams_dict, new_hparams_dict)}")
+    new_params = ArcHparams.from_dict(new_hparams_dict)
+    train_from_hparams(new_params, checkpoint, lr_find, debug, parent_dir=parent_dir)
 
-    def add_post_step_metrics(self, metrics_obj, batch_time, num_tokens):
-        # Batch Metrics
-        metrics_obj.add_metric('#TokensPerSec', num_tokens, (batch_time / 1000))
-        metrics_obj.add_metric('ΔT(ms)', batch_time)
 
-    def pre_train_step(self, batch):
-        self.__train_batch_time_start = time.time()
 
-    def pre_eval_step(self, batch):
-        self.__eval_batch_time_start = time.time()
-    
-    def train_step(self, batch):
-        (p, i), t = batch
-        logits = self.model(p, i)
-        loss = self.model.loss_fn(logits, t)
-        self.add_step_metrics(self.train_metrics, loss, logits, t)
-        return loss
-    
-    def eval_step(self, batch):
-        (p, i), t = batch
-        logits = self.model(p, i)
-        loss = self.model.loss_fn(logits, t)    
-        self.add_step_metrics(self.eval_metrics, loss, logits, t)
-        return loss
-    
-    def post_train_step(self, batch):
-        (_, _), t = batch
-        num_tokens = t.numel()
-        train_batch_time = (time.time() - self.__train_batch_time_start)*1000
-        self.add_post_step_metrics(self.train_metrics, train_batch_time, num_tokens)
-
-        if torch.cuda.is_available():
-            torch.cuda.synchronize() # wait for the GPU to finish work
-        elif self.device.type == 'mps':
-            torch.mps.synchronize() # wait for the MPS to finish work
-            torch.mps.empty_cache() # clear the MPS cache
-
-    def post_eval_step(self, batch):
-        (_, _), t = batch
-        num_tokens = t.numel()
-        eval_batch_time = (time.time() - self.__eval_batch_time_start)*1000
-        self.add_post_step_metrics(self.eval_metrics, eval_batch_time, num_tokens)
-
-    def pre_checkpoint_save(self, state_dict):
-        tokenizers = {
-            'program_tokenizer': self.model.prog_tokenizer.to_dict(),
-            'grid_tokenizer': self.model.grid_tokenizer.to_dict()
-        }
-        state_dict['tokenizers'] = tokenizers
-        state_dict['model_config'] = self.model.config.to_dict()
-
-    def post_load_checkpoint(self, state_dict):
-        prog_tokenizer = ProgramTokenizer.from_dict(state_dict['tokenizers']['program_tokenizer'])
-        grid_tokenizer = GridTokenizer.from_dict(state_dict['tokenizers']['grid_tokenizer'])
-        model_config = InterpreterConfig.from_dict(state_dict['model_config'])
-        assert model_config == self.model.config, "Cannot resume, Model Configs do not match!"
-        assert prog_tokenizer == self.model.prog_tokenizer, "Cannot resume, Program Tokenizers do not match!"
-        assert grid_tokenizer == self.model.grid_tokenizer, "Cannot resume, Grid Tokenizers do not match!"
-
-    def multiplicative_lr_factor_schedule(self, step):
-        max_lr = 1.0
-        min_lr = max_lr * 0.05
-        num_step_in_epoch = len(self.train_dl)
-        warmup_steps = num_step_in_epoch * self.hparams['lr_warmup_epochs']
-        max_steps = num_step_in_epoch * self.hparams['lr_decay_epochs']
-
-        # 1) linear warmup for warmup_iters steps
-        if step < warmup_steps:
-            return max_lr * (step + 1) / warmup_steps
-        # 2) if it > lr_decay_iters, return min learning rate
-        if step > max_steps:
-            return min_lr
-        # 3) in between, use cosine decay down to min learning rate
-        decay_ratio = (step - warmup_steps) / (max_steps - warmup_steps)
-        assert 0 <= decay_ratio <= 1
-        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
-        return min_lr + coeff * (max_lr - min_lr)
-        
-
-    @staticmethod
-    def load_model_from_checkpoint(checkpoint_path, device='cpu'):
-        state_dict = torch.load(checkpoint_path, map_location='cpu')
-        model_config = InterpreterConfig.from_dict(state_dict['model_config'])
-        prog_tokenizer = ProgramTokenizer.from_dict(state_dict['tokenizers']['program_tokenizer'])
-        grid_tokenizer = GridTokenizer.from_dict(state_dict['tokenizers']['grid_tokenizer'])
-        model = Interpreter(model_config, prog_tokenizer, grid_tokenizer)
-        model.load_state_dict(state_dict['model_state_dict'])
-        return model.to(device)
-    
-config = {
-    'batch_size': BS,
-    'seq_len': SEQ_LEN,
-    'augmentation_factor': AUGMENTATION_FACTOR,
-    'join_version': JOIN_VERSION,
-    'seed': SEED,
-    'data_device': DATA_DEVICE,
-    'pin_memory': PIN_MEMORY,
-    'n_layers': N_LAYERS,
-    'n_mixers': N_MIXERS,
-    'n_blocks': N_BLOCKS,
-    'n_heads': N_HEADS,
-    'n_dim': N_DIM,
-    'program_vocab_size': PROGRAM_VOCAB_SIZE,
-    'grid_vocab_size': GRID_VOCAB_SIZE,
-    'weight_decay': MODEL_WD,
-    'learning_rate': MODEL_LR,
-    'prog_lr_scale': PROG_LR_SCALE,
-    'prog_wd_scale': PROG_WD_SCALE,
-    'train_device': TRAIN_DEVICE,
-    'lr_warmup_epochs': 1,
-    'lr_decay_epochs': 4,
-}
-
-    
-trainer = ArcTrainer(
-        experiment_name='FirstExperiment',
-        run_name='1',
-        eval_interval=10,
-        num_epochs=20,
-        model=model,
-        hparams=config,
-        optimizer=optimizer,
-        train_dl=train_dl,
-        eval_dl=eval_dl,
-        log_level=logging.INFO
-    )
-
-trainer.train()
-# trainer.find_lr()
-
-# %%
-
+if __name__ == "__main__":
+    app()
