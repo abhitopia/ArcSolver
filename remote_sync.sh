@@ -27,7 +27,12 @@ case "$1" in
     ;;
 esac
 
+# Trap Ctrl+C (SIGINT) to break the loop and exit
+trap "echo 'Sync interrupted. Exiting.'; exit" SIGINT
 
-
-# Perform the rsync operation
-rsync -auz --progress "${REMOTE_USER}@${REMOTE_HOST}:${SRC_PATH}" "${DEST_PATH}"
+# Perform the rsync operation in an infinite loop
+while true; do
+  rsync -auz --progress "${REMOTE_USER}@${REMOTE_HOST}:${SRC_PATH}" "${DEST_PATH}"
+  echo "Sync complete. Waiting for 30 seconds before the next sync..."
+  sleep 30
+done
