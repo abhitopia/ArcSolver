@@ -26,6 +26,11 @@ _DEV_MODE = True
 # _BASE_DIR = "./runs"
 _BASE_DIR = "./lightning_runs/runs"
 
+class LRSchedule(str, Enum):
+    noam = "noam"
+    alt = "alt"
+    const = "const"
+
 
 @train_app.command("new")
 def train(
@@ -37,10 +42,11 @@ def train(
         blocks: int = typer.Option(3, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
         mixers: int = typer.Option(3, min=1, max=10, help="Number of mixers within each mixing block"),
         layers: int = typer.Option(3, min=1, max=10, help="Number of recurrent layers"),
-        mlr: float = typer.Option(0.01, min=-1.0, help="Learning Rate. If -1, then learning rate finder is invoked in debug model."),
-        plr: Optional[float] = typer.Option(None, min=-1.0, help="Program Learning Rate. If None, then it is scaled according to data augmentation level"),
-        lr_warmup: int = typer.Option(2, min=0, help="Number of epochs for learning rate warmup"),
-        lr_decay: int = typer.Option(8, min=0, help="Number of epochs for learning rate decay"),
+        mlr: float = typer.Option(0.001, min=-1.0, help="Learning Rate"),
+        plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is automatically determined based on the schedule and data augmentation"),
+        lr_warmup: int = typer.Option(2, min=0, help="Number of epochs for learning rate warmup. Only used for noam scheduler"),
+        lr_decay: int = typer.Option(8, min=0, help="Number of epochs for learning rate decay. Only used for noam scheduler"),
+        lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
         mwd: float = typer.Option(0.01, min=0.0, help="Weight Decay"),
         pwd: float = typer.Option(0.0, min=0.0, help="Program Weight Decay"),
         data_aug: int = typer.Option(3, min=0, help="Data Augmentation Level. 0 means no augmentation"),
@@ -54,11 +60,6 @@ def train(
         checkpoint: Optional[str] = typer.Option(None, help="Initialize the model from the given checkpoint. Training will start from the beginning")
     ):
 
-
-    if plr is None:
-        # There is factor of 8 samples for every level of data augmentation
-        plr_scale = 1 if data_aug <= 0 else 8 * data_aug
-        plr = mlr * plr_scale
 
     if lr_find or debug:
         run = f"{run}/debug"
@@ -79,14 +80,15 @@ def train(
     }
 
     optimizer_config = {
-        "batch_size": bs,
+        "batch_size": bs,  # Yes, this is optimizer config
         "model_lr": mlr if not lr_find else 1,
         "model_wd": mwd,
-        "prog_lr": plr if not lr_find else plr_scale,
+        "prog_lr": plr if not lr_find else 1,
         "prog_wd": pwd,
+        "lr_schedule": lr_schedule.value,
         "lr_warmup_epochs": lr_warmup,
         "lr_decay_epochs": lr_decay,
-        "max_examples": 1000 if _DEV_MODE else None
+        "max_examples": 1000 if _DEV_MODE else None # Yes, this is optimizer config
     }
 
     
@@ -135,18 +137,6 @@ def info(
     print(hparams_dict)
 
 
-# @change_app.command("lr")
-# def lr_change(
-#         name: str = typer.Argument(..., help="Name of the experiment saved at `./runs/{name}`"),
-#         run: str = typer.Argument(..., help="Name of the run within the experiment saved at `./runs/{name}/{run}`"),
-#         scale: float = typer.Argument(None, help="Scale the learning rate by this factor"),
-#         mlr: float = typer.Argument(None, help="New Learning Rate"),
-#         plr: Optional[float] = typer.Argument(None, help="New Program Learning Rate"),
-#     ):
-#     ## Change the learning rate of the model and the program
-#     pass
-
-
 def get_checkpoint(name, run, checkpoint):
     checkpoint_dir = ArcTrainer.get_checkpoint_dir(name, run, parent_dir=_BASE_DIR)
     assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
@@ -158,6 +148,58 @@ def get_checkpoint(name, run, checkpoint):
     checkpoint = Path(checkpoint)
     assert checkpoint.parent == checkpoint_dir, f"Checkpoint {checkpoint} is not in the checkpoint directory {checkpoint_dir}"
     return checkpoint
+
+def change_hparams_and_train(checkpoint, hparams_dict, update_dict, lr_find):
+    new_hparams_dict = deepcopy(hparams_dict)
+    new_hparams_dict.update(update_dict)
+    logger.info(f"Changed Hparams: {get_diff_dict(hparams_dict, new_hparams_dict)}")
+    
+
+    new_params = ArcHparams.from_dict(new_hparams_dict)
+    if lr_find:
+        new_params.run = new_params.run + "/debug"
+
+    trainer = ArcTrainer(hparams=new_params,
+                        parent_dir=_BASE_DIR,
+                        disable_checkpointing_and_logging=True if lr_find else False)
+    
+    trainer.initialise_from_checkpoint(checkpoint, strict=False)    # NO RESUME, start from the beginning 
+    if lr_find:
+        trainer.find_lr()
+    else:
+        trainer.train()
+
+
+
+@change_app.command("lr")
+def lr_change(
+        name: str = typer.Argument(..., help="Name of the experiment saved at `./runs/{name}`"),
+        run: str = typer.Argument(..., help="Name of the run within the experiment saved at `./runs/{name}/{run}`"),
+        mlr: float = typer.Argument(..., min=-1.0, help="Model Learning Rate"),
+        plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is scaled according to data augmentation level"),
+        lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
+        lr_warmup: int = typer.Option(2, min=0, help="Number of epochs for learning rate warmup. Only used for noam scheduler"),
+        lr_decay: int = typer.Option(8, min=0, help="Number of epochs for learning rate decay. Only used for noam scheduler"),
+        lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode")
+    ):
+    ## Change the learning rate of the model and the program
+    
+    checkpoint = get_checkpoint(name, run, checkpoint)
+    logger.info(f"Base Checkpoint: {checkpoint}")
+
+    hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
+    logger.info(f"Base Hparams: {hparams_dict}")
+
+    update_dict =  {
+        "model_lr": mlr if not lr_find else 1,
+        "prog_lr": plr if not lr_find else 1,
+        "lr_schedule": lr_schedule.value,
+        "lr_warmup_epochs": lr_warmup,
+        "lr_decay_epochs": lr_decay,
+    }
+
+    change_hparams_and_train(checkpoint, hparams_dict, update_dict, lr_find)
+
 
 
 class ModelSize(str, Enum):
@@ -194,24 +236,7 @@ def change_model_size(
                 key.param: value,
                 'run': hparams_dict['run'] + f"_{key.name[0]}{value}"
                 }
-    new_hparams_dict = deepcopy(hparams_dict)
-    new_hparams_dict.update(update_dict)
-    logger.info(f"Changed Hparams: {get_diff_dict(hparams_dict, new_hparams_dict)}")
-    
-
-    new_params = ArcHparams.from_dict(new_hparams_dict)
-    if lr_find:
-        new_params.run = new_params.run + "/debug"
-
-    trainer = ArcTrainer(hparams=new_params,
-                        parent_dir=_BASE_DIR,
-                        disable_checkpointing_and_logging=True if lr_find else False)
-    
-    trainer.initialise_from_checkpoint(checkpoint, strict=False)    # NO RESUME, start from the beginning 
-    if lr_find:
-        trainer.find_lr()
-    else:
-        trainer.train()
+    change_hparams_and_train(checkpoint, hparams_dict, update_dict, lr_find)
 
 
 

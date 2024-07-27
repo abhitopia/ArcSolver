@@ -19,7 +19,9 @@
 - [x] Allow for easy test run (for GPU)
 - [x] Set up logger across the board
 - [x] Allow for easy compute bump
-- [ ] Allow easy lr change
+- [x] Allow easy lr change
+- [ ] Add BS size, and seq_len to the metrics
+- [ ] Make sync script to sync continuously
 - [ ] Consider alternative learning rates per epoch? (Training mode)
 - [ ] AvgSeqLen for the correct samples (to see whether that is changing even if the sample accuracy goes down) (May be this can be done as part of analysis as opposed to metric during training?)
 - [ ] Analyse trained model on the dataset
