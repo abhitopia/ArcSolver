@@ -20,9 +20,11 @@ train_app.add_typer(change_app, name="change")
 
 logger = get_logger()
 
-_DEV_MODE = True
+_DEV_MODE = "abhishekaggarwal" in str(Path(__file__).resolve())
 _BASE_DIR = "./runs"
 
+if _DEV_MODE:
+    logger.warning("WARNING: Running in DEV mode")
 
 def train_from_hparams(hparams, checkpoint, lr_find, debug=False, parent_dir=_BASE_DIR):
     if lr_find or debug:
