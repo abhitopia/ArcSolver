@@ -23,6 +23,8 @@
 - [x] Consider alternative learning rates per epoch? (Training mode)
 - [x] For follow ups, take run path instead to use autocomplete
 - [x] Add BS size, and seq_len to the metrics
+- [ ] Test out the changes on the Lightning GPU
+- [ ] Run 128 dim training on H100!!
 - [ ] Make sync script to sync continuously
 - [ ] Analyse trained model on the dataset
 - [ ] AvgSeqLen for the correct samples (to see whether that is changing even if the sample accuracy goes down) (May be this can be done as part of analysis as opposed to metric during training?)
