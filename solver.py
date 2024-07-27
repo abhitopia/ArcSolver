@@ -161,7 +161,10 @@ def get_run_name(hparams_dict, new_hparams_dict):
     new_run = hparams_dict['run'] 
     for key, value in diff_dict.items():
         name_key = key.split("_")[-1]
-        new_run += f"{name_key}_{value}"
+        print(name_key, key)
+        if key == "run":
+            continue
+        new_run += f"|{name_key}_{new_hparams_dict[key]}|"
     return new_run
 
 @change_app.command("optim")
