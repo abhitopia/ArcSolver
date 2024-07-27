@@ -14,9 +14,15 @@ case "$1" in
     SRC_PATH="/teamspace/studios/this_studio/ArcSolver/runs"
     DEST_PATH="/Users/abhishekaggarwal/synced_repos/ArcSolver/lightning_runs"
     ;;
-  "lambda")
+  "lambdaA100")
     REMOTE_USER="ubuntu"
     REMOTE_HOST="158.101.17.212"
+    SRC_PATH="/home/ubuntu/ArcSolver/runs"
+    DEST_PATH="/Users/abhishekaggarwal/synced_repos/ArcSolver"
+    ;;
+    "lambdaH100")
+    REMOTE_USER="ubuntu"
+    REMOTE_HOST="209.20.158.239"
     SRC_PATH="/home/ubuntu/ArcSolver/runs"
     DEST_PATH="/Users/abhishekaggarwal/synced_repos/ArcSolver"
     ;;
