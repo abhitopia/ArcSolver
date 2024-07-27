@@ -82,7 +82,7 @@ class Hparams:
                 setattr(self, prefix, Box())
 
         for k, v in kwargs.items():
-            assert isinstance(v, (int, float, str)), f'Value of {k} must be int, float or str'
+            assert v is None or isinstance(v, (int, float, str)), f'Value of {k} must be int, float or str'
             assert not k.startswith('_'), f'Parameter name cannot start with _'
             if len(prefix) == 0:
                 setattr(self, k, v)
