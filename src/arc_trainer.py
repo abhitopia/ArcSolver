@@ -17,6 +17,32 @@ from src.utils import nearest_greater_power_of_2
 import math
 
 
+
+def noam_schedule(step, warmup_steps, max_steps, min_lr_scale=0.1):
+    max_lr = 1.0
+    min_lr = max_lr * min_lr_scale
+    # num_step_in_epoch = self.state['num_train_batches']
+    # warmup_steps = num_step_in_epoch * config.lr_warmup_epochs
+    # max_steps = num_step_in_epoch * config.lr_decay_epochs
+
+    # 1) linear warmup for warmup_iters steps
+    if step < warmup_steps:
+        return max_lr * (step + 1) / warmup_steps
+    # 2) if it > lr_decay_iters, return min learning rate
+    if step > max_steps:
+        return min_lr
+    # 3) in between, use cosine decay down to min learning rate
+    decay_ratio = (step - warmup_steps) / (max_steps - warmup_steps)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
+    return min_lr + coeff * (max_lr - min_lr)
+
+def get_alt_schedulers(num_steps_in_epoch):
+    first_scheduler = lambda step: 1.0 if (step // num_steps_in_epoch) % 2 == 0 else 0.0
+    second_scheduler = lambda step: 0.0 if (step // num_steps_in_epoch) % 2 == 0 else 1.0
+    return first_scheduler, second_scheduler
+
+
 class ArcHparams(Hparams):
 
     def init_dataloaders(self)-> Tuple[DataLoader, DataLoader]:
@@ -70,6 +96,13 @@ class ArcHparams(Hparams):
     
     def init_optimizer(self, model)-> optim.Optimizer:
         config = self.optim
+
+        if config.prog_lr is None:
+            config.prog_lr = config.model_lr
+            if config.lr_schedule == 'noam':
+                plr_scale = 1 if self.data.data_aug <= 0 else 8 * self.data.data_aug
+                config.prog_lr = config.model_lr * plr_scale
+
         optimizer = model.get_optimizer(
                                     model_lr=config.model_lr,
                                     model_wd=config.model_wd,
@@ -81,26 +114,24 @@ class ArcHparams(Hparams):
     
     def init_scheduler(self, optimizer)-> optim.lr_scheduler.LambdaLR:
         config = self.optim
-        def multiplicative_schedule(step):
-            max_lr = 1.0
-            min_lr = max_lr * 0.1
-            num_step_in_epoch = self.state['num_train_batches']
-            warmup_steps = num_step_in_epoch * config.lr_warmup_epochs
-            max_steps = num_step_in_epoch * config.lr_decay_epochs
 
-            # 1) linear warmup for warmup_iters steps
-            if step < warmup_steps:
-                return max_lr * (step + 1) / warmup_steps
-            # 2) if it > lr_decay_iters, return min learning rate
-            if step > max_steps:
-                return min_lr
-            # 3) in between, use cosine decay down to min learning rate
-            decay_ratio = (step - warmup_steps) / (max_steps - warmup_steps)
-            assert 0 <= decay_ratio <= 1
-            coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
-            return min_lr + coeff * (max_lr - min_lr)
-        
-        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=multiplicative_schedule)
+        if config.lr_schedule == 'noam':
+            warmup_steps = self.state['num_train_batches'] * config.lr_warmup_epochs
+            max_steps = self.state['num_train_batches'] * config.lr_decay_epochs
+            schedule = lambda step: noam_schedule(step, warmup_steps, max_steps, config.lr_min_scale)
+        elif config.lr_schedule == 'const':
+            schedule = lambda step: 1.0
+        elif config.lr_schedule == 'alt':
+            assert len(optimizer.param_groups) == 3, "Invalid LR Schedule"
+            assert optimizer.param_groups[0]['lr'] == config.prog_lr, "Optimizer Program LR does not match the config"
+            assert optimizer.param_groups[1]['lr'] == config.model_lr, "Optimizer Model LR does not match the config"
+            assert optimizer.param_groups[2]['lr'] == config.model_lr, "Optimizer Model LR does not match the config"
+            high_low_schedule, low_high_schedule = get_alt_schedulers(self.state['num_train_batches'])
+            schedule = [high_low_schedule, low_high_schedule, low_high_schedule]
+        else:
+            raise ValueError(f"Invalid LR Schedule: {config.lr_schedule}. Options: noam, const, alt")
+
+        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=schedule)
         scheduler._step_count = -1 # To prevent warning because initialation makes a first call to step automatically
         return scheduler
 
