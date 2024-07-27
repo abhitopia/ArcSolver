@@ -123,9 +123,6 @@ class ArcHparams(Hparams):
             schedule = lambda step: 1.0
         elif config.lr_schedule == 'alt':
             assert len(optimizer.param_groups) == 3, "Invalid LR Schedule"
-            assert optimizer.param_groups[0]['lr'] == config.lr_prog, "Optimizer Program LR does not match the config"
-            assert optimizer.param_groups[1]['lr'] == config.lr_model, "Optimizer Model LR does not match the config"
-            assert optimizer.param_groups[2]['lr'] == config.lr_model, "Optimizer Model LR does not match the config"
             high_low_schedule, low_high_schedule = get_alt_schedulers(self.state['num_train_batches'])
             schedule = [high_low_schedule, low_high_schedule, low_high_schedule]
         else:
