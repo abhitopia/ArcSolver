@@ -26,11 +26,44 @@ _DEV_MODE = True
 # _BASE_DIR = "./runs"
 _BASE_DIR = "./lightning_runs/runs"
 
+
+
+
+def train_from_hparams(hparams, checkpoint, lr_find, debug=False):
+    if lr_find or debug:
+        hparams.run = f"{hparams.run}/debug"
+
+    trainer = ArcTrainer(hparams=hparams,
+                        parent_dir=_BASE_DIR,
+                        prevent_overwrite=True,
+                        disable_checkpointing_and_logging=True if (lr_find or debug) else False)
+    if checkpoint is not None:
+        existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
+        assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
+        trainer.initialise_from_checkpoint(checkpoint)    # NO RESUME, start from the beginning 
+
+    if lr_find:
+        trainer.find_lr()
+    else:
+        trainer.train()
+
+def get_checkpoint(name, run, checkpoint):
+    checkpoint_dir = ArcTrainer.get_checkpoint_dir(name, run, parent_dir=_BASE_DIR)
+    assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
+
+    if checkpoint is None:
+        checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)
+        assert checkpoint is not None, f"No checkpoint found in {checkpoint_dir}"
+
+    checkpoint = Path(checkpoint)
+    assert checkpoint.parent == checkpoint_dir, f"Checkpoint {checkpoint} is not in the checkpoint directory {checkpoint_dir}"
+    return checkpoint
+
+
 class LRSchedule(str, Enum):
     noam = "noam"
     alt = "alt"
     const = "const"
-
 
 @train_app.command("new")
 def train(
@@ -60,10 +93,6 @@ def train(
         checkpoint: Optional[str] = typer.Option(None, help="Initialize the model from the given checkpoint. Training will start from the beginning")
     ):
 
-
-    if lr_find or debug:
-        run = f"{run}/debug"
-
     hparams = ArcHparams(experiment=name, run=run, seed=seed, device=device, eval_interval=eval_int)
     data_config = {
         "data_aug": data_aug,
@@ -91,23 +120,10 @@ def train(
         "max_examples": 1000 if _DEV_MODE else None # Yes, this is optimizer config
     }
 
-    
     hparams.add_params(prefix="data", **data_config)
     hparams.add_params(prefix="model", **model_config)
     hparams.add_params(prefix="optim", **optimizer_config)
-
-    trainer = ArcTrainer(hparams=hparams,
-                        parent_dir=_BASE_DIR,
-                        disable_checkpointing_and_logging=True if (lr_find or debug) else False)
-    if checkpoint is not None:
-        existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
-        assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
-        trainer.initialise_from_checkpoint(checkpoint)    # NO RESUME, start from the beginning 
-
-    if lr_find:
-        trainer.find_lr()
-    else:
-        trainer.train()
+    train_from_hparams(hparams, checkpoint, lr_find, debug)
 
 
 @train_app.command("resume")
@@ -137,40 +153,6 @@ def info(
     print(hparams_dict)
 
 
-def get_checkpoint(name, run, checkpoint):
-    checkpoint_dir = ArcTrainer.get_checkpoint_dir(name, run, parent_dir=_BASE_DIR)
-    assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
-
-    if checkpoint is None:
-        checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)
-        assert checkpoint is not None, f"No checkpoint found in {checkpoint_dir}"
-
-    checkpoint = Path(checkpoint)
-    assert checkpoint.parent == checkpoint_dir, f"Checkpoint {checkpoint} is not in the checkpoint directory {checkpoint_dir}"
-    return checkpoint
-
-def change_hparams_and_train(checkpoint, hparams_dict, update_dict, lr_find):
-    new_hparams_dict = deepcopy(hparams_dict)
-    new_hparams_dict.update(update_dict)
-    logger.info(f"Changed Hparams: {get_diff_dict(hparams_dict, new_hparams_dict)}")
-    
-
-    new_params = ArcHparams.from_dict(new_hparams_dict)
-    if lr_find:
-        new_params.run = new_params.run + "/debug"
-
-    trainer = ArcTrainer(hparams=new_params,
-                        parent_dir=_BASE_DIR,
-                        disable_checkpointing_and_logging=True if lr_find else False)
-    
-    trainer.initialise_from_checkpoint(checkpoint, strict=False)    # NO RESUME, start from the beginning 
-    if lr_find:
-        trainer.find_lr()
-    else:
-        trainer.train()
-
-
-
 @change_app.command("lr")
 def lr_change(
         name: str = typer.Argument(..., help="Name of the experiment saved at `./runs/{name}`"),
@@ -180,7 +162,8 @@ def lr_change(
         lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
         lr_warmup: int = typer.Option(2, min=0, help="Number of epochs for learning rate warmup. Only used for noam scheduler"),
         lr_decay: int = typer.Option(8, min=0, help="Number of epochs for learning rate decay. Only used for noam scheduler"),
-        lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode")
+        lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
+        debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved")
     ):
     ## Change the learning rate of the model and the program
     
@@ -198,8 +181,11 @@ def lr_change(
         "lr_decay_epochs": lr_decay,
     }
 
-    change_hparams_and_train(checkpoint, hparams_dict, update_dict, lr_find)
-
+    new_hparams_dict = deepcopy(hparams_dict)
+    new_hparams_dict.update(update_dict)
+    logger.info(f"Changed Hparams: {get_diff_dict(hparams_dict, new_hparams_dict)}")
+    new_params = ArcHparams.from_dict(new_hparams_dict)
+    train_from_hparams(new_params, checkpoint, lr_find, debug)
 
 
 class ModelSize(str, Enum):
@@ -223,7 +209,8 @@ def change_model_size(
         key: ModelSize = typer.Argument(ModelSize.mixers, help="Key to change"),
         value: int = typer.Argument(..., help="Number of mixers within each mixing block"),
         checkpoint: Optional[str] = typer.Option(None, help="Use this specific checkpoint"),
-        lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode")
+        lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
+        debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved")
     ):
 
     checkpoint = get_checkpoint(name, run, checkpoint)
@@ -236,7 +223,12 @@ def change_model_size(
                 key.param: value,
                 'run': hparams_dict['run'] + f"_{key.name[0]}{value}"
                 }
-    change_hparams_and_train(checkpoint, hparams_dict, update_dict, lr_find)
+    
+    new_hparams_dict = deepcopy(hparams_dict)
+    new_hparams_dict.update(update_dict)
+    logger.info(f"Changed Hparams: {get_diff_dict(hparams_dict, new_hparams_dict)}")
+    new_params = ArcHparams.from_dict(new_hparams_dict)
+    train_from_hparams(new_params, checkpoint, lr_find, debug)
 
 
 
