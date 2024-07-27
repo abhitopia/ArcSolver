@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional, Tuple, Union
 from collections import defaultdict
 from tqdm import tqdm
-from .utils import add_logger, get_git_commit_hash, map_to_tensors
+from .utils import add_logfile_handler, add_logging_funcs, get_git_commit_hash, get_logger, map_to_tensors
 from dataclasses import dataclass
 
 
@@ -135,34 +135,31 @@ class Hparams:
 class TrainerBase:
     def __init__(self,
                 hparams: Hparams,
-                log_level=logging.INFO,
                 parent_dir: Optional[Union[str, Path]] = None,
                 disable_checkpointing_and_logging=False,
-                prevent_overwrite=True
+                prevent_overwrite=True,
+                logger: Optional[logging.Logger] = None,
             ):
         
 
         assert isinstance(hparams, Hparams), 'hparams must be an instance of Hparams'
         self.hparams = hparams
+        self.logger = get_logger(logger)
+        add_logging_funcs(self, self.logger)
 
         self.log_dir = self.get_log_dir(self.hparams.experiment, self.hparams.run, parent_dir=parent_dir)
         self.checkpoint_dir = self.get_checkpoint_dir(self.hparams.experiment, self.hparams.run, parent_dir=parent_dir)
 
         if prevent_overwrite:
-            assert not self.log_dir.exists(), f'Log directory {self.log_dir} already exists.'
             assert not self.checkpoint_dir.exists(), f'Checkpoint directory {self.checkpoint_dir} already exists.'
 
-        add_logger(obj=self,
-                log_level=log_level,
-                name=self.hparams.run,
-                file_path=self.log_dir / f'training.log')
+        add_logfile_handler(file_path=self.log_dir / f'training.log', logger=self.logger)
 
         self.info(f"Hparams: {json.dumps(self.hparams.as_dict(), indent=4)}")
         self.info(f"Checkpoint directory: {self.checkpoint_dir}")
         self.disable_checkpointing = disable_checkpointing_and_logging
         if self.disable_checkpointing:
             self.warning(f'It is a trial run. No checkpoints or Tensorboard summaries will be saved!')
-            self.warning(f'Resuming from checkpoints still works!')
 
         self.writer = None
         self.step = 0
@@ -236,6 +233,8 @@ class TrainerBase:
             import __main__
             calling_script = Path(__main__.__file__)
             parent_dir = calling_script.parent / 'runs'
+        else:
+            parent_dir = Path(parent_dir)
         log_dir =  parent_dir / experiment_name / run_name
         return log_dir
 
@@ -270,8 +269,8 @@ class TrainerBase:
         if torch.backends.mps.is_available():
             torch.mps.manual_seed(seed)
 
-    def load_state_dict(self, state_dict, resume=True):
-        self.model.load_state_dict(state_dict['model_state_dict'], map_location='cpu')
+    def load_state_dict(self, state_dict, resume=True, strict=True):
+        self.model.load_state_dict(state_dict['model_state_dict'], map_location='cpu', strict=strict)
         self._eval_at_start = True
         current_commit_hash = get_git_commit_hash()
         saved_commit_hash = state_dict.get('git_commit_hash', None)
@@ -590,13 +589,20 @@ class TrainerBase:
             self._at_training_end()
 
 
-    def initialise_from_checkpoint(self, checkpoint_path: Union[str, Path]):
+    def initialise_from_checkpoint(self, checkpoint_path: Union[str, Path], strict=True):
         checkpoint_path = Path(checkpoint_path)
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
         state_dict = torch.load(checkpoint_path, map_location='cpu')
         self.info(f"Initialising model from checkpoint: {checkpoint_path}")
-        self.load_state_dict(state_dict, resume=False) # Prevent loading optimizer and scheduler state
+        self.load_state_dict(state_dict, resume=False, strict=strict) # Prevent loading optimizer and scheduler state
 
+    @staticmethod
+    def load_hparams_dict(checkpoint_path: Union[str, Path]):
+        checkpoint_path = Path(checkpoint_path)
+        assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
+        state_dict = torch.load(checkpoint_path, map_location='cpu')
+        hparams_dict = state_dict['hparams']
+        return hparams_dict
 
     @classmethod
     def from_checkpoint(cls, Hparams_cls,

@@ -14,13 +14,15 @@
 - [x] Test training on the GPU
 - [x] Make evaluation run right before training starts (always?)
 - [x] Print checkpoint path when loading model from a checkpoint
-- [ ] Create simplied experiment running with automatic run name
-- [ ] Allow for easy lr_finding (without needed to delete the run)
-- [ ] Allow for easy compute bump
-- [ ] Allow for easy test run (for GPU)
+- [x] Create simplied experiment running with automatic run name
+- [x] Allow for easy lr_finding (without needed to delete the run)
+- [x] Allow for easy test run (for GPU)
+- [x] Set up logger across the board
+- [x] Allow for easy compute bump
+- [ ] Allow easy lr change
+- [ ] Consider alternative learning rates per epoch? (Training mode)
 - [ ] AvgSeqLen for the correct samples (to see whether that is changing even if the sample accuracy goes down) (May be this can be done as part of analysis as opposed to metric during training?)
 - [ ] Analyse trained model on the dataset
-- [ ] Consider alternative learning rates per epoch? (Training mode)
 - [ ] Run Cuda Empty Cache After each train and eval epoch
 
 

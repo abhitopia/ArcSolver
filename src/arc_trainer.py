@@ -189,7 +189,7 @@ class ArcTrainer(TrainerBase):
         state_dict['model_config'] = self.model.config.to_dict()
         return state_dict
     
-    def load_state_dict(self, state_dict, resume=True):
+    def load_state_dict(self, state_dict, resume=True, strict=True):
         prog_tokenizer = ProgramTokenizer.from_dict(state_dict['tokenizers']['program_tokenizer'])
         grid_tokenizer = GridTokenizer.from_dict(state_dict['tokenizers']['grid_tokenizer'])
         model_config = InterpreterConfig.from_dict(state_dict['model_config'])
@@ -198,14 +198,14 @@ class ArcTrainer(TrainerBase):
             assert model_config == self.model.config, "Cannot resume, Model Configs do not match!"
             assert prog_tokenizer == self.model.prog_tokenizer, "Cannot resume, Program Tokenizers do not match!"
             assert grid_tokenizer == self.model.grid_tokenizer, "Cannot resume, Grid Tokenizers do not match!"
-            super().load_state_dict(state_dict, resume=True)    
+            super().load_state_dict(state_dict, resume=resume, strict=strict)    
         else:
             # We don't want default behavior of loading model state dict. We want special 
             # which is able to copy the weights from a compatible model
             checkpoint_model = Interpreter(model_config, prog_tokenizer, grid_tokenizer)
             checkpoint_model.load_state_dict(state_dict['model_state_dict'])
             self.info("Loading model from checkpoint using load_from_model method")
-            self.model.load_from_model(checkpoint_model)
+            self.model.load_from_model(checkpoint_model, strict=strict)
 
             if prog_tokenizer != self.model.prog_tokenizer or grid_tokenizer != self.model.grid_tokenizer:
                 self.warning("Loaded model has different tokenizers than the current model. Loading anyway as the models are compatible.")

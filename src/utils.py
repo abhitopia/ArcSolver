@@ -1,3 +1,4 @@
+from pathlib import Path
 import subprocess
 import torch.nn as nn
 import random
@@ -8,6 +9,14 @@ import logging
 import time
 from rich.logging import RichHandler
 
+
+def get_diff_dict(dict1, dict2):
+    diff_dict = {}
+    for key in dict1:
+        if dict1[key] != dict2[key]:
+            diff_dict[key] = f"{key}: {dict1[key]} -> {dict2[key]}"
+
+    return diff_dict
 
 def get_git_commit_hash():
     try:
@@ -64,41 +73,49 @@ def map_to_tensors(nested, func):
     else:
         # If the item is not a tensor or a nested structure, return it as is
         return nested
+    
 
+def get_logger(name: str = None):
+    logger = logging.getLogger("ArcSolver" if name is None else name)
 
-def add_logger(obj, log_level, name, file_path):
+    # You can set change the level to logging.DEBUG later
+    # Even after the initialisation
+    logger.setLevel(logging.INFO)  # Set the minimum logging level
+    # The logger acts as a gateway to the logger handlers with
+    # handlers processing anything at and above their set levels.
 
-    assert isinstance(obj, object), 'obj must be an instance of a class'
-    # Create a logger object
-    logger = logging.getLogger(name)
-    logger.setLevel(log_level)  # Set the minimum logging level
-
-    if not logger.handlers:
-        # Create a file handler that logs messages to a file
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(file_path)
-        file_handler.setLevel(logging.DEBUG)  # Set the minimum logging level for the file handler
-        file_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-        file_handler.setFormatter(file_format)
-
+    if len(logger.handlers) == 0:
         # Create a stream handler that logs messages to the console
         # stream_handler = logging.StreamHandler()
         stream_handler = RichHandler(show_time=False, show_path=False, show_level=False, tracebacks_word_wrap=False)
-        stream_handler.setLevel(log_level)  # Set the minimum logging level for the stream handler
+        stream_handler.setLevel(logging.DEBUG)  # Set the minimum logging level for the stream handler
         stream_format = logging.Formatter('%(message)s')
         stream_handler.setFormatter(stream_format)
-
-        # Add the handlers to the logger
-        logger.addHandler(file_handler)
         logger.addHandler(stream_handler)
 
-    obj.logger = logger
+
+    return logger
+
+def add_logging_funcs(obj, logger=None):
+    logger = logger if logger is not None else get_logger()
     obj.debug = lambda msg: logger.debug(msg)
     obj.info = lambda msg: logger.info(msg)
     obj.error = lambda msg: logger.error(msg)
     obj.warning = lambda msg: logger.warning(msg)
-    obj.info(f'Log File: {file_path}')
-    return logger
+
+ 
+def add_logfile_handler(file_path, logger=None):
+    if logger is None:
+        logger = logging.getLogger()
+
+    Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(file_path)
+    file_handler.setLevel(logging.DEBUG)  # Set the minimum logging level for the file handler
+    file_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    file_handler.setFormatter(file_format)
+    logger.addHandler(file_handler)
+    logger.info(f"Logging to file: {file_path}")
+
 
 
 def task_stats(tasks):
