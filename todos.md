@@ -23,6 +23,7 @@
 - [x] Consider alternative learning rates per epoch? (Training mode)
 - [x] For follow ups, take run path instead to use autocomplete
 - [x] Add BS size, and seq_len to the metrics
+- [x] Make the naming of follow modelsize experiment consistent with lr followup
 - [ ] Test out the changes on the Lightning GPU
 - [ ] Run 128 dim training on H100!!
 - [ ] Make sync script to sync continuously
