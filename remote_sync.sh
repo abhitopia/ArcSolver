@@ -33,6 +33,6 @@ trap "echo 'Sync interrupted. Exiting.'; exit" SIGINT
 # Perform the rsync operation in an infinite loop
 while true; do
   rsync -auz --progress "${REMOTE_USER}@${REMOTE_HOST}:${SRC_PATH}" "${DEST_PATH}"
-  echo "Sync complete. Waiting for 30 seconds before the next sync..."
+  echo "Sync complete. Waiting for 5 seconds before the next sync..."
   sleep 5
 done
