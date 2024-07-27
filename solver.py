@@ -184,10 +184,10 @@ def optim_change(
     logger.info(f"Base Hparams: {hparams_dict}")
 
     update_dict =  {
-        "batch_size": bs if bs is not None else hparams_dict['batch_size'],  # Yes, this is optimizer config
+        "batch_size": bs if bs is not None else hparams_dict['optim.batch_size'],  # Yes, this is optimizer config
         "lr_model": 1 if  lr_find else (mlr if mlr is not None else hparams_dict['optim.lr_model']),
         "lr_prog": plr if not lr_find else 1,
-        "lr_schedule": lr_schedule.value,
+        "lr_schedule": lr_schedule.value if lr_schedule is not None else hparams_dict['optim.lr_schedule'],
         "lr_warmup_epochs": lr_warmup if lr_warmup is not None else hparams_dict['optim.lr_warmup_epochs'],
         "lr_decay_epochs": lr_decay if lr_decay is not None else hparams_dict['optim.lr_decay_epochs'],
     }
