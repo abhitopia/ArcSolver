@@ -607,7 +607,7 @@ class TrainerBase:
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
         state_dict = torch.load(checkpoint_path, map_location='cpu')
         hparams_dict = state_dict['hparams']
-        
+
         # TODO: Migrate hparams to new format
         hparams_dict = migrate_hparam_dict(hparams_dict)
         return hparams_dict
@@ -616,7 +616,7 @@ class TrainerBase:
     def from_checkpoint(cls, Hparams_cls,
                     checkpoint_path: Union[str, Path],
                     resume=True,
-                    log_level=logging.INFO,
+                    logger=None,
                     disable_checkpointing_and_logging=False,
                     parent_dir=None
                 ):
@@ -627,7 +627,7 @@ class TrainerBase:
         hparams_dict = state_dict['hparams']
         hparams = Hparams_cls.from_dict(hparams_dict)
         trainer = cls(hparams,
-                    log_level=log_level,
+                    logger=logger,
                     disable_checkpointing_and_logging=disable_checkpointing_and_logging,
                     parent_dir=parent_dir,
                     prevent_overwrite=False

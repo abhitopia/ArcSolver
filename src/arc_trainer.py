@@ -253,7 +253,7 @@ class ArcTrainer(TrainerBase):
                 cls,
                 checkpoint_path: Union[str, Path],
                 resume=True,
-                log_level=logging.INFO,
+                logger=None,
                 disable_checkpointing_and_logging=False,
                 parent_dir=None
             ):
@@ -262,6 +262,6 @@ class ArcTrainer(TrainerBase):
                     ArcHparams,
                     checkpoint_path=checkpoint_path,
                     resume=resume,
-                    log_level=log_level,
+                    logger=logger,
                     disable_checkpointing_and_logging=disable_checkpointing_and_logging,
                     parent_dir=parent_dir)
