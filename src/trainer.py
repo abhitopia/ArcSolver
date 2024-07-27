@@ -568,6 +568,10 @@ class TrainerBase:
                     step = epoch_step + len(self.train_dl) * self.epoch
                     if step <= self.step:
                         continue
+                    elif step > max_steps:
+                        break
+
+                    self.step = step  # Set the step instead of incrementing it. This ensures that self._epoch_end as 
 
                     if (self.step > 0 or run_eval_at_start) and self.step % eval_interval == 0:
                         self._eval_loop(save_checkpoint=False if run_eval_at_start else True)
@@ -576,9 +580,6 @@ class TrainerBase:
                     self._train_step(batch)                    
                     self.epoch_step = epoch_step
 
-                    self.step += 1
-                    if self.step >= max_steps:
-                        break
                     
                 self._at_epoch_end()
                 self.epoch += 1
