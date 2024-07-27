@@ -20,11 +20,12 @@
 - [x] Set up logger across the board
 - [x] Allow for easy compute bump
 - [x] Allow easy lr change
+- [x] Consider alternative learning rates per epoch? (Training mode)
+- [x] For follow ups, take run path instead to use autocomplete
 - [ ] Add BS size, and seq_len to the metrics
 - [ ] Make sync script to sync continuously
-- [ ] Consider alternative learning rates per epoch? (Training mode)
-- [ ] AvgSeqLen for the correct samples (to see whether that is changing even if the sample accuracy goes down) (May be this can be done as part of analysis as opposed to metric during training?)
 - [ ] Analyse trained model on the dataset
+- [ ] AvgSeqLen for the correct samples (to see whether that is changing even if the sample accuracy goes down) (May be this can be done as part of analysis as opposed to metric during training?)
 - [ ] Run Cuda Empty Cache After each train and eval epoch
 
 
