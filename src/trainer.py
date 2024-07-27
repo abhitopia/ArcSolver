@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional, Tuple, Union
 from collections import defaultdict
 from tqdm import tqdm
-from .utils import add_logfile_handler, add_logging_funcs, get_git_commit_hash, get_logger, map_to_tensors
+from .utils import add_logfile_handler, add_logging_funcs, get_git_commit_hash, get_logger, map_to_tensors, migrate_hparam_dict
 from dataclasses import dataclass
 
 
@@ -594,6 +594,10 @@ class TrainerBase:
         checkpoint_path = Path(checkpoint_path)
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
         state_dict = torch.load(checkpoint_path, map_location='cpu')
+
+        # TODO: Migrate hparams to new format
+        state_dict['hparams'] = migrate_hparam_dict(state_dict['hparams'])
+
         self.info(f"Initialising model from checkpoint: {checkpoint_path}")
         self.load_state_dict(state_dict, resume=False, strict=strict) # Prevent loading optimizer and scheduler state
 
@@ -603,6 +607,9 @@ class TrainerBase:
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
         state_dict = torch.load(checkpoint_path, map_location='cpu')
         hparams_dict = state_dict['hparams']
+        
+        # TODO: Migrate hparams to new format
+        hparams_dict = migrate_hparam_dict(hparams_dict)
         return hparams_dict
 
     @classmethod

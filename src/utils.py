@@ -10,6 +10,33 @@ import time
 from rich.logging import RichHandler
 
 
+
+def migrate_hparam_dict(hparam_dict):
+    """For backward compatibility with old hyperparameter keys.
+    """
+    new_keys = {
+        'optim.lr_schedule': 'noam'
+    }
+
+    migration_dict = {
+        'optim.model_lr': 'optim.lr_model',
+        'optim.model_wd': 'optim.wd_model',
+        'optim.prog_lr': 'optim.lr_prog',
+        'optim.prog_wd': 'optim.wd_prog',
+    }
+
+    for key, val in new_keys.items():
+        if key not in hparam_dict:
+            hparam_dict[key] = hparam_dict[val]
+    
+    for old_key, new_key in migration_dict.items():
+        if old_key in hparam_dict:
+            hparam_dict[new_key] = hparam_dict[old_key]
+            del hparam_dict[old_key]
+
+
+
+
 def get_diff_dict(dict_src, dict_trg):
     diff_dict = {}
     for key in dict_trg:
