@@ -162,7 +162,7 @@ class TrainerBase:
             self.warning(f'It is a trial run. No checkpoints or Tensorboard summaries will be saved!')
 
         self.writer = None
-        self.step = 0
+        self.step = -1
         self.epoch = 0 
         self.epoch_step = 0
         
