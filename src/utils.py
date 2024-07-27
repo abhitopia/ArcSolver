@@ -27,7 +27,7 @@ def migrate_hparam_dict(hparam_dict):
 
     for key, val in new_keys.items():
         if key not in hparam_dict:
-            hparam_dict[key] = hparam_dict[val]
+            hparam_dict[key] = val
     
     for old_key, new_key in migration_dict.items():
         if old_key in hparam_dict:
