@@ -97,17 +97,17 @@ class ArcHparams(Hparams):
     def init_optimizer(self, model)-> optim.Optimizer:
         config = self.optim
 
-        if config.prog_lr is None:
-            config.prog_lr = config.model_lr
+        if config.lr_prog is None:
+            config.lr_prog = config.lr_model
             if config.lr_schedule == 'noam':
                 plr_scale = 1 if self.data.data_aug <= 0 else 8 * self.data.data_aug
-                config.prog_lr = config.model_lr * plr_scale
+                config.lr_prog = config.lr_model * plr_scale
 
         optimizer = model.get_optimizer(
-                                    model_lr=config.model_lr,
-                                    model_wd=config.model_wd,
-                                    prog_lr=config.prog_lr,
-                                    prog_wd=config.prog_wd,
+                                    model_lr=config.lr_model,
+                                    model_wd=config.wd_model,
+                                    prog_lr=config.lr_prog,
+                                    prog_wd=config.wd_prog,
                                     device_type=self.device)
 
         return optimizer
@@ -123,9 +123,9 @@ class ArcHparams(Hparams):
             schedule = lambda step: 1.0
         elif config.lr_schedule == 'alt':
             assert len(optimizer.param_groups) == 3, "Invalid LR Schedule"
-            assert optimizer.param_groups[0]['lr'] == config.prog_lr, "Optimizer Program LR does not match the config"
-            assert optimizer.param_groups[1]['lr'] == config.model_lr, "Optimizer Model LR does not match the config"
-            assert optimizer.param_groups[2]['lr'] == config.model_lr, "Optimizer Model LR does not match the config"
+            assert optimizer.param_groups[0]['lr'] == config.lr_prog, "Optimizer Program LR does not match the config"
+            assert optimizer.param_groups[1]['lr'] == config.lr_model, "Optimizer Model LR does not match the config"
+            assert optimizer.param_groups[2]['lr'] == config.lr_model, "Optimizer Model LR does not match the config"
             high_low_schedule, low_high_schedule = get_alt_schedulers(self.state['num_train_batches'])
             schedule = [high_low_schedule, low_high_schedule, low_high_schedule]
         else:

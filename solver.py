@@ -115,10 +115,10 @@ def train(
 
     optimizer_config = {
         "batch_size": bs,  # Yes, this is optimizer config
-        "model_lr": mlr if not lr_find else 1,
-        "model_wd": mwd,
-        "prog_lr": plr if not lr_find else 1,
-        "prog_wd": pwd,
+        "lr_model": mlr if not lr_find else 1,
+        "wd_model": mwd,
+        "lr_prog": plr if not lr_find else 1,
+        "wd_prog": pwd,
         "lr_schedule": lr_schedule.value,
         "lr_warmup_epochs": lr_warmup,
         "lr_decay_epochs": lr_decay,
@@ -155,15 +155,23 @@ def info(
     hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
     print(hparams_dict)
 
+def get_run_name(hparams_dict, new_hparams_dict):
+    diff_dict = get_diff_dict(hparams_dict, new_hparams_dict)
+    assert len(diff_dict) > 0, "At least one parameter should be changed"
+    new_run = hparams_dict['run'] 
+    for key, value in diff_dict.items():
+        new_run += f"{key}_{value}"
+    return new_run
 
-@change_app.command("lr")
-def lr_change(
+@change_app.command("optim")
+def optim_change(
         run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
-        mlr: float = typer.Argument(..., min=-1.0, help="Model Learning Rate"),
+        mlr: float = typer.Argument(None, min=-1.0, help="Model Learning Rate"),
         plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is scaled according to data augmentation level"),
-        lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
-        lr_warmup: int = typer.Option(2, min=0, help="Number of epochs for learning rate warmup. Only used for noam scheduler"),
-        lr_decay: int = typer.Option(8, min=0, help="Number of epochs for learning rate decay. Only used for noam scheduler"),
+        lr_schedule: LRSchedule = typer.Option(None, help="Learning rate scheduler. Options: noam, alt, const"),
+        bs: int = typer.Option(None, min=1, help="Batch Size"),
+        lr_warmup: int = typer.Option(None, min=0, help="Number of epochs for learning rate warmup. Only used for noam scheduler"),
+        lr_decay: int = typer.Option(None, min=0, help="Number of epochs for learning rate decay. Only used for noam scheduler"),
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
         debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved")
     ):
@@ -175,48 +183,35 @@ def lr_change(
     logger.info(f"Base Hparams: {hparams_dict}")
 
     update_dict =  {
-        "lr_model": mlr if not lr_find else 1,
+        "batch_size": bs if bs is not None else hparams_dict['batch_size'],  # Yes, this is optimizer config
+        "lr_model": 1 if  lr_find else (mlr if mlr is not None else hparams_dict['optim.lr_model']),
         "lr_prog": plr if not lr_find else 1,
         "lr_schedule": lr_schedule.value,
-        "lr_warmup_epochs": lr_warmup,
-        "lr_decay_epochs": lr_decay,
+        "lr_warmup_epochs": lr_warmup if lr_warmup is not None else hparams_dict['optim.lr_warmup_epochs'],
+        "lr_decay_epochs": lr_decay if lr_decay is not None else hparams_dict['optim.lr_decay_epochs'],
     }
 
+    update_dict = {f'optim.{k}': v for k, v in update_dict.items()}
     new_hparams_dict = deepcopy(hparams_dict)
     new_hparams_dict.update(update_dict)
-    diff_dict = get_diff_dict(hparams_dict, new_hparams_dict)
-    new_run = hparams_dict['run'] 
-    for key, value in diff_dict.items():
-        char = key.split("_")[1][0]
-        new_run += f"_lr{char}{value}"
-
+    new_run = get_run_name(hparams_dict, new_hparams_dict)
     new_hparams_dict['run'] = new_run
-    diff_dict['run'] = f"{hparams_dict['run']} -> {new_hparams_dict['run']}"
 
     logger.info(f"Changed Hparams: {get_diff_dict(hparams_dict, new_hparams_dict)}")
     new_params = ArcHparams.from_dict(new_hparams_dict)
     train_from_hparams(new_params, checkpoint, lr_find, debug, parent_dir=parent_dir)
 
 
-class ModelSize(str, Enum):
-    mixers = "mixers"
-    blocks = "blocks"
-    layers = "layers"
-
-    @property
-    def param(self):
-        return {
-            ModelSize.mixers.value: "model.n_mixers",
-            ModelSize.blocks.value: "model.n_blocks",
-            ModelSize.layers.value: "model.n_layers"
-        }[self.value]
-
 
 @change_app.command("model")
 def change_model_size(
         run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
-        key: ModelSize = typer.Argument(ModelSize.mixers, help="Key to change"),
-        value: int = typer.Argument(..., help="Number of mixers within each mixing block"),
+        dim: int = typer.Option(None, min=8, max=512, help="Dimension of the model"),
+        heads: int = typer.Option(None, min=1, max=64, help="Number of heads within each self-attention block"),
+        blocks: int = typer.Option(None, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
+        mixers: int = typer.Option(None, min=1, max=10, help="Number of mixers within each mixing block"),
+        layers: int = typer.Option(None, min=1, max=10, help="Number of recurrent layers"),
+        share_mixer: bool = typer.Option(True, help="Share mixer within each mixing block"),
         checkpoint: Optional[str] = typer.Option(None, help="Use this specific checkpoint"),
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
         debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved")
@@ -229,13 +224,21 @@ def change_model_size(
     hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
     logger.info(f"Base Hparams: {hparams_dict}")
 
+
     update_dict = {
-                key.param: value,
-                'run': hparams_dict['run'] + f"_{key.name[0]}{value}"
-                }
-    
+        "n_dim": dim if dim is not None else hparams_dict['model.n_dim'],
+        "n_heads": heads if heads is not None else hparams_dict['model.n_heads'],
+        "n_blocks": blocks if blocks is not None else hparams_dict['model.n_blocks'],
+        "n_mixers": mixers if mixers is not None else hparams_dict['model.n_mixers'],
+        "n_layers": layers if layers is not None else hparams_dict['model.n_layers'],
+        "share_mixer": share_mixer
+    }
+
+    update_dict = {f'model.{k}': v for k, v in update_dict.items()}    
     new_hparams_dict = deepcopy(hparams_dict)
     new_hparams_dict.update(update_dict)
+    new_run = get_run_name(hparams_dict, new_hparams_dict)
+    new_hparams_dict['run'] = new_run
     logger.info(f"Changed Hparams: {get_diff_dict(hparams_dict, new_hparams_dict)}")
     new_params = ArcHparams.from_dict(new_hparams_dict)
     train_from_hparams(new_params, checkpoint, lr_find, debug, parent_dir=parent_dir)
