@@ -169,8 +169,8 @@ class ArcTrainer(TrainerBase):
         metrics_obj.add_metric('SampleAcc(%)',
                             batch_metrics['total_correct_samples']*100,
                             batch_metrics['total_samples'])
-        metrics_obj.add_metric('#Samples(Batch)', batch_metrics['total_samples'])
-        metrics_obj.add_metric('#SeqLen(Batch)', y.shape[1])
+        metrics_obj.add_metric('#Samples', batch_metrics['total_samples'])
+        metrics_obj.add_metric('SeqLen', y.shape[1])
         
 
     def pre_train_step(self, batch):
