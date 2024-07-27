@@ -118,7 +118,7 @@ class ArcHparams(Hparams):
         if config.lr_schedule == 'noam':
             warmup_steps = self.state['num_train_batches'] * config.lr_warmup_epochs
             max_steps = self.state['num_train_batches'] * config.lr_decay_epochs
-            schedule = lambda step: noam_schedule(step, warmup_steps, max_steps, config.lr_min_scale)
+            schedule = lambda step: noam_schedule(step, warmup_steps, max_steps)
         elif config.lr_schedule == 'const':
             schedule = lambda step: 1.0
         elif config.lr_schedule == 'alt':
@@ -169,6 +169,9 @@ class ArcTrainer(TrainerBase):
         metrics_obj.add_metric('SampleAcc(%)',
                             batch_metrics['total_correct_samples']*100,
                             batch_metrics['total_samples'])
+        metrics_obj.add_metric('#Samples(Batch)', batch_metrics['total_samples'])
+        metrics_obj.add_metric('#SeqLen(Batch)', y.shape[1])
+        
 
     def pre_train_step(self, batch):
         self.__train_batch_time_start = time.time()
