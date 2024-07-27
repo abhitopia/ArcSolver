@@ -4,10 +4,11 @@ import inspect
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-
-from src.utils import is_power_of_two
+from src.utils import is_power_of_two, get_logger
 from .dataset import ProgramTokenizer, GridTokenizer
 
+
+logger = get_logger()
 
 @dataclass
 class InterpreterConfig:
@@ -263,56 +264,69 @@ class Interpreter(nn.Module):
         return optimizer
 
 
-    def check_compatible(self, other: "Interpreter", compare_prog_vocab=True) -> bool:
+    def check_compatible(self, other: "Interpreter", strict=True) -> bool:
         assert isinstance(other, Interpreter), "Can only compare with another Interpreter instance"
         
         config = self.config
         other_config = other.config
 
+        and_conditions = [
+            (config.n_dim == other_config.n_dim, "Model dimension should be the same"),
+            (config.n_head == other_config.n_head, "Number of heads should be the same"),
+            (config.n_embd == other_config.n_embd, "Embedding dimension should be the same"),
+        ]
 
-        or_conditions = [
+        for cond, msg in and_conditions:
+            assert cond, msg
+        
+        mixer_or_conditions = [
             config.n_mixers == 1 and other_config.n_mixers == 1,
             config.share_mixer == other_config.share_mixer,
             config.share_mixer and other_config.n_mixers == 1,
         ]
 
-        and_conditions = [
-            self.prog_tokenizer == other.prog_tokenizer,
-            self.grid_tokenizer == other.grid_tokenizer,
-            config.max_seq_len <= other_config.max_seq_len,
-            config.grid_vocab_size == other_config.grid_vocab_size,
-            config.n_dim == other_config.n_dim,
-            config.n_head == other_config.n_head,
-            config.n_embd == other_config.n_embd,
-            config.causal == other_config.causal,
-            config.max_seq_len == other_config.max_seq_len,
-            config.n_blocks == other_config.n_blocks,
-            any(or_conditions)
+        strict_conditions = [
+            (self.prog_tokenizer == other.prog_tokenizer, "Program tokenizers should be the same"),
+            (self.grid_tokenizer == other.grid_tokenizer, "Grid tokenizers should be the same"),
+            (config.grid_vocab_size == other_config.grid_vocab_size, "Grid vocab size should be the same"),
+            (config.prog_vocab_size == other_config.prog_vocab_size, "Program vocab size should be the same"),
+            (config.n_blocks == other_config.n_blocks, "Number of blocks should be the same"),
+            (config.causal == other_config.causal, "Causal should be the same"),
+            (config.max_seq_len == other_config.max_seq_len, "Max sequence length should be the same"),
+            (mixer_or_conditions, "Mixer configuration not compatible")
         ]
 
-        if compare_prog_vocab:
-            and_conditions.append(config.prog_vocab_size == other_config.prog_vocab_size)
+        for cond, msg in strict_conditions:
+            if strict:
+                assert cond, msg
+            else:
+                if not cond:
+                    logger.warning(msg + " but they are not. Continuing anyway due to strict=False")
+
 
         return all(and_conditions)
     
 
-    def load_from_model(self, src_model: "Interpreter") -> None:
-        assert self.check_compatible(src_model, compare_prog_vocab=False), "Models are not compatible"
+    def load_from_model(self, src_model: "Interpreter", strict=True) -> None:
+        assert self.check_compatible(src_model, strict=strict), "Models are not compatible"
 
         # keep_vars=True to keep the requires_grad flag
         config_trg = self.config
         config_src = src_model.config
         trg_sd = self.state_dict(keep_vars=True) 
         src_sd = src_model.state_dict()
+
         trg_grid_token2idx = self.grid_tokenizer.token2idx
         src_grid_token2idx = src_model.grid_tokenizer.token2idx
         trg_prog_token2idx = self.prog_tokenizer.token2idx
         src_prog_token2idx = src_model.prog_tokenizer.token2idx
 
-        def copy_(prefix, idx_mapping=None):
+        def copy_(prefix, idx_mapping=None, src_prefix=None):
             for name, t in trg_sd.items():
                 if name.startswith(prefix):
-                    s = src_sd[name]
+                    suffix = name[len(prefix):]
+                    src_name = src_prefix + suffix if src_prefix is not None else name
+                    s = src_sd[src_name]
                     trg_ptr_b4 = t.data_ptr()
                     if idx_mapping is None:
                         t.data.copy_(s)
@@ -324,6 +338,9 @@ class Interpreter(nn.Module):
 
         def copy_embedding_weights(key, trg_token2idx, src_token2idx):
             common_tokens = set(src_token2idx.keys()).intersection(set(src_token2idx.keys()))
+            if len(common_tokens) != len(trg_token2idx):
+                logger.warning(f"WARNING: Number of matching tokens for {key} is {len(common_tokens)} but trg_vocab_size is {len(trg_token2idx)}")
+
             token_idx_mapping = {trg_token2idx[token]: src_token2idx[token] for token in common_tokens}
             copy_(key, token_idx_mapping)
 
@@ -340,21 +357,33 @@ class Interpreter(nn.Module):
         # copy program embeddings
         copy_embedding_weights('pte.', trg_prog_token2idx, src_prog_token2idx)
 
-        # Copy mixer blocks
-        assert config_trg.n_blocks == config_src.n_blocks, "Number of blocks should be the same"
-        for block_idx in range(config_trg.n_blocks):
-            block_key = f'recurrent_block.blocks.{block_idx}'
-            copy_(f'{block_key}.normed_mlp.')
-            if config_trg.n_mixers == config_src.n_mixers:
-                assert config_trg.share_mixer == config_src.share_mixer, "Share mixer should be the same"
-                # Simply copy all the mixers
-                copy_(f'{block_key}.mixers.')
-            elif config_trg.share_mixer and (config_src.share_mixer or config_src.n_mixers == 1):
-                # Copy the shared mixer
-                copy_(f'{block_key}.mixers.0.')
-            else:
-                raise RuntimeError("Cannot copy mixers! Check the model configurations")
+        if config_trg.n_blocks < config_src.n_blocks:
+            logger.warning(f"WARNING: Number of blocks in target model is less than source model. Copying only the first {config_trg.n_blocks} blocks")
 
+        # Copy mixer blocks
+        for block_idx in range(config_trg.n_blocks):
+            trg_block_key = f'recurrent_block.blocks.{block_idx}'
+
+            if block_idx >= config_src.n_blocks:
+                logger.warning(f"WARNING: Copying block {block_idx} from the last block of the source model")
+                src_block_idx = config_src.n_blocks - 1
+            else:
+                src_block_idx = block_idx
+
+            src_block_key = f'recurrent_block.blocks.{src_block_idx}'
+
+            copy_(f'{trg_block_key}.normed_mlp.', src_prefix=f'{src_block_key}.normed_mlp.')
+
+            if config_trg.n_mixers < config_src.n_mixers:
+                logger.warning(f"WARNING: Number of mixers in target model is less than source model. Copying only the first {config_trg.n_mixers} mixers")
+                
+            for i in range(config_trg.n_mixers):
+                    if i < config_src.n_mixers:
+                        copy_(f'{trg_block_key}.mixers.{i}.', src_prefix=f'{src_block_key}.mixers.{i}.')
+                    else:
+                        # Otherwise just copy the last mixer
+                        logger.warning(f"WARNING: Copying mixer {i} from the last mixer of the source model")
+                        copy_(f'{trg_block_key}.mixers.{i}.', src_prefix=f'{src_block_idx}.mixers.{config_src.n_mixers-1}.')
         # ln_f
         copy_('ln_f.')
         
