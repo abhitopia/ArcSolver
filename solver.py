@@ -164,7 +164,7 @@ def get_run_name(hparams_dict, new_hparams_dict):
         print(name_key, key)
         if key == "run":
             continue
-        new_run += f"|{name_key}_{new_hparams_dict[key]}|"
+        new_run += f"|{name_key}_{new_hparams_dict[key]}"
     return new_run
 
 @change_app.command("optim")
