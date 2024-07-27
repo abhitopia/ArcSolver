@@ -122,7 +122,7 @@ def train(
         "lr_schedule": lr_schedule.value,
         "lr_warmup_epochs": lr_warmup,
         "lr_decay_epochs": lr_decay,
-        "max_examples": 1000 if _DEV_MODE else None # Yes, this is optimizer config
+        "max_examples": 1000 if _DEV_MODE else -1 # Yes, this is optimizer config
     }
 
     hparams.add_params(prefix="data", **data_config)
