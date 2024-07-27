@@ -34,7 +34,7 @@ def migrate_hparam_dict(hparam_dict):
             hparam_dict[new_key] = hparam_dict[old_key]
             del hparam_dict[old_key]
 
-
+    return hparam_dict
 
 
 def get_diff_dict(dict_src, dict_trg):
