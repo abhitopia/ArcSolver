@@ -44,7 +44,7 @@ def train_from_hparams(hparams, checkpoint, lr_find, debug=False, parent_dir=_BA
     else:
         trainer.train()
 
-def get_checkpoint(name, run, checkpoint, parent_dir=_BASE_DIR):
+def get_checkpoint(name, run, checkpoint=None, parent_dir=_BASE_DIR):
     checkpoint_dir = ArcTrainer.get_checkpoint_dir(name, run, parent_dir=parent_dir)
     assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
 
@@ -166,13 +166,14 @@ def get_run_name(hparams_dict, new_hparams_dict):
 @change_app.command("optim")
 def optim_change(
         run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
-        mlr: float = typer.Argument(None, min=-1.0, help="Model Learning Rate"),
+        mlr: float = typer.Option(None, min=0.0, help="Model Learning Rate"),
         plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is scaled according to data augmentation level"),
         lr_schedule: LRSchedule = typer.Option(None, help="Learning rate scheduler. Options: noam, alt, const"),
         bs: int = typer.Option(None, min=1, help="Batch Size"),
         lr_warmup: int = typer.Option(None, min=0, help="Number of epochs for learning rate warmup. Only used for noam scheduler"),
         lr_decay: int = typer.Option(None, min=0, help="Number of epochs for learning rate decay. Only used for noam scheduler"),
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
+        checkpoint: Optional[str] = typer.Option(None, help="Use this specific checkpoint"),
         debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved")
     ):
     experiment, run, parent_dir = split_run_path(run_path)
