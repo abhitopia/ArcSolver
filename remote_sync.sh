@@ -15,10 +15,10 @@ case "$1" in
     DEST_PATH="/Users/abhishekaggarwal/synced_repos/ArcSolver/lightning_runs"
     ;;
   "lambda")
-    REMOTE_USER="user_server2"
-    REMOTE_HOST="server2.example.com"
-    SRC_PATH="/path/to/server2/source"
-    DEST_PATH="/path/to/local/server2/destination"
+    REMOTE_USER="ubuntu"
+    REMOTE_HOST="158.101.17.212"
+    SRC_PATH="/home/ubuntu/ArcSolver/runs"
+    DEST_PATH="/Users/abhishekaggarwal/synced_repos/ArcSolver"
     ;;
   # Add more servers here
   *)

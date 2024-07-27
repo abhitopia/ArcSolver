@@ -355,7 +355,7 @@ class TrainerBase:
         
         if self.hparams is not None:
             hparams = {k: v for k, v in self.hparams.as_dict().items()}
-            self.writer.add_hparams(hparams, metrics, run_name='.', global_step=self.step)
+            self.writer.add_hparams(hparams, metrics, run_name='.')
 
         self.writer.flush()
 
