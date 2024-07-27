@@ -10,11 +10,11 @@ import time
 from rich.logging import RichHandler
 
 
-def get_diff_dict(dict1, dict2):
+def get_diff_dict(dict_src, dict_trg):
     diff_dict = {}
-    for key in dict1:
-        if dict1[key] != dict2[key]:
-            diff_dict[key] = f"{key}: {dict1[key]} -> {dict2[key]}"
+    for key in dict_trg:
+        if dict_src[key] != dict_trg[key]:
+            diff_dict[key] = f"{key}: {dict_src[key]} -> {dict_trg[key]}"
 
     return diff_dict
 
