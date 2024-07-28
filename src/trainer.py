@@ -593,7 +593,7 @@ class TrainerBase:
     def initialise_from_checkpoint(self, checkpoint_path: Union[str, Path], strict=True):
         checkpoint_path = Path(checkpoint_path)
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
-        state_dict = torch.load(checkpoint_path, map_location='cpu')
+        state_dict = torch.load(checkpoint_path, map_location=self.device.type)
 
         # TODO: Migrate hparams to new format
         state_dict['hparams'] = migrate_hparam_dict(state_dict['hparams'])
@@ -636,6 +636,8 @@ class TrainerBase:
             trainer.info(f"Resuming from checkpoint: {checkpoint_path}")
         else:
             trainer.info(f"Initialising model from: {checkpoint_path}")
-        trainer.load_state_dict(state_dict, resume=resume)
+
+        state_dict_device = torch.load(checkpoint_path, map_location=trainer.device.type)
+        trainer.load_state_dict(state_dict_device, resume=resume)
         return trainer        
 #%%
