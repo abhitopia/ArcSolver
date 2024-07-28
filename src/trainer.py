@@ -271,6 +271,7 @@ class TrainerBase:
 
     def load_state_dict(self, state_dict, resume=True, strict=True):
         self.model.load_state_dict(state_dict['model_state_dict'], strict=strict)
+        self.model.to(self.device)
         self._eval_at_start = True
         current_commit_hash = get_git_commit_hash()
         saved_commit_hash = state_dict.get('git_commit_hash', None)
@@ -280,7 +281,6 @@ class TrainerBase:
         if resume:
             hparams_dict = state_dict['hparams']
             assert hparams_dict == self.hparams.as_dict(), 'Hparams do not match! Cannot resume training.'
-
             self.step = state_dict['step']
             self.epoch = state_dict['epoch']
             self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
