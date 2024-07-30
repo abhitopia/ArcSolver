@@ -3,7 +3,7 @@
 from enum import Enum, auto
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 import numpy as np
 
 
@@ -40,6 +40,36 @@ class ArcTask:
         if not isinstance(other, ArcTask):
             return NotImplemented
         return (self.id, self.version) < (other.id, other.version)
+    
+
+    def to_dict(self):
+        result = {
+            "id": self.id,
+            "dataset": self.dataset,
+            "version": self.version,
+            "augmentation_group": self.augmentation_group,
+            "train": [{"input": input.tolist(), "output": output.tolist()} for input, output in self.train],
+            "test": [{"input": input.tolist(), "output": output.tolist()} for input, output in self.test]
+        }
+
+        if self.augmentation_group == "None":
+            del result['augmentation_group']
+        if self.version is None:
+            del result['version']
+        if self.dataset is None:
+            del result['dataset']
+
+        return result
+    
+
+    @staticmethod
+    def from_dict(task_dict):
+        return ArcTask(id=task_dict['id'],
+                       train=task_dict['train'],
+                       test=task_dict['test'],
+                       dataset=task_dict.get('dataset'),
+                       version=task_dict.get('version'),
+                       augmentation_group=task_dict.get('augmentation_group'))
 
 
 
@@ -111,7 +141,69 @@ class TaskInvariantTransform:
             task_copy.test = [(transform(example[0]), transform(example[1])) for example in task_copy.test]
 
         return task_copy
+
+
+def gen_synth_arc_data(num_tasks=400, dest_path: Path = 'data/synthetic/'):
+
+    def gen_grid(max_size=30):
+        # Define the dimensions
+        width = np.random.randint(2, max_size+1)  # Randomly choose width between 2 and 30
+        height = np.random.randint(2, max_size+1)  # Randomly choose height between 2 and 30
+
+        # Generate the 2D grid with random values between 0 and 9
+        grid = np.random.randint(0, 10, size=(height, width))
+        return grid
+
+    def gen_task(transformation, num_train=4, num_test=1):
+        # Generate the input and output grids
+
+        max_size = np.random.randint(2, 31)
+        def fnc(num_examples):
+            examples = []
+            for _ in range(num_examples):
+                input_grid = gen_grid(max_size=max_size)
+                output_grid = transformation(input_grid)
+                examples.append({'input': input_grid, 'output': output_grid})
+            return examples
     
+        train, test = fnc(num_train), fnc(num_test)
+        return train, test
+    
+
+    def generate_synthetic_dataset(transform: Union[callable, List[callable]], num_tasks=400, name=None):
+        if not isinstance(transform, list):
+            transform = [transform]
+        
+        tasks = []
+        for i in range(num_tasks):
+            task_transform = transform[i % len(transform)]
+            train, test = gen_task(task_transform)
+            task = ArcTask(i, train, test, dataset=name)
+            tasks.append(task)
+        
+        return tasks
+
+    base_path = Path(__file__).resolve().parent.parent    
+    dest_path = base_path / Path(dest_path)
+    num_tasks = 400
+    for transformation in list(ArrayTransform) + [list(ColorPermutation)]:
+        if isinstance(transformation, list):
+            transforms = [t.transform for t in transformation]
+            dataset_name = f"synth-CLRPM"
+        else:
+            transforms = [transformation.transform]
+            dataset_name = f"synth-{transformation.name}"
+
+        dataset_path = dest_path / dataset_name
+        dataset_path.mkdir(parents=True, exist_ok=True)
+        tasks = generate_synthetic_dataset(transforms, num_tasks=num_tasks, name=dataset_name)
+
+        for task in tasks:
+            task_dict = task.to_dict()
+            task_path = dataset_path / f"{task.id}.json"
+            json.dump(task_dict, task_path.open('w'), indent=4)
+
+
 
 class TaskAugmenter:
     def __init__(self, augmentation_id: int):
@@ -206,6 +298,10 @@ class ArcTasksLoader:
         return sorted(augmented_tasks)
 
 
+## Used following code to generate synthetic data
+# gen_synth_arc_data()
+
+
 # Training Tasks
 ARC_1D = ArcTasksLoader(name='1D-ARC', path='data/arc_dataset_collection/dataset/1D-ARC/data')
 ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
@@ -222,6 +318,17 @@ ARC_REARC_HARD = ArcTasksLoader(name='ARC_REARC_HARD', path='data/arc_dataset_co
 ARC_SEQUENCE = ArcTasksLoader(name='ARC_SEQUENCE', path='data/arc_dataset_collection/dataset/Sequence_ARC/data')
 ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_dataset_collection/dataset/synth_riddles/data')
 ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dataset/ARC/data/evaluation')
+
+# Synthetic tasks
+ARC_SYNTH_IDENT = ArcTasksLoader(name='ARC_SYNTH_IDENT', path='data/synthetic/synth-IDENT/data')
+ARC_SYNTH_RT090 = ArcTasksLoader(name='ARC_SYNTH_RT090', path='data/synthetic/synth-RT090/data')
+ARC_SYNTH_RT180 = ArcTasksLoader(name='ARC_SYNTH_RT180', path='data/synthetic/synth-RT180/data')
+ARC_SYNTH_RT270 = ArcTasksLoader(name='ARC_SYNTH_RT270', path='data/synthetic/synth-RT270/data')
+ARC_SYNTH_FLPLR = ArcTasksLoader(name='ARC_SYNTH_FLPLR', path='data/synthetic/synth-FLPLR/data')
+ARC_SYNTH_FLPUD = ArcTasksLoader(name='ARC_SYNTH_FLPUD', path='data/synthetic/synth-FLPUD/data')
+ARC_SYNTH_FLPDG = ArcTasksLoader(name='ARC_SYNTH_FLPDG', path='data/synthetic/synth-FLPDG/data')
+ARC_SYNTH_FLPAD = ArcTasksLoader(name='ARC_SYNTH_FLPAD', path='data/synthetic/synth-FLPAD/data')
+ARC_SYNTH_CLRPM = ArcTasksLoader(name='ARC_SYNTH_CLRPM', path='data/synthetic/synth-CLRPM/data')
 
 
 TRAINING_TASKLOADER = ARC_TRAIN
@@ -240,11 +347,19 @@ AUXILIARY_TASKLOADERS = [
     ARC_REARC_EASY,
     ARC_REARC_HARD,
     ARC_SEQUENCE,
-    ARC_SYNTH_RIDDLES
+    ARC_SYNTH_RIDDLES,
+    ARC_SYNTH_IDENT,
+    ARC_SYNTH_RT090,
+    ARC_SYNTH_RT180,
+    ARC_SYNTH_RT270,
+    ARC_SYNTH_FLPLR,
+    ARC_SYNTH_FLPUD,
+    ARC_SYNTH_FLPDG,
+    ARC_SYNTH_FLPAD,
+    ARC_SYNTH_CLRPM
 ]
 
 
 # Evaluation Tasks
 #%%
-
 # %%

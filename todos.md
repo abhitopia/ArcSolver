@@ -1,4 +1,24 @@
-# TODOS
+# V2 TODOS
+- [x] Move current code to a separate branch
+- [x] Generate Synthetic ARC Dataset (Identity, Transform, CP)
+- [ ] Create task difficulty Metric
+
+
+
+## Difficulty Metric
+- Size
+- Size Scale
+- Histogram Diff
+- Color Variablity
+- Compression Ratio
+- Entropy
+- Number of Objects
+- Number of Colors
+
+
+
+
+# V1 TODOS
 - [x] Wrap with torch.autocast even during evaluation
 - [x] Load model from another model
 - [x] Add BatchSize metric (in Tokens)
@@ -24,9 +44,10 @@
 - [x] For follow ups, take run path instead to use autocomplete
 - [x] Add BS size, and seq_len to the metrics
 - [x] Make the naming of follow modelsize experiment consistent with lr followup
-- [ ] Test out the changes on the Lightning GPU
-- [ ] Run 128 dim training on H100!!
-- [ ] Make sync script to sync continuously
+- [x] Test out the changes on the Lightning GPU
+- [x] Run 128 dim training on H100!!
+- [ ] Add identity program and augment data further
+- [x] Make sync script to sync continuously
 - [ ] Analyse trained model on the dataset
 - [ ] AvgSeqLen for the correct samples (to see whether that is changing even if the sample accuracy goes down) (May be this can be done as part of analysis as opposed to metric during training?)
 - [ ] Run Cuda Empty Cache After each train and eval epoch
