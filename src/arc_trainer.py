@@ -49,7 +49,8 @@ class ArcHparams(Hparams):
 
         training_data = TrainingData(
                     augmentation_factor=self.data.data_aug,
-                    join_version=not self.data.sep_task_version, 
+                    join_version=not self.data.sep_task_version,
+                    num_levels=self.data.num_diff_levels,
                     seed=self.seed).load()
         
         # self.state['training_data'] = training_data
@@ -60,8 +61,8 @@ class ArcHparams(Hparams):
 
         # training_data = self.state['training_data']
         config = self.optim
-        train_ds = training_data.train_ds.subset(config.max_examples)
-        eval_ds = training_data.eval_ds.subset(config.max_examples)
+        train_ds = training_data.train_ds(num_levels=self.data.diff_level).subset(config.max_examples)
+        eval_ds = training_data.eval_ds(num_levels=self.data.diff_level).subset(config.max_examples)
         
         train_dl = train_ds.get_dataloader(batch_size=config.batch_size,
                                            seq_len=1024,

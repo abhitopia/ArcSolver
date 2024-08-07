@@ -278,13 +278,13 @@ class TrainingData:
     def __init__(self, augmentation_factor: int = 2, join_version: bool = False,
                 training_loader: ArcTasksLoader = TRAINING_TASKLOADER,
                 auxilliary_loader: List[ArcTasksLoader] = AUXILIARY_TASKLOADERS,
-                levels = 15, seed: int = 42):
+                num_levels = 15, seed: int = 42):
         self.augmentation_factor = augmentation_factor
         self.training_loader = training_loader
         self.auxilliary_loader = sorted(auxilliary_loader) # Ensure reproducibility
         self.join_version = join_version
         self.seed = seed
-        self.levels = levels
+        self.num_levels = num_levels
         self.tasks = []
         self.train_examples = []
         self.test_examples = []
@@ -340,7 +340,7 @@ class TrainingData:
 
         ranks = [t.rank for t in sorted_tasks]
         # Added extra plus 1 because the first bin is usually empty
-        quantiles = np.linspace(0, 1, (self.levels + 1) + 1)
+        quantiles = np.linspace(0, 1, (self.num_levels + 1) + 1)
         bin_edges = np.quantile(ranks, quantiles)
     
         for i in range(len(bin_edges) - 1):
@@ -425,19 +425,31 @@ class TrainingData:
             hash_args.append(loader.name)
 
         hash_args.append(str(self.augmentation_factor))
-        hash_args.append(str(self.levels))
+        hash_args.append(str(self.num_levels))
         hash_args.append(str(self.join_version))
         hash_args.append(str(self.seed))
 
         return hash_string('_'.join(hash_args))
     
-    @property
-    def train_ds(self):
-        return ArcExamplesDataset(self.tokenized_train_examples, pad_idx=self.grid_tokenizer.PAD_IDX)
+    def train_ds(self, num_levels: int, from_level: int = 0):
+        assert num_levels > 0 and num_levels <= self.num_levels, f'num_levels must be between 1 and {self.num_levels}'
+        assert from_level >= 0 and from_level < num_levels, f'from_level must be between 0 and num_levels({num_levels})'
+        examples = []
+        for i in range(from_level, num_levels):
+            examples.extend(self.tokenized_train_examples[i])
+
+        examples = self.shuffle(examples)
+        return ArcExamplesDataset(examples, pad_idx=self.grid_tokenizer.PAD_IDX)
     
-    @property
-    def eval_ds(self):
-        return ArcExamplesDataset(self.tokenized_test_examples, pad_idx=self.grid_tokenizer.PAD_IDX)
+    def eval_ds(self, num_levels: int, from_level: int = 0):
+        assert num_levels > 0 and num_levels <= self.num_levels, f'num_levels must be between 1 and {self.num_levels}'
+        assert from_level >= 0 and from_level < num_levels, f'from_level must be between 0 and num_levels({num_levels})'
+        examples = []
+        for i in range(from_level, num_levels):
+            examples.extend(self.tokenized_test_examples[i])
+
+        examples = self.shuffle(examples)
+        return ArcExamplesDataset(examples, pad_idx=self.grid_tokenizer.PAD_IDX)
 # %%
 
 # data = TrainingData().load()
