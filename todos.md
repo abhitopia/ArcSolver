@@ -5,9 +5,11 @@
 - [x] Change the training to include another parameter to specify levels and training data
 - [x] Move to Swiglu Activation
 - [x] Move to RMS Norm
-- [ ] Move to RoPe embeddings
+- [x] Move to RoPe embeddings
+- [ ] Add autocast + no_grad to rotary embeddings
 - [ ] Change the model to the new architecture
 - [ ] Move to transformer++ architecture
+- [ ] Adjust the checkpoint/model load code to the new architecture
 - [ ] Start using weights and biases as a replacement for tensorboard
 - [ ] Add epoch level to tensorboard
 - [ ] Break down accuracy by levels
