@@ -4,8 +4,8 @@
 - [x] Create task difficulty Metric
 - [x] Change the training to include another parameter to specify levels and training data
 - [x] Move to Swiglu Activation
+- [x] Move to RMS Norm
 - [ ] Move to RoPe embeddings
-- [ ] Move to RMS Norm
 - [ ] Change the model to the new architecture
 - [ ] Move to transformer++ architecture
 - [ ] Start using weights and biases as a replacement for tensorboard
