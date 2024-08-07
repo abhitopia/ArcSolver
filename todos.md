@@ -1,7 +1,8 @@
 # V2 TODOS
 - [x] Move current code to a separate branch
 - [x] Generate Synthetic ARC Dataset (Identity, Transform, CP)
-- [ ] Create task difficulty Metric
+- [x] Create task difficulty Metric
+- [ ] Change the training to include another parameter to specify levels and training data
 
 
 

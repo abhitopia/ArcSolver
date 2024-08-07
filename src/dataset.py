@@ -278,12 +278,13 @@ class TrainingData:
     def __init__(self, augmentation_factor: int = 2, join_version: bool = False,
                 training_loader: ArcTasksLoader = TRAINING_TASKLOADER,
                 auxilliary_loader: List[ArcTasksLoader] = AUXILIARY_TASKLOADERS,
-                seed: int = 42):
+                levels = 15, seed: int = 42):
         self.augmentation_factor = augmentation_factor
         self.training_loader = training_loader
         self.auxilliary_loader = sorted(auxilliary_loader) # Ensure reproducibility
         self.join_version = join_version
         self.seed = seed
+        self.levels = levels
         self.tasks = []
         self.train_examples = []
         self.test_examples = []
@@ -334,24 +335,42 @@ class TrainingData:
             training_tasks.extend(aux_tasks)
 
         ## Shuffle all tasks
-        self.tasks = self.shuffle(training_tasks)
+        training_tasks = self.shuffle(training_tasks)
+        sorted_tasks = sorted(training_tasks, key=lambda t: t.rank)
+
+        ranks = [t.rank for t in sorted_tasks]
+        # Added extra plus 1 because the first bin is usually empty
+        quantiles = np.linspace(0, 1, (self.levels + 1) + 1)
+        bin_edges = np.quantile(ranks, quantiles)
+    
+        for i in range(len(bin_edges) - 1):
+            low, high = bin_edges[i], bin_edges[i+1]
+            tasks = [t for t in sorted_tasks if low <= t.rank < high]
+            if len(tasks) == 0:
+                continue
+            tasks = self.shuffle(tasks)
+            self.tasks.append(tasks)
+        return self.tasks
 
     def load_examples(self) -> None:
-        task2examples = TaskToExamples(join_version=self.join_version)
-        train_examples, test_examples = [], []
-        for task in self.tasks:
-            train_egs, test_egs = task2examples(task)
-            train_examples.extend(train_egs)
-            test_examples.extend(test_egs)
+        for tasks in self.tasks:
+            task2examples = TaskToExamples(join_version=self.join_version)
+            train_examples, test_examples = [], []
+            for task in tasks:
+                train_egs, test_egs = task2examples(task)
+                train_examples.extend(train_egs)
+                test_examples.extend(test_egs)
 
-        self.train_examples = self.shuffle(train_examples)
-        self.test_examples = self.shuffle(test_examples)
+            self.train_examples.append(self.shuffle(train_examples))
+            self.test_examples.append(self.shuffle(test_examples))
+
+        return self.train_examples, self.test_examples
 
 
     def tokenize_examples(self):
         self.program_tokenizer = ProgramTokenizer()
         self.grid_tokenizer = GridTokenizer()
-        programs = [p for ((p, _), _) in self.train_examples]
+        programs = [p for examples in self.train_examples for ((p, _), _) in examples]
         self.program_tokenizer.build(programs)
 
         def tokenize_examples(examples):
@@ -364,14 +383,16 @@ class TrainingData:
             return tokenized_examples
 
         # No need to shuffle as examples are already shuffled
-        self.tokenized_train_examples = tokenize_examples(self.train_examples)
-        self.tokenized_test_examples = tokenize_examples(self.test_examples)
+        for examples in self.train_examples:
+            self.tokenized_train_examples.append(tokenize_examples(examples))
+
+        for examples in self.test_examples:
+            self.tokenized_test_examples.append(tokenize_examples(examples))
 
 
     def load(self, cache_dir: Path = CACHE_FOLDER):
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_file = cache_dir / f'training_data_{self.hash()}.pkl'
-
         if cache_file.exists():
             data = pickle.load(cache_file.open('rb'))
             self.tasks = data['tasks']
@@ -404,6 +425,7 @@ class TrainingData:
             hash_args.append(loader.name)
 
         hash_args.append(str(self.augmentation_factor))
+        hash_args.append(str(self.levels))
         hash_args.append(str(self.join_version))
         hash_args.append(str(self.seed))
 
