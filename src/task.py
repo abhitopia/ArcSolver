@@ -15,6 +15,7 @@ class ArcTask:
         self.id = id
         self.train = [(np.array(example['input']), np.array(example['output'])) for example in train]
         self.test = [(np.array(example['input']), np.array(example['output'])) for example in test]
+        self._rank = None
 
     def __repr__(self):
         return f'ArcTask(id={self.id}, dataset={self.dataset}, version={self.version}, augmentation_group={self.augmentation_group})'
@@ -72,6 +73,26 @@ class ArcTask:
                        augmentation_group=task_dict.get('augmentation_group'))
 
 
+    def compute_rank(self):
+        examples = self.train + self.test
+        difficulties = []
+        for inp, out in examples:
+            size = max(inp.size, out.size)/(30*30)
+            scale = max(inp.size/out.size, out.size/inp.size)/(30*30)
+            hist_inp, _ = np.histogram(inp.flatten(), bins=np.arange(11), density=True)
+            hist_out, _ = np.histogram(out.flatten(), bins=np.arange(11), density=True)
+            color_var = np.sqrt(np.square(hist_inp - hist_out).sum())
+            difficulty = size*4  + scale*2 + color_var
+            difficulties.append(difficulty)
+
+        rank = np.log(max(difficulties) + 1)/2
+        return rank
+
+    @property
+    def rank(self):
+        if self._rank is None:
+            self._rank = self.compute_rank()
+        return self._rank
 
 class ColorPermutation(Enum):
     CPID = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]  # Identity
@@ -320,15 +341,15 @@ ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_data
 ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dataset/ARC/data/evaluation')
 
 # Synthetic tasks
-ARC_SYNTH_IDENT = ArcTasksLoader(name='ARC_SYNTH_IDENT', path='data/synthetic/synth-IDENT/data')
-ARC_SYNTH_RT090 = ArcTasksLoader(name='ARC_SYNTH_RT090', path='data/synthetic/synth-RT090/data')
-ARC_SYNTH_RT180 = ArcTasksLoader(name='ARC_SYNTH_RT180', path='data/synthetic/synth-RT180/data')
-ARC_SYNTH_RT270 = ArcTasksLoader(name='ARC_SYNTH_RT270', path='data/synthetic/synth-RT270/data')
-ARC_SYNTH_FLPLR = ArcTasksLoader(name='ARC_SYNTH_FLPLR', path='data/synthetic/synth-FLPLR/data')
-ARC_SYNTH_FLPUD = ArcTasksLoader(name='ARC_SYNTH_FLPUD', path='data/synthetic/synth-FLPUD/data')
-ARC_SYNTH_FLPDG = ArcTasksLoader(name='ARC_SYNTH_FLPDG', path='data/synthetic/synth-FLPDG/data')
-ARC_SYNTH_FLPAD = ArcTasksLoader(name='ARC_SYNTH_FLPAD', path='data/synthetic/synth-FLPAD/data')
-ARC_SYNTH_CLRPM = ArcTasksLoader(name='ARC_SYNTH_CLRPM', path='data/synthetic/synth-CLRPM/data')
+ARC_SYNTH_IDENT = ArcTasksLoader(name='ARC_SYNTH_IDENT', path='data/synthetic/synth-IDENT')
+ARC_SYNTH_RT090 = ArcTasksLoader(name='ARC_SYNTH_RT090', path='data/synthetic/synth-RT090')
+ARC_SYNTH_RT180 = ArcTasksLoader(name='ARC_SYNTH_RT180', path='data/synthetic/synth-RT180')
+ARC_SYNTH_RT270 = ArcTasksLoader(name='ARC_SYNTH_RT270', path='data/synthetic/synth-RT270')
+ARC_SYNTH_FLPLR = ArcTasksLoader(name='ARC_SYNTH_FLPLR', path='data/synthetic/synth-FLPLR')
+ARC_SYNTH_FLPUD = ArcTasksLoader(name='ARC_SYNTH_FLPUD', path='data/synthetic/synth-FLPUD')
+ARC_SYNTH_FLPDG = ArcTasksLoader(name='ARC_SYNTH_FLPDG', path='data/synthetic/synth-FLPDG')
+ARC_SYNTH_FLPAD = ArcTasksLoader(name='ARC_SYNTH_FLPAD', path='data/synthetic/synth-FLPAD')
+ARC_SYNTH_CLRPM = ArcTasksLoader(name='ARC_SYNTH_CLRPM', path='data/synthetic/synth-CLRPM')
 
 
 TRAINING_TASKLOADER = ARC_TRAIN
