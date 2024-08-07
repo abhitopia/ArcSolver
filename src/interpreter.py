@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 from .utils import is_power_of_two, get_logger
 from .dataset import ProgramTokenizer, GridTokenizer
-
+from torch import Tensor
 
 logger = get_logger()
 
@@ -130,6 +130,41 @@ class SwiGLUFFN(nn.Module):
         return x
 
 
+class RMSNorm(nn.Module):
+    """
+    Ref Source: https://pytorch.org/torchtune/stable/_modules/torchtune/modules/rms_norm.html#RMSNorm
+    Implements Root Mean Square Normalization introduced in
+    https://arxiv.org/abs/1910.07467.
+
+    Reference implementation (used for correctness verfication)
+    can be found here:
+    https://github.com/facebookresearch/llama/blob/main/llama/model.py
+
+    Args:
+        dim (int): embedding size
+        eps (float): small value to avoid division by zero. Default: 1e-6
+    """
+
+    def __init__(self, dim: int, eps: float = 1e-6) -> None:
+        super().__init__()
+        self.eps = eps
+        self.scale = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Args:
+            x (Tensor): input tensor to normalize
+
+        Returns:
+            Tensor: The output tensor after applying RMSNorm.
+        """
+        # computation is in fp32
+        x_fp32 = x.float()
+        x_normed = (
+            x_fp32 * torch.rsqrt(x_fp32.pow(2).mean(-1, keepdim=True) + self.eps)
+        ).type_as(x)
+        return x_normed * self.scale
+
 
 class MLP(nn.Module):
     def __init__(self, config):
@@ -158,17 +193,17 @@ class MixingBlock(nn.Module):
 
         # Instantiate the shared_mixer block once if sharing is enabled
         if config.share_mixer:
-            shared_mixer = nn.Sequential(nn.LayerNorm(config.n_dim), SelfAttention(config))
+            shared_mixer = nn.Sequential(RMSNorm(config.n_dim), SelfAttention(config))
 
         for _ in range(config.n_mixers):
             if config.share_mixer:
                 self.mixers.append(shared_mixer)
             else:
-                self.mixers.append(nn.Sequential(nn.LayerNorm(config.n_dim),
+                self.mixers.append(nn.Sequential(RMSNorm(config.n_dim),
                                                 SelfAttention(config)))
 
         self.normed_mlp = nn.Sequential(
-                                nn.LayerNorm(config.n_dim),
+                                RMSNorm(config.n_dim),
                                 SwiGLUFFN(config.n_dim, 4 * config.n_dim))
         
 
@@ -215,7 +250,7 @@ class Interpreter(nn.Module):
         self.wte = nn.Embedding(config.grid_vocab_size, config.n_dim)
         self.wpe = nn.Embedding(config.max_seq_len, config.n_dim)
         self.recurrent_block = RecurrentBlock(config)
-        self.ln_f = nn.LayerNorm(config.n_dim)
+        self.ln_f = RMSNorm(config.n_dim)
 
         self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
         # weight sharing scheme
