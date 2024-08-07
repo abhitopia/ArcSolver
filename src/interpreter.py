@@ -1,6 +1,7 @@
 #%%
 from dataclasses import dataclass
 import inspect
+from typing import Optional
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -57,10 +58,131 @@ class InterpreterConfig:
 
 
 
+class RotaryPositionalEmbeddings(nn.Module):
+    """
+    Source: https://pytorch.org/torchtune/stable/_modules/torchtune/modules/position_embeddings.html#RotaryPositionalEmbeddings
+
+    This class implements Rotary Positional Embeddings (RoPE)
+    proposed in https://arxiv.org/abs/2104.09864.
+
+    Reference implementation (used for correctness verfication)
+    can be found here:
+    https://github.com/meta-llama/llama/blob/main/llama/model.py#L80
+
+    In this implementation we cache the embeddings for each position upto
+    ``max_seq_len`` by computing this during init.
+
+    Args:
+        dim (int): Embedding dimension. This is usually set to the dim of each
+            head in the attention module computed as ````embed_dim`` // ``num_heads````
+        max_seq_len (int): Maximum expected sequence length for the
+            model, if exceeded the cached freqs will be recomputed
+        base (int): The base for the geometric progression used to compute
+            the rotation angles
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        max_seq_len: int = 1024,
+        base: int = 10_000,
+    ) -> None:
+        super().__init__()
+        self.dim = dim
+        self.base = base
+        self.max_seq_len = max_seq_len
+        self._rope_init()
+
+    # We need to explicitly define reset_parameters for FSDP initialization, see
+    # https://github.com/pytorch/pytorch/blob/797d4fbdf423dd9320ebe383fb57ffb1135c4a99/torch/distributed/fsdp/_init_utils.py#L885
+    def reset_parameters(self):
+        self._rope_init()
+
+    def _rope_init(self):
+        theta = 1.0 / (
+            self.base
+            ** (torch.arange(0, self.dim, 2)[: (self.dim // 2)].float() / self.dim)
+        )
+        self.register_buffer("theta", theta, persistent=False)
+        self.build_rope_cache(self.max_seq_len)
+
+    def build_rope_cache(self, max_seq_len: int = 4096) -> None:
+        # Create position indexes `[0, 1, ..., max_seq_len - 1]`
+        seq_idx = torch.arange(
+            max_seq_len, dtype=self.theta.dtype, device=self.theta.device
+        )
+
+        # Outer product of theta and position index; output tensor has
+        # a shape of [max_seq_len, dim // 2]
+        idx_theta = torch.einsum("i, j -> ij", seq_idx, self.theta).float()
+
+        # cache includes both the cos and sin components and so the output shape is
+        # [max_seq_len, dim // 2, 2]
+        cache = torch.stack([torch.cos(idx_theta), torch.sin(idx_theta)], dim=-1)
+        self.register_buffer("cache", cache, persistent=False)
+
+    def forward(self, x: Tensor, *, input_pos: Optional[Tensor] = None) -> Tensor:
+        """
+        Args:
+            x (Tensor): input tensor with shape
+                [b, s, n_h, h_d]
+            input_pos (Optional[Tensor]): Optional tensor which contains the position ids
+                of each token. During training, this is used to indicate the positions
+                of each token relative to its sample when packed, shape [b, s].
+                During inference, this indicates the position of the current token.
+                If none, assume the index of the token is its position id. Default is None.
+
+        Returns:
+            Tensor: output tensor with RoPE applied
+
+        Notation used for tensor shapes:
+            - b: batch size
+            - s: sequence length
+            - n_h: num heads
+            - h_d: head dim
+
+        TODO: The implementation below can be made more efficient
+        for inference.
+        """
+        # input tensor has shape [b, s, n_h, h_d]
+        seq_len = x.size(1)
+
+        # extract the values based on whether input_pos is set or not
+        rope_cache = (
+            self.cache[:seq_len] if input_pos is None else self.cache[input_pos]
+        )
+
+        # reshape input; the last dimension is used for computing the output.
+        # Cast to float to match the reference implementation
+        # tensor has shape [b, s, n_h, h_d // 2, 2]
+        xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
+
+        # reshape the cache for broadcasting
+        # tensor has shape [b, s, 1, h_d // 2, 2] if packed samples,
+        # otherwise has shape [1, s, 1, h_d // 2, 2]
+        rope_cache = rope_cache.view(-1, xshaped.size(1), 1, xshaped.size(3), 2)
+
+        # tensor has shape [b, s, n_h, h_d // 2, 2]
+        x_out = torch.stack(
+            [
+                xshaped[..., 0] * rope_cache[..., 0]
+                - xshaped[..., 1] * rope_cache[..., 1],
+                xshaped[..., 1] * rope_cache[..., 0]
+                + xshaped[..., 0] * rope_cache[..., 1],
+            ],
+            -1,
+        )
+
+        # tensor has shape [b, s, n_h, h_d]
+        x_out = x_out.flatten(3)
+        return x_out.type_as(x)
+
+
 class SelfAttention(nn.Module):
-    def __init__(self, config: InterpreterConfig):
+    def __init__(self, config: InterpreterConfig, rope: RotaryPositionalEmbeddings):
         super().__init__()
         self.config = config
+        self.rope = rope
         assert config.n_dim % config.n_head == 0
         # key, query, value projections for all heads, but in a batch
         self.c_attn = nn.Linear(config.n_dim, 3 * config.n_dim)
@@ -80,9 +202,18 @@ class SelfAttention(nn.Module):
         # e.g. in GPT-2 (124M), n_head=12, hs=64, so nh*hs=C=768 channels in the Transformer
         qkv = self.c_attn(x)
         q, k, v = qkv.split(self.n_dim, dim=2)
-        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+
+
+        # k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        # q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+
+        # For Rope
+        k = k.view(B, T, self.n_head, C // self.n_head)
+        q = q.view(B, T, self.n_head, C // self.n_head)
+        k = self.rope(k).transpose(1, 2)
+        q = self.rope(q).transpose(1, 2)
+
         ## attention (materializes the large (T,T) matrix for all the queries and keys)
         y = F.scaled_dot_product_attention(q, k, v, is_causal=self.config.causal) # flash attention
 
@@ -183,7 +314,7 @@ class MLP(nn.Module):
 
 
 class MixingBlock(nn.Module):
-    def __init__(self, config: InterpreterConfig):
+    def __init__(self, config: InterpreterConfig, rope: RotaryPositionalEmbeddings):
         super().__init__()
 
         self.mixers = nn.ModuleList()
@@ -193,7 +324,7 @@ class MixingBlock(nn.Module):
 
         # Instantiate the shared_mixer block once if sharing is enabled
         if config.share_mixer:
-            shared_mixer = nn.Sequential(RMSNorm(config.n_dim), SelfAttention(config))
+            shared_mixer = nn.Sequential(RMSNorm(config.n_dim), SelfAttention(config, rope))
 
         for _ in range(config.n_mixers):
             if config.share_mixer:
@@ -222,7 +353,8 @@ class RecurrentBlock(nn.Module):
     def __init__(self, config: InterpreterConfig):
         super().__init__()
         self.config = config
-        self.blocks = nn.ModuleList([MixingBlock(config) for _ in range(config.n_blocks)])
+        self.rope = RotaryPositionalEmbeddings(config.n_dim, config.max_seq_len)
+        self.blocks = nn.ModuleList([MixingBlock(config, rope=self.rope) for _ in range(config.n_blocks)])
 
     def forward(self, x):
         for block in self.blocks:
@@ -248,7 +380,8 @@ class Interpreter(nn.Module):
                         nn.Linear(config.n_embd, config.n_dim, bias=False))
 
         self.wte = nn.Embedding(config.grid_vocab_size, config.n_dim)
-        self.wpe = nn.Embedding(config.max_seq_len, config.n_dim)
+        # self.wpe = nn.Embedding(config.max_seq_len, config.n_dim)
+
         self.recurrent_block = RecurrentBlock(config)
         self.ln_f = RMSNorm(config.n_dim)
 
@@ -280,9 +413,10 @@ class Interpreter(nn.Module):
         # forward the token and posisition embeddings
         pos = torch.arange(0, T2, dtype=torch.long, device=inp_idx.device) # shape (T)
         prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_embd)
-        pos_emb = self.wpe(pos) # position embeddings of shape (T, n_embd)
+        # pos_emb = self.wpe(pos) # position embeddings of shape (T, n_embd)
         inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_embd)
-        inp_x = inp_emb + pos_emb
+        # inp_x = inp_emb + pos_emb
+        inp_x = inp_emb
 
         x = torch.cat((prog_emb, inp_x), dim=1)  # concatenate program and input embeddings (B, T1+ T2, n_embd)
 
