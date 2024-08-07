@@ -2,7 +2,13 @@
 - [x] Move current code to a separate branch
 - [x] Generate Synthetic ARC Dataset (Identity, Transform, CP)
 - [x] Create task difficulty Metric
-- [ ] Change the training to include another parameter to specify levels and training data
+- [x] Change the training to include another parameter to specify levels and training data
+- [x] Move to Swiglu Activation
+- [ ] Move to RoPe embeddings
+- [ ] Move to RMS Norm
+- [ ] Change the model to the new architecture
+- [ ] Move to transformer++ architecture
+- [ ] Start using weights and biases as a replacement for tensorboard
 - [ ] Add epoch level to tensorboard
 - [ ] Break down accuracy by levels
 

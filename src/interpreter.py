@@ -4,7 +4,7 @@ import inspect
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from src.utils import is_power_of_two, get_logger
+from .utils import is_power_of_two, get_logger
 from .dataset import ProgramTokenizer, GridTokenizer
 
 
@@ -92,6 +92,45 @@ class SelfAttention(nn.Module):
         return y
 
 
+class SwiGLU(nn.Module):
+    def forward(self, x):
+        x, gate = x.chunk(2, dim=-1)
+        return F.silu(gate) * x
+
+
+class SwiGLUFFN(nn.Module):
+    """SwiGLUFFN
+
+    Taken from: https://github.com/kyegomez/zeta/tree/master
+    Args:
+        nn (_type_): _description_
+
+    Examples:
+    >>> import torch
+    >>> x = torch.randn(5, 10)
+    >>> swiglu = SwiGLUFFN(10, 20)
+    >>> swiglu(x).shape
+    torch.Size([5, 10])
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        hidden_dim: int = None,
+    ):
+        super().__init__()
+        self.w1 = nn.Linear(dim, hidden_dim, bias=False)
+        self.w2 = nn.Linear(hidden_dim, dim, bias=False)
+
+        # Note that it adds extra params, but I don't care about it.
+        self.w3 = nn.Linear(dim, hidden_dim, bias=False)
+
+    def forward(self, x):
+        x = self.w2(F.silu(self.w1(x)) * self.w3(x))
+        return x
+
+
+
 class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -130,7 +169,7 @@ class MixingBlock(nn.Module):
 
         self.normed_mlp = nn.Sequential(
                                 nn.LayerNorm(config.n_dim),
-                                MLP(config))
+                                SwiGLUFFN(config.n_dim, 4 * config.n_dim))
         
 
     def forward(self, x):
@@ -376,7 +415,7 @@ class Interpreter(nn.Module):
 
             if config_trg.n_mixers < config_src.n_mixers:
                 logger.warning(f"WARNING: Number of mixers in target model is less than source model. Copying only the first {config_trg.n_mixers} mixers")
-                
+
             for i in range(config_trg.n_mixers):
                     if i < config_src.n_mixers:
                         copy_(f'{trg_block_key}.mixers.{i}.', src_prefix=f'{src_block_key}.mixers.{i}.')
@@ -388,4 +427,6 @@ class Interpreter(nn.Module):
         copy_('ln_f.')
         
 #%%
+
+
 # %%
