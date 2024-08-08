@@ -8,6 +8,8 @@ from torch.nn import functional as F
 from .utils import is_power_of_two, get_logger
 from .dataset import ProgramTokenizer, GridTokenizer
 from torch import Tensor
+from torch.cuda.amp import autocast
+
 
 logger = get_logger()
 
@@ -121,6 +123,7 @@ class RotaryPositionalEmbeddings(nn.Module):
         cache = torch.stack([torch.cos(idx_theta), torch.sin(idx_theta)], dim=-1)
         self.register_buffer("cache", cache, persistent=False)
 
+    @autocast(enabled = False)
     def forward(self, x: Tensor, *, input_pos: Optional[Tensor] = None) -> Tensor:
         """
         Args:
