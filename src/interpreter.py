@@ -19,11 +19,10 @@ class InterpreterConfig:
     grid_vocab_size: int  # number of array element tokens (one extra for niceness)
     n_dim: int # dimension of the model
     n_head: int # number of heads within each self-attention block
-    n_mixers: int # number of self-attention layers within each transformer block
     n_blocks: int # number of transformer blocks within each recurrence block
-    n_rec_layers: int # number of recurrences
+    n_rec_block: int # number of recurrences of each block 
+    n_rec_layer: int # number of recurrences of the network
     n_embd: int = -1 # embedding dimension (defaults to n_dim )
-    share_mixer: bool = True # Whether to tie the weights of the mixing layers within a transformer block
     causal: bool = False # whether to use causal attention
     max_seq_len: int = 1024 # max sequence length
 
@@ -41,17 +40,16 @@ class InterpreterConfig:
 
     def to_dict(self):
         return {
-            'max_seq_len': self.max_seq_len,
             'prog_vocab_size': self.prog_vocab_size,
             'grid_vocab_size': self.grid_vocab_size,
-            'n_blocks': self.n_blocks,
-            'n_mixers': self.n_mixers,
-            'share_mixer': self.share_mixer,
-            'n_head': self.n_head,
             'n_dim': self.n_dim,
+            'n_head': self.n_head,
+            'n_blocks': self.n_blocks,
+            'n_rec_block': self.n_rec_block,
+            'n_rec_layer': self.n_rec_layer,
             'n_embd': self.n_embd,
-            'n_rec_layers': self.n_rec_layers,
-            'causal': self.causal
+            'causal': self.causal,
+            'max_seq_len': self.max_seq_len
         }
     
     @staticmethod
@@ -363,6 +361,26 @@ class RecurrentBlock(nn.Module):
         for block in self.blocks:
             x = block(x)
         return x
+    
+
+class TransformerBlock(nn.Module):
+    def __init__(self, config: InterpreterConfig, rope: RotaryPositionalEmbeddings):
+        super().__init__()
+        self.config = config
+        self.normed_attn = nn.Sequential(
+                        RMSNorm(config.n_dim),
+                        SelfAttention(config, rope)
+                    )
+        self.normed_mlp = nn.Sequential(
+                            RMSNorm(config.n_dim),
+                            SwiGLUFFN(config.n_dim, 4 * config.n_dim))
+
+
+    def forward(self, x):
+        x = x + self.normed_attn(x)
+        x = x + self.normed_mlp(x)
+        return x    
+
 
 
 class Interpreter(nn.Module):
@@ -385,7 +403,10 @@ class Interpreter(nn.Module):
         self.wte = nn.Embedding(config.grid_vocab_size, config.n_dim)
         # self.wpe = nn.Embedding(config.max_seq_len, config.n_dim)
 
-        self.recurrent_block = RecurrentBlock(config)
+        # self.recurrent_block = RecurrentBlock(config)
+
+        rope = RotaryPositionalEmbeddings(config.n_dim, config.max_seq_len)
+        self.blocks = nn.ModuleList([TransformerBlock(config, rope=rope) for _ in range(config.n_blocks)])
         self.ln_f = RMSNorm(config.n_dim)
 
         self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
@@ -401,10 +422,10 @@ class Interpreter(nn.Module):
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
             gain = 1.0
-            if hasattr(module, 'RESCALE_RESIDUAL'):
-                num_res = self.config.n_blocks * self.config.n_rec_layers
-                res_each_block = (self.config.n_mixers + 1) # 1 for MLP
-                gain = (res_each_block * num_res ) ** -0.5
+            # if hasattr(module, 'RESCALE_RESIDUAL'):
+            #     num_res = self.config.n_blocks * self.config.n_rec_layer
+            #     res_each_block = (self.config.n_mixers + 1) # 1 for MLP
+            #     gain = (res_each_block * num_res ) ** -0.5
             torch.nn.init.xavier_normal_(module.weight, gain=gain)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
@@ -417,8 +438,10 @@ class Interpreter(nn.Module):
         assert B1 == B2, "Batch size of program and input must match"
         assert T1+T2 <= self.config.max_seq_len, f"Cannot forward sequence of length {T1+T2}, max_seq_len is only {self.config.max_seq_len}"
         # forward the token and posisition embeddings
-        pos = torch.arange(0, T2, dtype=torch.long, device=inp_idx.device) # shape (T)
+        # pos = torch.arange(0, T2, dtype=torch.long, device=inp_idx.device) # shape (T)
         prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_embd)
+
+        # Removed positional embeddings for in favor of RoPE
         # pos_emb = self.wpe(pos) # position embeddings of shape (T, n_embd)
         inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_embd)
         # inp_x = inp_emb + pos_emb
@@ -426,9 +449,15 @@ class Interpreter(nn.Module):
 
         x = torch.cat((prog_emb, inp_x), dim=1)  # concatenate program and input embeddings (B, T1+ T2, n_embd)
 
-        # forward the blocks of the transformer
-        for _ in range(self.config.n_rec_layers):
-            x = self.recurrent_block(x)
+
+        for _ in range(self.config.n_rec_layer):
+            for block in self.blocks:
+                for _ in range(self.config.n_rec_block):
+                    x = block(x)
+
+        # # forward the blocks of the transformer
+        # for _ in range(self.config.n_rec_layers):
+        #     x = self.recurrent_block(x)
         # forward the final layernorm and the classifier
         x = self.ln_f(x)
         logits = self.lm_head(x) # (B, T, vocab_size)
