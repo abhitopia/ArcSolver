@@ -186,9 +186,9 @@ class SelfAttention(nn.Module):
         self.rope = rope
         assert config.n_dim % config.n_head == 0
         # key, query, value projections for all heads, but in a batch
-        self.c_attn = nn.Linear(config.n_dim, 3 * config.n_dim)
+        self.c_attn = nn.Linear(config.n_dim, 3 * config.n_dim, bias=False)
         # output projection
-        self.c_proj = nn.Linear(config.n_dim, config.n_dim)
+        self.c_proj = nn.Linear(config.n_dim, config.n_dim, bias=False)
         self.c_proj.RESCALE_RESIDUAL = 1
 
         # regularization
@@ -298,70 +298,6 @@ class RMSNorm(nn.Module):
         return x_normed * self.scale
 
 
-class MLP(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.c_fc    = nn.Linear(config.n_dim, 4 * config.n_dim)
-        self.gelu    = nn.GELU(approximate='tanh')
-        self.c_proj  = nn.Linear(4 * config.n_dim, config.n_dim)
-        self.c_proj.RESCALE_RESIDUAL = 1
-
-
-    def forward(self, x):
-        x = self.c_fc(x)
-        x = self.gelu(x)
-        x = self.c_proj(x)
-        return x
-
-
-class MixingBlock(nn.Module):
-    def __init__(self, config: InterpreterConfig, rope: RotaryPositionalEmbeddings):
-        super().__init__()
-
-        self.mixers = nn.ModuleList()
-
-        # Initialize shared_mixer to None
-        shared_mixer = None
-
-        # Instantiate the shared_mixer block once if sharing is enabled
-        if config.share_mixer:
-            shared_mixer = nn.Sequential(RMSNorm(config.n_dim), SelfAttention(config, rope))
-
-        for _ in range(config.n_mixers):
-            if config.share_mixer:
-                self.mixers.append(shared_mixer)
-            else:
-                self.mixers.append(nn.Sequential(RMSNorm(config.n_dim),
-                                                SelfAttention(config)))
-
-        self.normed_mlp = nn.Sequential(
-                                RMSNorm(config.n_dim),
-                                SwiGLUFFN(config.n_dim, 4 * config.n_dim))
-        
-
-    def forward(self, x):
-
-        # Run the x through each mixer in the ModuleList
-        for mixer in self.mixers:
-            x = x + mixer(x)
-
-        # Finally run the x through the normed MLP
-        x = x + self.normed_mlp(x)
-        return x
-
-
-class RecurrentBlock(nn.Module):
-    def __init__(self, config: InterpreterConfig):
-        super().__init__()
-        self.config = config
-        self.rope = RotaryPositionalEmbeddings(config.n_dim, config.max_seq_len)
-        self.blocks = nn.ModuleList([MixingBlock(config, rope=self.rope) for _ in range(config.n_blocks)])
-
-    def forward(self, x):
-        for block in self.blocks:
-            x = block(x)
-        return x
-    
 
 class TransformerBlock(nn.Module):
     def __init__(self, config: InterpreterConfig, rope: RotaryPositionalEmbeddings):
@@ -395,9 +331,7 @@ class Interpreter(nn.Module):
 
         self.pte = nn.Embedding(config.prog_vocab_size, config.n_prog_embd)
         self.wte = nn.Embedding(config.grid_vocab_size, config.n_embd)
-        # self.wpe = nn.Embedding(config.max_seq_len, config.n_dim)
 
-        # self.recurrent_block = RecurrentBlock(config)
 
         rope = RotaryPositionalEmbeddings(config.n_dim, config.max_seq_len)
         self.blocks = nn.ModuleList([TransformerBlock(config, rope=rope) for _ in range(config.n_blocks)])
@@ -411,18 +345,7 @@ class Interpreter(nn.Module):
         # self.wte.weight = self.lm_head.weight
 
         # init params
-        self.apply(self._init_weights)
-
-    def _init_weights(self, module):
-        if isinstance(module, nn.Linear):
-            gain = 1.0
-            # if hasattr(module, 'RESCALE_RESIDUAL'):
-            #     num_res = self.config.n_blocks * self.config.n_rec_layer
-            #     res_each_block = (self.config.n_mixers + 1) # 1 for MLP
-            #     gain = (res_each_block * num_res ) ** -0.5
-            torch.nn.init.xavier_normal_(module.weight, gain=gain)
-            if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
+        # self.apply(self._init_weights)
 
  
     def forward(self, prog_idx, inp_idx):
