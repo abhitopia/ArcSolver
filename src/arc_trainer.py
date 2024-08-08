@@ -67,12 +67,14 @@ class ArcHparams(Hparams):
         train_dl = train_ds.get_dataloader(batch_size=config.batch_size,
                                            seq_len=1024,
                                            batch_by_token_count=True,
-                                           pin_memory=True)
+                                           pin_memory=True,
+                                           shuffle=True)
 
         eval_dl = eval_ds.get_dataloader(batch_size=config.batch_size,
                                         seq_len=1024,
                                         batch_by_token_count=True,
-                                        pin_memory=True)
+                                        pin_memory=True,
+                                        shuffle=False)
         
         self.state['num_train_batches'] = len(train_dl)
         self.state['num_eval_batches'] = len(eval_dl)
