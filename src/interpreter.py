@@ -42,14 +42,15 @@ class InterpreterConfig:
         return {
             'prog_vocab_size': self.prog_vocab_size,
             'grid_vocab_size': self.grid_vocab_size,
-            'n_dim': self.n_dim,
+            'n_prog_embd': self.n_prog_embd,
             'n_head': self.n_head,
             'n_blocks': self.n_blocks,
             'n_rec_block': self.n_rec_block,
             'n_rec_layer': self.n_rec_layer,
             'n_embd': self.n_embd,
             'causal': self.causal,
-            'max_seq_len': self.max_seq_len
+            'max_seq_len': self.max_seq_len,
+            'n_dim': self.n_dim,
         }
     
     @staticmethod

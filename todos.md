@@ -13,14 +13,24 @@
 - [x] Change the model to the new architecture
 - [x] Removed all the bias from the network
 - [x] Changed to default initialization
-- [ ] Fix the network initialization
-- [ ] Remove stale code
-- [ ] Add metadata to the batch so analysis can be done during training
+- [x] Fix the network initialization
+- [x] Remove stale code
 - [ ] Adjust the checkpoint/model load code to the new architecture
+- [ ] Add metadata to the batch so analysis can be done during training
 - [ ] Start using weights and biases as a replacement for tensorboard
 - [ ] Add epoch level to tensorboard
 - [ ] Break down accuracy by levels
+- [ ] Visualise program embeddings
 
+
+
+# V2 Later  
+- [ ] The plan is to see if there is natural clustering of the program embeddings.
+If they do, then it makes sense to build a V3 with incremental collapse of nearby embedding
+to build a program library. At that time, it could make sense to have program embeddings that are different for each layer. As always, previously solved programs will have identity added in next levels.
+
+The big idea is that for simple programs (like identity, rotate, etc) we know the embedding clusters. For complex program, we can build new clusters to build core program library.
+But this is all done in the future. For now, we will just use the unique embedding for all programs, and analyse the clusters
 
 
 ## Difficulty Metric
