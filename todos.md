@@ -10,7 +10,7 @@
 - [x] Don't share the weights between the input embedding and output embedding?
 - [x] Move to transformer++ architecture
 - [x] Simplify recurrence to include FFN also
-- [ ] Change the model to the new architecture
+- [x] Change the model to the new architecture
 - [ ] Fix the network initialization
 - [ ] Remove stale code
 - [ ] Add metadata to the batch so analysis can be done during training
