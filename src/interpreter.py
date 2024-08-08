@@ -17,26 +17,26 @@ logger = get_logger()
 class InterpreterConfig:
     prog_vocab_size: int # number of program tokens
     grid_vocab_size: int  # number of array element tokens (one extra for niceness)
-    n_dim: int # dimension of the model
+    n_prog_embd: int # embedding dimension for program tokens
     n_head: int # number of heads within each self-attention block
     n_blocks: int # number of transformer blocks within each recurrence block
-    n_rec_block: int # number of recurrences of each block 
-    n_rec_layer: int # number of recurrences of the network
-    n_embd: int = -1 # embedding dimension (defaults to n_dim )
+    n_rec_block: int = 1 # number of recurrences of each block 
+    n_rec_layer: int = 1 # number of recurrences of the network
+    n_embd: int = 4 # embedding dimension (default is 4, 2^4 = 16 even if binary)
     causal: bool = False # whether to use causal attention
     max_seq_len: int = 1024 # max sequence length
-
+    n_dim: int = -1 # dimension of the model
 
     def __post_init__(self):
         assert is_power_of_two(self.prog_vocab_size), "Program vocab size must be a power of 2"
         assert is_power_of_two(self.grid_vocab_size), "Grid vocab size must be a power of 2"
-        assert is_power_of_two(self.n_dim), "Model dimension must be a power of 2"
+        assert is_power_of_two(self.n_prog_embd), "Program embedding dimension must be a power of 2"
+        assert is_power_of_two(self.n_embd), "Model embedding dimension must be a power of 2"
+        self.n_dim = self.n_prog_embd * self.n_embd
 
         if self.n_dim % self.n_head != 0:
             raise ValueError("n_dim must be divisible by n_head")
 
-        if self.n_embd <= 0:
-            self.n_embd = self.n_dim
 
     def to_dict(self):
         return {
@@ -393,14 +393,8 @@ class Interpreter(nn.Module):
         self.prog_tokenizer = prog_tokenizer
         self.grid_tokenizer = grid_tokenizer
 
-        if config.n_embd == config.n_dim:
-            self.pte = nn.Embedding(config.prog_vocab_size, config.n_dim)
-        else:
-            self.pte = nn.Sequential(
-                        nn.Embedding(config.prog_vocab_size, config.n_embd),
-                        nn.Linear(config.n_embd, config.n_dim, bias=False))
-
-        self.wte = nn.Embedding(config.grid_vocab_size, config.n_dim)
+        self.pte = nn.Embedding(config.prog_vocab_size, config.n_prog_embd)
+        self.wte = nn.Embedding(config.grid_vocab_size, config.n_embd)
         # self.wpe = nn.Embedding(config.max_seq_len, config.n_dim)
 
         # self.recurrent_block = RecurrentBlock(config)
@@ -436,28 +430,22 @@ class Interpreter(nn.Module):
         B1, T1 = prog_idx.size()
         B2, T2 = inp_idx.size()
         assert B1 == B2, "Batch size of program and input must match"
-        assert T1+T2 <= self.config.max_seq_len, f"Cannot forward sequence of length {T1+T2}, max_seq_len is only {self.config.max_seq_len}"
+
+        assert T1 == 1, "Program input must be a single token"
+        assert T2 <= self.config.max_seq_len, f"Cannot forward sequence of length {T2}, max_seq_len is only {self.config.max_seq_len}"
         # forward the token and posisition embeddings
-        # pos = torch.arange(0, T2, dtype=torch.long, device=inp_idx.device) # shape (T)
         prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_embd)
 
-        # Removed positional embeddings for in favor of RoPE
-        # pos_emb = self.wpe(pos) # position embeddings of shape (T, n_embd)
         inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_embd)
-        # inp_x = inp_emb + pos_emb
-        inp_x = inp_emb
 
-        x = torch.cat((prog_emb, inp_x), dim=1)  # concatenate program and input embeddings (B, T1+ T2, n_embd)
-
+        x = prog_emb[..., None] * inp_emb[:, :, None, :]
+        x = x.reshape(B1, T2, -1)
 
         for _ in range(self.config.n_rec_layer):
             for block in self.blocks:
                 for _ in range(self.config.n_rec_block):
                     x = block(x)
 
-        # # forward the blocks of the transformer
-        # for _ in range(self.config.n_rec_layers):
-        #     x = self.recurrent_block(x)
         # forward the final layernorm and the classifier
         x = self.ln_f(x)
         logits = self.lm_head(x) # (B, T, vocab_size)
