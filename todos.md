@@ -6,7 +6,8 @@
 - [x] Move to Swiglu Activation
 - [x] Move to RMS Norm
 - [x] Move to RoPe embeddings
-- [ ] Add autocast + no_grad to rotary embeddings
+- [x] Add autocast + no_grad to rotary embeddings
+- [ ] Don't share the weights between the input embedding and output embedding?
 - [ ] Change the model to the new architecture
 - [ ] Move to transformer++ architecture
 - [ ] Adjust the checkpoint/model load code to the new architecture
