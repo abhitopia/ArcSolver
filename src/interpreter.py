@@ -389,8 +389,11 @@ class Interpreter(nn.Module):
         self.ln_f = RMSNorm(config.n_dim)
 
         self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
-        # weight sharing scheme
-        self.wte.weight = self.lm_head.weight
+        
+        
+        # weight sharing scheme. Transformer++ (Llama architecture does not tie weights)
+        # Reference: https://youtu.be/pRM_P6UfdIc?t=1500
+        # self.wte.weight = self.lm_head.weight
 
         # init params
         self.apply(self._init_weights)

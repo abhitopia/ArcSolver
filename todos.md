@@ -7,9 +7,11 @@
 - [x] Move to RMS Norm
 - [x] Move to RoPe embeddings
 - [x] Add autocast + no_grad to rotary embeddings
-- [ ] Don't share the weights between the input embedding and output embedding?
+- [x] Don't share the weights between the input embedding and output embedding?
+- [x] Move to transformer++ architecture
 - [ ] Change the model to the new architecture
-- [ ] Move to transformer++ architecture
+- [ ] Simplify recurrence to include FFN also
+- [ ] Add metadata to the batch so analysis can be done during training
 - [ ] Adjust the checkpoint/model load code to the new architecture
 - [ ] Start using weights and biases as a replacement for tensorboard
 - [ ] Add epoch level to tensorboard
