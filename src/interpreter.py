@@ -422,24 +422,19 @@ class Interpreter(nn.Module):
     def check_compatible(self, other: "Interpreter", strict=True) -> bool:
         assert isinstance(other, Interpreter), "Can only compare with another Interpreter instance"
         
-        config = self.config
-        other_config = other.config
+        config: InterpreterConfig = self.config
+        other_config: InterpreterConfig = other.config
 
         and_conditions = [
             (config.n_dim == other_config.n_dim, "Model dimension should be the same"),
             (config.n_head == other_config.n_head, "Number of heads should be the same"),
             (config.n_embd == other_config.n_embd, "Embedding dimension should be the same"),
+            (config.n_prog_embd == other_config.n_prog_embd, "Program embedding dimension should be the same"),
         ]
 
         for cond, msg in and_conditions:
             assert cond, msg
         
-        mixer_or_conditions = [
-            config.n_mixers == 1 and other_config.n_mixers == 1,
-            config.share_mixer == other_config.share_mixer,
-            config.share_mixer and other_config.n_mixers == 1,
-        ]
-
         strict_conditions = [
             (self.prog_tokenizer == other.prog_tokenizer, "Program tokenizers should be the same"),
             (self.grid_tokenizer == other.grid_tokenizer, "Grid tokenizers should be the same"),
@@ -448,7 +443,8 @@ class Interpreter(nn.Module):
             (config.n_blocks == other_config.n_blocks, "Number of blocks should be the same"),
             (config.causal == other_config.causal, "Causal should be the same"),
             (config.max_seq_len == other_config.max_seq_len, "Max sequence length should be the same"),
-            (mixer_or_conditions, "Mixer configuration not compatible")
+            (config.n_rec_block == other_config.n_rec_block, "Number of recurrence blocks should be the same"),
+            (config.n_rec_layer == other_config.n_rec_layer, "Number of recurrence layers should be the same"),
         ]
 
         for cond, msg in strict_conditions:
@@ -457,7 +453,6 @@ class Interpreter(nn.Module):
             else:
                 if not cond:
                     logger.warning(msg + " but they are not. Continuing anyway due to strict=False")
-
 
         return all(and_conditions)
     
@@ -492,22 +487,16 @@ class Interpreter(nn.Module):
                     assert trg_ptr_b4 == trg_ptr_after, f"Data pointer changed for {prefix}"
 
         def copy_embedding_weights(key, trg_token2idx, src_token2idx):
-            common_tokens = set(src_token2idx.keys()).intersection(set(src_token2idx.keys()))
-            if len(common_tokens) != len(trg_token2idx):
-                logger.warning(f"WARNING: Number of matching tokens for {key} is {len(common_tokens)} but trg_vocab_size is {len(trg_token2idx)}")
+            common_tokens = set(trg_token2idx.keys()).intersection(set(src_token2idx.keys()))
+
+            if set(trg_token2idx.keys()) != set(src_token2idx.keys()):
+                logger.warning(f"WARNING: Tokens for {key} are not the same. Source has {len(src_token2idx)} tokens and target has {len(trg_token2idx)} tokens. Copying {len(common_tokens)} common tokens.")
 
             token_idx_mapping = {trg_token2idx[token]: src_token2idx[token] for token in common_tokens}
             copy_(key, token_idx_mapping)
 
-        # Copy positional embeddings (wpe)
-        max_seq_len = min(config_trg.max_seq_len, config_src.max_seq_len)
-        copy_('wpe.', {i: i for i in range(max_seq_len)})
 
-        # wte and lm_head (tied weights)
-        copy_embedding_weights('wte.weight', trg_grid_token2idx, src_grid_token2idx)
-        assert trg_sd['wte.weight'].data_ptr() == trg_sd['lm_head.weight'].data_ptr(), "wte and lm_head should be tied"
-        assert src_sd['wte.weight'].data_ptr() == src_sd['lm_head.weight'].data_ptr(), "wte and lm_head should be tied"
-
+        copy_embedding_weights('wte.', trg_grid_token2idx, src_grid_token2idx)
 
         # copy program embeddings
         copy_embedding_weights('pte.', trg_prog_token2idx, src_prog_token2idx)
@@ -515,9 +504,9 @@ class Interpreter(nn.Module):
         if config_trg.n_blocks < config_src.n_blocks:
             logger.warning(f"WARNING: Number of blocks in target model is less than source model. Copying only the first {config_trg.n_blocks} blocks")
 
-        # Copy mixer blocks
+        # Copy transformer blocks
         for block_idx in range(config_trg.n_blocks):
-            trg_block_key = f'recurrent_block.blocks.{block_idx}'
+            trg_block_key = f'blocks.{block_idx}'
 
             if block_idx >= config_src.n_blocks:
                 logger.warning(f"WARNING: Copying block {block_idx} from the last block of the source model")
@@ -525,22 +514,14 @@ class Interpreter(nn.Module):
             else:
                 src_block_idx = block_idx
 
-            src_block_key = f'recurrent_block.blocks.{src_block_idx}'
+            src_block_key = f'blocks.{src_block_idx}'
+            copy_(f'{trg_block_key}.', src_prefix=f'{src_block_key}.')
 
-            copy_(f'{trg_block_key}.normed_mlp.', src_prefix=f'{src_block_key}.normed_mlp.')
-
-            if config_trg.n_mixers < config_src.n_mixers:
-                logger.warning(f"WARNING: Number of mixers in target model is less than source model. Copying only the first {config_trg.n_mixers} mixers")
-
-            for i in range(config_trg.n_mixers):
-                    if i < config_src.n_mixers:
-                        copy_(f'{trg_block_key}.mixers.{i}.', src_prefix=f'{src_block_key}.mixers.{i}.')
-                    else:
-                        # Otherwise just copy the last mixer
-                        logger.warning(f"WARNING: Copying mixer {i} from the last mixer of the source model")
-                        copy_(f'{trg_block_key}.mixers.{i}.', src_prefix=f'{src_block_idx}.mixers.{config_src.n_mixers-1}.')
         # ln_f
         copy_('ln_f.')
+
+        # lm_head
+        copy_('lm_head.')
         
 #%%
 

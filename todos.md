@@ -15,7 +15,7 @@
 - [x] Changed to default initialization
 - [x] Fix the network initialization
 - [x] Remove stale code
-- [ ] Adjust the checkpoint/model load code to the new architecture
+- [x] Adjust the checkpoint/model load code to the new architecture
 - [ ] Add metadata to the batch so analysis can be done during training
 - [ ] Start using weights and biases as a replacement for tensorboard
 - [ ] Add epoch level to tensorboard
