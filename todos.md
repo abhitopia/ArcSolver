@@ -11,6 +11,8 @@
 - [x] Move to transformer++ architecture
 - [x] Simplify recurrence to include FFN also
 - [x] Change the model to the new architecture
+- [x] Removed all the bias from the network
+- [x] Changed to default initialization
 - [ ] Fix the network initialization
 - [ ] Remove stale code
 - [ ] Add metadata to the batch so analysis can be done during training
