@@ -240,7 +240,7 @@ class ArcExamplesDataset(Dataset):
 
         return (programs, inputs_padded), outputs_padded
     
-    def get_dataloader(self, batch_size: int, seq_len: Optional[int] = None, batch_by_token_count: bool = False, device=torch.device('cpu'), pin_memory=False) -> DataLoader:
+    def get_dataloader(self, batch_size: int, seq_len: Optional[int] = None, batch_by_token_count: bool = False, device=torch.device('cpu'), pin_memory=False, shuffle=True) -> DataLoader:
         """
         batch_size: The batch size for the dataloader. 
         seq_len: If > 0, the input and output sequences will be padded to this length.
@@ -252,7 +252,7 @@ class ArcExamplesDataset(Dataset):
         if batch_by_token_count:
             assert seq_len is not None, 'seq_len must be specified for batch_by_token_count'
             target_token_count = batch_size * seq_len
-            batch_sampler = TargetTokenCountBatchSampler(self, target_token_count=target_token_count, shuffle=True)
+            batch_sampler = TargetTokenCountBatchSampler(self, target_token_count=target_token_count, shuffle=shuffle)
             dataloader = DataLoader(dataset=self,
                                     batch_sampler=batch_sampler,
                                     collate_fn=lambda b: self.collate_fn(b, pad_idx=self.pad_idx, seq_length=None, device=device),
@@ -265,7 +265,7 @@ class ArcExamplesDataset(Dataset):
                 
             dataloader = DataLoader(dataset=self,
                                     batch_size=batch_size,
-                                    shuffle=True,
+                                    shuffle=shuffle,
                                     collate_fn=lambda b: self.collate_fn(b, self.pad_idx, seq_length=seq_len, device=device),
                                     pin_memory=pin_memory,
                                     drop_last=True)
