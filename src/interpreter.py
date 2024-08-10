@@ -36,6 +36,9 @@ class InterpreterConfig:
 
         if self.n_dim % self.n_head != 0:
             raise ValueError("n_dim must be divisible by n_head")
+        
+        head_dim = self.n_dim // self.n_head
+        assert head_dim % 2 == 0, "Head dimension must be even"
 
 
     def to_dict(self):
