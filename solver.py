@@ -211,12 +211,11 @@ def optim_change(
 @change_app.command("model")
 def change_model_size(
         run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
-        dim: int = typer.Option(None, min=8, max=512, help="Dimension of the model"),
-        heads: int = typer.Option(None, min=1, max=64, help="Number of heads within each self-attention block"),
-        blocks: int = typer.Option(None, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
-        mixers: int = typer.Option(None, min=1, max=10, help="Number of mixers within each mixing block"),
-        layers: int = typer.Option(None, min=1, max=10, help="Number of recurrent layers"),
-        share_mixer: bool = typer.Option(True, help="Share mixer within each mixing block"),
+        prog_dim: int = typer.Option(4, min=4, max=512, help="Dimension of the model"),
+        heads: int = typer.Option(4, min=1, max=64, help="Number of heads within each self-attention block"),
+        blocks: int = typer.Option(1, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
+        n_rec_block: int = typer.Option(1, min=1, max=10, help="Block level recurrence"),
+        n_rec_layer: int = typer.Option(1, min=1, max=10, help="Layer level recurrence"),
         checkpoint: Optional[str] = typer.Option(None, help="Use this specific checkpoint"),
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
         debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved")
@@ -231,12 +230,11 @@ def change_model_size(
 
 
     update_dict = {
-        "n_dim": dim if dim is not None else hparams_dict['model.n_dim'],
+        "n_prog_embd": prog_dim if prog_dim is not None else hparams_dict['model.n_prog_embd'],
         "n_heads": heads if heads is not None else hparams_dict['model.n_heads'],
         "n_blocks": blocks if blocks is not None else hparams_dict['model.n_blocks'],
-        "n_mixers": mixers if mixers is not None else hparams_dict['model.n_mixers'],
-        "n_layers": layers if layers is not None else hparams_dict['model.n_layers'],
-        "share_mixer": share_mixer
+        "n_rec_block": n_rec_block if n_rec_block is not None else hparams_dict['model.n_rec_block'],
+        "n_rec_layer": n_rec_layer if n_rec_layer is not None else hparams_dict['model.n_rec_layer'],
     }
 
     update_dict = {f'model.{k}': v for k, v in update_dict.items()}    
