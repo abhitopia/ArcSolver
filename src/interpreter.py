@@ -334,7 +334,7 @@ class Interpreter(nn.Module):
         self.wte = nn.Embedding(config.grid_vocab_size, config.n_embd)
 
 
-        rope = RotaryPositionalEmbeddings(config.n_dim, config.max_seq_len)
+        rope = RotaryPositionalEmbeddings(config.n_dim // config.n_head, config.max_seq_len)
         self.blocks = nn.ModuleList([TransformerBlock(config, rope=rope) for _ in range(config.n_blocks)])
         self.ln_f = RMSNorm(config.n_dim)
 

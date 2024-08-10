@@ -49,7 +49,7 @@ class ArcHparams(Hparams):
 
         training_data = TrainingData(
                     augmentation_factor=self.data.data_aug,
-                    join_version=not self.data.sep_task_version,
+                    join_version=True,
                     num_levels=self.data.num_diff_levels,
                     seed=self.seed).load()
         
@@ -84,12 +84,11 @@ class ArcHparams(Hparams):
         config = InterpreterConfig(
             prog_vocab_size = self.state['prog_vocab_size'],
             grid_vocab_size = self.state['grid_vocab_size'],
-            n_dim = self.model.n_dim, # dimension of the model
+            n_prog_embd = self.model.n_prog_embd, # size of the program embedding
             n_head = self.model.n_heads, # number of heads within each self-attention block
-            n_mixers = self.model.n_mixers, # number of self-attention layers within each transformer block
-            n_blocks = self.model.n_blocks, # number of transformer blocks within each recurrence block
-            n_rec_layers = self.model.n_layers, # number of recurrences
-            share_mixer = self.model.share_mixer
+            n_rec_block = self.model.n_rec_block, 
+            n_rec_layer = self.model.n_rec_layer, 
+            n_blocks = self.model.n_blocks
         )
         model = Interpreter(config,
                             prog_tokenizer=self.state['prog_tokenizer'],
@@ -97,7 +96,7 @@ class ArcHparams(Hparams):
         
         return model
     
-    def init_optimizer(self, model)-> optim.Optimizer:
+    def init_optimizer(self, model: Interpreter)-> optim.Optimizer:
         config = self.optim
 
         if config.lr_prog is None:
