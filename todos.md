@@ -16,8 +16,9 @@
 - [x] Fix the network initialization
 - [x] Remove stale code
 - [x] Adjust the checkpoint/model load code to the new architecture
-- [ ] Add metadata to the batch so analysis can be done during training
+- [ ] Make the solver.py run
 - [ ] Start using weights and biases as a replacement for tensorboard
+- [ ] Add metadata to the batch so analysis can be done during training
 - [ ] Add epoch level to tensorboard
 - [ ] Break down accuracy by levels
 - [ ] Visualise program embeddings

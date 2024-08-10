@@ -75,11 +75,11 @@ def train(
         experiment: str = typer.Argument(..., help="Name of the experiment saved at `./runs/{name}`"),
         run: str = typer.Argument(..., help="Name of the run within the experiment saved at `./runs/{name}/{run}`"),
         bs: int = typer.Option(32, min=1, help="Batch Size"),
-        dim: int = typer.Option(128, min=8, max=512, help="Dimension of the model"),
-        heads: int = typer.Option(16, min=1, max=64, help="Number of heads within each self-attention block"),
-        blocks: int = typer.Option(3, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
-        mixers: int = typer.Option(3, min=1, max=10, help="Number of mixers within each mixing block"),
-        layers: int = typer.Option(3, min=1, max=10, help="Number of recurrent layers"),
+        prog_dim: int = typer.Option(4, min=4, max=512, help="Dimension of the model"),
+        heads: int = typer.Option(4, min=1, max=64, help="Number of heads within each self-attention block"),
+        blocks: int = typer.Option(1, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
+        n_rec_block: int = typer.Option(1, min=1, max=10, help="Block level recurrence"),
+        n_rec_layer: int = typer.Option(1, min=1, max=10, help="Layer level recurrence"),
         mlr: float = typer.Option(0.001, min=-1.0, help="Learning Rate"),
         plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is automatically determined based on the schedule and data augmentation"),
         lr_warmup: int = typer.Option(2, min=0, help="Number of epochs for learning rate warmup. Only used for noam scheduler"),
@@ -91,8 +91,6 @@ def train(
         num_diff_levels: int = typer.Option(15, min=1, help="Number of partitions of the data based on difficulty"),
         diff_level: int = typer.Option(15, min=1, help="Difficulty level of the training data. Must be less than or equal to num_diff_levels"),
         seed: int = typer.Option(42, min=0, help="Random seed for the data and experiment"),
-        sep_task_version: bool = typer.Option(False, help="If set, task ID and task version are given separate embeddings"),
-        share_mixer: bool = typer.Option(True, help="Share mixer within each mixing block"),
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
         device: Optional[str] = typer.Option(None, help="Device to run the training on. If None, then it is automatically selected"),
         eval_int: Optional[int] = typer.Option(None, help="Number of steps between evaluations. None means evaluation at the end of each epoch"),
@@ -104,17 +102,15 @@ def train(
     data_config = {
         "data_aug": data_aug,
         "diff_level": diff_level,
-        "sep_task_version": sep_task_version,
         "num_diff_levels": num_diff_levels
     }
 
     model_config = {
-        "n_dim": dim,
+        "n_prog_embd": prog_dim,
         "n_heads": heads,
         "n_blocks": blocks,
-        "n_mixers": mixers,
-        "n_layers": layers,
-        "share_mixer": share_mixer
+        "n_rec_block": n_rec_block,
+        "n_rec_layer": n_rec_layer,
     }
 
     optimizer_config = {
