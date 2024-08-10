@@ -98,6 +98,9 @@ def train(
         checkpoint: Optional[str] = typer.Option(None, help="Initialize the model from the given checkpoint. Training will start from the beginning")
     ):
 
+    if _DEV_MODE:
+        run = f"dev_{run}"
+
     hparams = ArcHparams(experiment=experiment, run=run, seed=seed, device=device, eval_interval=eval_int)
     data_config = {
         "data_aug": data_aug,
@@ -135,7 +138,6 @@ def train(
 def resume(
        run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
     ):
-
     experiment, run, parent_dir = split_run_path(run_path)
     checkpoint_dir = ArcTrainer.get_checkpoint_dir(experiment, run, parent_dir=parent_dir)
     assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"

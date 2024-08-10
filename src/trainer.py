@@ -351,7 +351,7 @@ class TrainerBase:
         self.model.train()
 
     def _log_metrics(self, suffix, metrics):
-        new_metrics = {f'{suffix}/{k}': v for k, v in metrics.items()} 
+        new_metrics = {f'{k}/{suffix}': v for k, v in metrics.items()} 
         wandb.log(data=new_metrics, step=self.step)
 
     def _at_epoch_start(self):
@@ -388,14 +388,16 @@ class TrainerBase:
         for idx, last_lr in enumerate(self.scheduler.get_last_lr()):
             self.train_metrics.add_metric(f'LR/ParamGroup_{idx}', last_lr)
 
+        self.train_metrics.add_metric('Epoch', self.epoch)
+
         step_metrics = self.train_metrics.last_metrics()
         self.info(self._metrics_string("(TRAIN-STEP) ", step_metrics))
-        self._log_metrics(suffix='step_train', metrics=step_metrics)
+        self._log_metrics(suffix='step', metrics=step_metrics)
 
     def _at_epoch_end(self):
         epoch_metrics = self.train_metrics.mean_metrics()
         self.info(self._metrics_string("(TRAIN-EPOCH)", epoch_metrics))
-        self._log_metrics(suffix='epoch_train', metrics=epoch_metrics)
+        self._log_metrics(suffix='train', metrics=epoch_metrics)
 
 
     def _metrics_string(self, prefix, metrics, eval=False):
@@ -444,7 +446,7 @@ class TrainerBase:
 
         epoch_metrics = self.eval_metrics.mean_metrics()
         self.info(self._metrics_string("(EVAL-EPOCH) ", epoch_metrics, eval=True))
-        self._log_metrics(suffix='epoch_eval', metrics=epoch_metrics)
+        self._log_metrics(suffix='eval', metrics=epoch_metrics)
         self.model.train()
         if save_checkpoint:
             self._save_checkpoint()

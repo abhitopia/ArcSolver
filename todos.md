@@ -20,10 +20,11 @@
 - [x] Remove tensorboard from the code
 - [x] Might need to fix the from_dict (hparams)
 - [x] Make run id as the hash of the hparams (archived as it makes it difficult because one can't recreate a deleted run)
-- [ ] Difference run for the dev mode
-- [ ] Add WandB resume functionality
+- [x] Change the grouping order of the metrics in wandb
+- [x] Add WandB resume functionality
+- [x] Difference run for the dev mode
+- [x] Add epoch level to tensorboard
 - [ ] Add metadata to the batch so analysis can be done during training
-- [ ] Add epoch level to tensorboard
 - [ ] Break down accuracy by levels
 - [ ] Visualise program embeddings
 
