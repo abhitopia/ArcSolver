@@ -233,7 +233,7 @@ class ArcExamplesDataset(Dataset):
 
         for i, o in zip(inputs, outputs):
             inputs_padded.append(i + [pad_idx] * (max_inp_out_len - len(i)))
-            outputs_padded.append([pad_idx]*prog_len +  o + [pad_idx] * (max_inp_out_len - len(o)))
+            outputs_padded.append(o + [pad_idx] * (max_inp_out_len - len(o)))
 
         inputs_padded = torch.from_numpy(np.array(inputs_padded, dtype=np.int64)).to(device,  non_blocking=True)
         outputs_padded = torch.from_numpy(np.array(outputs_padded, dtype=np.int64)).to(device,  non_blocking=True)
