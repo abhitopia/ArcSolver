@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from copy import deepcopy
 import random
+import wandb
 import numpy as np
 import logging
 from pathlib import Path
@@ -110,24 +111,22 @@ class Hparams:
         raise NotImplementedError('init_scheduler method must be implemented')
 
     def as_dict(self):
-        flat_dict = {}
+        flat_dict = {} # not flat actually as wandb supports nested dicts
         for k, v in self.__dict__.items():
             if not k.startswith('_') and not callable(v) and v is None or isinstance(v, (int, float, str)):
                 flat_dict[k] = v
             elif isinstance(v, Box):
-                for subk, subv in v.items():
-                    flat_dict[f'{k}.{subk}'] = subv
+                flat_dict[k] = dict(v)
 
         return flat_dict
     
     @classmethod
     def from_dict(cls, hparams_dict):
-        args = {k: v for k, v in hparams_dict.items() if '.' not in k} 
+        args = {k: v for k, v in hparams_dict.items() if not isinstance(v, dict)} 
         hparams = cls(**args)
         for k, v in hparams_dict.items():
-            if '.' in k:
-                prefix, key = k.split('.')
-                hparams.add_params(prefix, **{key: v})
+            if isinstance(v, dict):
+                hparams.add_params(k, **v)
         return hparams
 
 
@@ -141,7 +140,6 @@ class TrainerBase:
                 logger: Optional[logging.Logger] = None,
             ):
         
-
         assert isinstance(hparams, Hparams), 'hparams must be an instance of Hparams'
         self.hparams = hparams
         self.logger = get_logger(logger)
@@ -159,9 +157,8 @@ class TrainerBase:
         self.info(f"Checkpoint directory: {self.checkpoint_dir}")
         self.disable_checkpointing = disable_checkpointing_and_logging
         if self.disable_checkpointing:
-            self.warning(f'It is a trial run. No checkpoints or Tensorboard summaries will be saved!')
+            self.warning(f'It is a trial run. No checkpoints will be saved!')
 
-        self.writer = None
         self.step = -1
         self.epoch = 0 
         self.epoch_step = 0
@@ -187,6 +184,19 @@ class TrainerBase:
 
         self.hparams.init_dataloaders()
         self._eval_at_start = False
+
+        # start a new wandb run to track this script
+        wandb.init(
+            # set the wandb project where this run will be logged
+            project=self.hparams.experiment,
+            name=self.hparams.run,
+            id=self.hparams.run,
+            dir=self.log_dir,
+            # track hyperparameters and run metadata
+            config=self.hparams.as_dict(),
+            resume="allow"  # Always allow resuming because we will handle it ourselves as manually deleting runs from the webinterface makes it impossible to create a new run with the same name
+        )
+
 
 
     @property
@@ -328,9 +338,6 @@ class TrainerBase:
 
 
     def _at_training_start(self):
-        if not self.disable_checkpointing:
-            self.writer = SummaryWriter(log_dir=self.log_dir)
-
         self.info(f"Training batches: {len(self.train_dl)}")
         self.info(f"Evaluation batches: {len(self.eval_dl)}")
         self.info(f'Evaluation Interval (Steps): {self.eval_interval}')
@@ -344,20 +351,8 @@ class TrainerBase:
         self.model.train()
 
     def _log_metrics(self, suffix, metrics):
-        if self.disable_checkpointing:
-            return
-        for k, v in metrics.items():
-            self.writer.add_scalar(f'{k}/{suffix}', v, self.step)
-
-    def _log_hparams(self, metrics={}):
-        if self.disable_checkpointing:
-            return
-        
-        if self.hparams is not None:
-            hparams = {k: v for k, v in self.hparams.as_dict().items()}
-            self.writer.add_hparams(hparams, metrics, run_name='.')
-
-        self.writer.flush()
+        new_metrics = {f'{suffix}/{k}': v for k, v in metrics.items()} 
+        wandb.log(data=new_metrics, step=self.step)
 
     def _at_epoch_start(self):
         self.model.train()
@@ -450,7 +445,6 @@ class TrainerBase:
         epoch_metrics = self.eval_metrics.mean_metrics()
         self.info(self._metrics_string("(EVAL-EPOCH) ", epoch_metrics, eval=True))
         self._log_metrics(suffix='epoch_eval', metrics=epoch_metrics)
-        self._log_hparams(metrics=epoch_metrics)
         self.model.train()
         if save_checkpoint:
             self._save_checkpoint()
@@ -458,9 +452,7 @@ class TrainerBase:
 
 
     def _at_training_end(self):
-        if self.writer is not None:
-            self.writer.flush()
-            self.writer.close()
+        wandb.finish()
 
     def find_lr(self, only_param_group: Optional[int] = None):
         assert isinstance(only_param_group, int) or only_param_group is None, 'only_param_group must be an integer or None'

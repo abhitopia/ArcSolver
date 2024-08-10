@@ -16,8 +16,12 @@
 - [x] Fix the network initialization
 - [x] Remove stale code
 - [x] Adjust the checkpoint/model load code to the new architecture
-- [ ] Make the solver.py run
-- [ ] Start using weights and biases as a replacement for tensorboard
+- [x] Make the solver.py run
+- [x] Remove tensorboard from the code
+- [x] Might need to fix the from_dict (hparams)
+- [x] Make run id as the hash of the hparams (archived as it makes it difficult because one can't recreate a deleted run)
+- [ ] Difference run for the dev mode
+- [ ] Add WandB resume functionality
 - [ ] Add metadata to the batch so analysis can be done during training
 - [ ] Add epoch level to tensorboard
 - [ ] Break down accuracy by levels
