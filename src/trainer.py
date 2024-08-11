@@ -349,6 +349,10 @@ class TrainerBase:
         self.logger.info(f'Using device: {self._device}')
         self.model.to(self.device)
         self.model.train()
+        self.at_training_start()
+
+    def at_training_start(self):
+        pass
 
     def _log_metrics(self, suffix, metrics):
         new_metrics = {f'{k}/{suffix}': v for k, v in metrics.items()} 
@@ -357,6 +361,10 @@ class TrainerBase:
     def _at_epoch_start(self):
         self.model.train()
         self.train_metrics.reset()
+        self.at_epoch_start()
+
+    def at_epoch_start(self):
+        pass
 
     def pre_train_step(self, batch):
         pass
@@ -398,7 +406,10 @@ class TrainerBase:
         epoch_metrics = self.train_metrics.mean_metrics()
         self.info(self._metrics_string("(TRAIN-EPOCH)", epoch_metrics))
         self._log_metrics(suffix='train', metrics=epoch_metrics)
+        self.at_epoch_end()
 
+    def at_epoch_end(self):
+        pass
 
     def _metrics_string(self, prefix, metrics, eval=False):
 
@@ -427,8 +438,12 @@ class TrainerBase:
     
     def post_eval_step(self, batch):
         pass  
+
+    def at_eval_start(self):
+        pass
     
     def _eval_loop(self, save_checkpoint=True):
+        self.at_eval_start()
         self.model.eval()
         self.eval_metrics.reset()
         self.eval_epoch_step = 0
@@ -451,7 +466,10 @@ class TrainerBase:
         if save_checkpoint:
             self._save_checkpoint()
 
+        self.at_eval_end()
 
+    def at_eval_end(self):
+        pass
 
     def _at_training_end(self):
         wandb.finish()
