@@ -28,9 +28,9 @@
 - [x] Add various Histograms
 - [x] Analyse weird rank histogram distribution. (Most likely due to small sample size)
 - [x] Break down accuracy by levels (Added granular ranks)
-- [ ] Visualise program embeddings
+- [x] Visualise program embeddings
+- [x] Add model gradients
 - [ ] Add Scaling synthetic data?
-- [ ] Add model gradients
 
 
 

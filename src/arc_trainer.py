@@ -5,6 +5,7 @@ from pathlib import Path
 import time
 from typing import Dict, Tuple, Union
 import numpy as np
+import pandas as pd
 import torch
 from .dataset import GridTokenizer, ProgramTokenizer
 from .interpreter import Interpreter, InterpreterConfig
@@ -204,9 +205,34 @@ class Stats:
         
 
 
+def init_embedding_proj(token2idx):
+    synth_datasets = {'_'.join(token.split('_')[1:3]) for token in token2idx if 'SYNTH' in token}
+    sample_counter = Counter({dataset: 0 for dataset in synth_datasets})
+
+    total_points = 1000
+    points_per_dataset = total_points // len(synth_datasets)
+
+    embedding_tokens = set()
+
+    for token in token2idx:
+        if 'SYNTH' in token:
+            dataset = '_'.join(token.split('_')[1:3])
+            if sample_counter[dataset]  < points_per_dataset:
+                sample_counter[dataset] += 1
+                embedding_tokens.add(token)
+
+    embedding_tokens = list(embedding_tokens)
+    embedding_datasets = [token.split("_")[2] for token in embedding_tokens]
+    embd_token_indices = [token2idx[token] for token in embedding_tokens]
+
+    return embd_token_indices, embedding_datasets
+
+
 class ArcTrainer(TrainerBase):
 
     def at_training_start(self):
+        wandb.watch(self.model, log='all', log_freq=len(self.train_dl)//4)
+        self.embd_token_indices, self.embedding_datasets = init_embedding_proj(self.model.prog_tokenizer.token2idx)
         def log_dataset_stats(dl, suffix="train"):
             ranks = []
             datasets = Counter()
@@ -263,6 +289,23 @@ class ArcTrainer(TrainerBase):
 
     def at_epoch_end(self):
         self._epoch_end_log(self.train_stats, self.step, suffix="train")
+
+        embd_weight = self.model.pte.weight
+        indices = torch.tensor(self.embd_token_indices,
+                            dtype=torch.long,
+                            device=embd_weight.device)
+        subset_embeddings = embd_weight[indices]
+        subset_embeddings_np = subset_embeddings.cpu().detach().numpy()
+
+        df = pd.DataFrame(
+                    subset_embeddings_np,
+                    index=self.embedding_datasets)
+        df.reset_index(inplace=True)
+        df.columns = ['dataset'] + [f'dim_{i}' for i in range(subset_embeddings_np.shape[1])]
+
+        wandb.log({'dataset_embedding': df},
+            commit=False)
+
 
     def at_eval_start(self):
         self.eval_stats = SampleStats()
