@@ -116,16 +116,22 @@ class TaskToExamples:
         program = [task.id, task.version]
         program = '_'.join(program) if self.join_version else ' '.join(program)
 
-        def get_examples(inp_out_pairs):
+        rank = task.rank
+        dataset = task.dataset
+        task_id = task.id
+        version = task.version
+
+        def get_examples(inp_out_pairs, is_test):
             examples = []
-            for inp, out in inp_out_pairs:
+            for idx, (inp, out) in enumerate(inp_out_pairs):
+                meta = dict(example_idx=idx, rank=rank, dataset=dataset, task_id=task_id, version=version, is_test=is_test)
                 inp_str = self.serialize_array(inp)
                 out_str = self.serialize_array(out)
-                example = ((program, inp_str), out_str)
+                example = ((program, inp_str), out_str, meta)
                 examples.append(example)
             return examples
 
-        return get_examples(task.train), get_examples(task.test)
+        return get_examples(task.train, is_test=False), get_examples(task.test, is_test=True)
 
 
 class TargetTokenCountBatchSampler(BatchSampler):
@@ -144,8 +150,8 @@ class TargetTokenCountBatchSampler(BatchSampler):
 
     @staticmethod
     def compute_example_len(example):
-        (p, i), o = example
-        return len(p) + max(len(i), len(o))
+        (p, i), o, m = example
+        return max(len(i), len(o))
 
     def create_batches(self):
         sorted_indices = sorted(range(len(self.dataset)), key=lambda i: self.compute_example_len(self.dataset[i]))
@@ -215,7 +221,8 @@ class ArcExamplesDataset(Dataset):
     
     @staticmethod
     def collate_fn(batch, pad_idx, seq_length: Optional[int] = None, device=torch.device('cpu')):
-        programs_inputs, outputs = zip(*batch)
+        programs_inputs, outputs, meta  = zip(*batch)
+        
         programs, inputs = zip(*programs_inputs)
         programs = torch.from_numpy(np.array(programs, dtype=np.int64)).to(device, non_blocking=True)
         prog_len = programs.shape[1]
@@ -223,8 +230,8 @@ class ArcExamplesDataset(Dataset):
         max_inp_out_len = max(max([len(i) for i in inputs]), max([len(o) for o in outputs]))
         if seq_length is not None:
             assert seq_length <= 1024
-            assert seq_length >= prog_len + max_inp_out_len , 'Fixed Batch Sequence is too small'
-            max_inp_out_len = seq_length - prog_len
+            assert seq_length >= max_inp_out_len , 'Fixed Batch Sequence is too small'
+            max_inp_out_len = seq_length
 
         assert max_inp_out_len <= 1024 - prog_len, 'Maximum input/output length is 1024'
 
@@ -238,7 +245,7 @@ class ArcExamplesDataset(Dataset):
         inputs_padded = torch.from_numpy(np.array(inputs_padded, dtype=np.int64)).to(device,  non_blocking=True)
         outputs_padded = torch.from_numpy(np.array(outputs_padded, dtype=np.int64)).to(device,  non_blocking=True)
 
-        return (programs, inputs_padded), outputs_padded
+        return (programs, inputs_padded), outputs_padded, meta
     
     def get_dataloader(self, batch_size: int, seq_len: Optional[int] = None, batch_by_token_count: bool = False, device=torch.device('cpu'), pin_memory=False, shuffle=True) -> DataLoader:
         """
@@ -370,16 +377,16 @@ class TrainingData:
     def tokenize_examples(self):
         self.program_tokenizer = ProgramTokenizer()
         self.grid_tokenizer = GridTokenizer()
-        programs = [p for examples in self.train_examples for ((p, _), _) in examples]
+        programs = [p for examples in self.train_examples for ((p, _), _, _) in examples]
         self.program_tokenizer.build(programs)
 
         def tokenize_examples(examples):
             tokenized_examples = []
-            for ((p, inp), out) in examples:
+            for ((p, inp), out, meta) in examples:
                 p = self.program_tokenizer.encode(p)
                 inp = self.grid_tokenizer.encode(inp)
                 out = self.grid_tokenizer.encode(out)
-                tokenized_examples.append(((p, inp), out))
+                tokenized_examples.append(((p, inp), out, meta))
             return tokenized_examples
 
         # No need to shuffle as examples are already shuffled

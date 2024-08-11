@@ -24,9 +24,13 @@
 - [x] Add WandB resume functionality
 - [x] Difference run for the dev mode
 - [x] Add epoch level to tensorboard
-- [ ] Add metadata to the batch so analysis can be done during training
-- [ ] Break down accuracy by levels
+- [x] Add metadata to the batch so analysis can be done during training
+- [x] Add various Histograms
+- [x] Analyse weird rank histogram distribution. (Most likely due to small sample size)
+- [x] Break down accuracy by levels (Added granular ranks)
 - [ ] Visualise program embeddings
+- [ ] Add Scaling synthetic data?
+- [ ] Add model gradients
 
 
 
