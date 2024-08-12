@@ -30,7 +30,7 @@
 - [x] Break down accuracy by levels (Added granular ranks)
 - [x] Visualise program embeddings
 - [x] Add model gradients
-- [ ] Add Scaling synthetic data?
+- [x] Add Scaling synthetic data?
 
 
 

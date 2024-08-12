@@ -226,6 +226,77 @@ def gen_synth_arc_data(num_tasks=400, dest_path: Path = 'data/synthetic/'):
 
 
 
+def generate_synth_scale_data(num_tasks=400, dest_path: Path = 'data/synthetic/'):
+    def determine_scale_factors():
+        scale_x = np.random.choice([1, 2, 3, 4, 5])
+        scale_y = np.random.choice([1, 2, 3, 4, 5])
+        if scale_x == 1 and scale_y == 1:
+            return determine_scale_factors()
+        return scale_x, scale_y
+
+    def generate_random_grid(max_dim, scale_x, scale_y):
+        max_width = max_dim // scale_x
+        max_height = max_dim // scale_y
+        width = np.random.randint(1, max_width)
+        height = np.random.randint(1, max_height)
+        grid = np.random.randint(0, 10, (height, width))
+        return grid
+
+    def scale_grid(input_grid, scale_x, scale_y):
+        output_grid = np.repeat(np.repeat(input_grid, scale_y, axis=0), scale_x, axis=1)
+        return output_grid
+    
+    def gen_task(num_train=3, num_test=1, scale_down=False):
+        # Generate the input and output grids
+        scale_x, scale_y = determine_scale_factors()
+
+        def fnc(num_examples, scale_x, scale_y):
+            examples = []
+            for _ in range(num_examples):
+                input_grid = generate_random_grid(max_dim=30,
+                                                scale_x=scale_x, 
+                                                scale_y=scale_y)
+
+                output_grid = scale_grid(input_grid, scale_x, scale_y)
+
+                if scale_down:
+                    input_grid, output_grid = output_grid, input_grid
+
+                examples.append({'input': input_grid, 'output': output_grid})
+            return examples
+    
+        train, test = fnc(num_train, scale_x, scale_y), fnc(num_test, scale_x, scale_y)
+        return train, test
+    
+    def generate_synthetic_dataset(num_tasks=400, scale_down=False, name=None):
+        tasks = []
+        for i in range(num_tasks):
+            train, test = gen_task(scale_down=scale_down)
+            task = ArcTask(i, train, test, dataset=name)
+            tasks.append(task)
+        
+        return tasks
+
+    base_path = Path(__file__).resolve().parent.parent    
+    dest_path = base_path / Path(dest_path)
+    num_tasks = 400
+    for scale_down in [False, True]:
+        if scale_down:
+            dataset_name = "synth-SCLDN"
+        else:
+            dataset_name = "synth-SCLUP"
+
+        dataset_path = dest_path / dataset_name
+        dataset_path.mkdir(parents=True, exist_ok=True)
+        tasks = generate_synthetic_dataset(num_tasks=num_tasks, scale_down=scale_down, name=dataset_name)
+
+        for task in tasks:
+            task_dict = task.to_dict()
+            task_path = dataset_path / f"{task.id}.json"
+            json.dump(task_dict, task_path.open('w'), indent=4)
+
+
+
 class TaskAugmenter:
     def __init__(self, augmentation_id: int):
         self.transformation_groups = TaskAugmenter.transformation_groups()
@@ -321,6 +392,7 @@ class ArcTasksLoader:
 
 ## Used following code to generate synthetic data
 # gen_synth_arc_data()
+# generate_synth_scale_data()
 
 
 # Training Tasks
@@ -350,7 +422,8 @@ ARC_SYNTH_FLPUD = ArcTasksLoader(name='ARC_SYNTH_FLPUD', path='data/synthetic/sy
 ARC_SYNTH_FLPDG = ArcTasksLoader(name='ARC_SYNTH_FLPDG', path='data/synthetic/synth-FLPDG')
 ARC_SYNTH_FLPAD = ArcTasksLoader(name='ARC_SYNTH_FLPAD', path='data/synthetic/synth-FLPAD')
 ARC_SYNTH_CLRPM = ArcTasksLoader(name='ARC_SYNTH_CLRPM', path='data/synthetic/synth-CLRPM')
-
+ARC_SYNTH_SCLDN = ArcTasksLoader(name='ARC_SYNTH_SCLDN', path='data/synthetic/synth-SCLDN')
+ARC_SYNTH_SCLUP = ArcTasksLoader(name='ARC_SYNTH_SCLUP', path='data/synthetic/synth-SCLUP')
 
 TRAINING_TASKLOADER = ARC_TRAIN
 EVALUATION_TASKLOADER = ARC_EVAL
@@ -377,10 +450,14 @@ AUXILIARY_TASKLOADERS = [
     ARC_SYNTH_FLPUD,
     ARC_SYNTH_FLPDG,
     ARC_SYNTH_FLPAD,
-    ARC_SYNTH_CLRPM
+    ARC_SYNTH_CLRPM,
+    ARC_SYNTH_SCLDN,
+    ARC_SYNTH_SCLUP,
 ]
 
 
 # Evaluation Tasks
 #%%
+# %%
+
 # %%
