@@ -169,7 +169,7 @@ class Stats:
         self.data_corrects[key] += (1 if correct else 0)
         self.non_zero_total_keys.add(key)
         if correct:
-            self.non_zero_keys.add(key)
+            self.non_zero_correct_keys.add(key)
 
     def table(self):
         data = []
