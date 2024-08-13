@@ -37,7 +37,7 @@ def train_from_hparams(hparams, checkpoint, lr_find, debug=False, parent_dir=_BA
     if checkpoint is not None:
         existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
         assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
-        trainer.initialise_from_checkpoint(checkpoint)    # NO RESUME, start from the beginning 
+        trainer.initialise_from_checkpoint(checkpoint, strict=False)    # NO RESUME, start from the beginning 
 
     if lr_find:
         trainer.find_lr()
