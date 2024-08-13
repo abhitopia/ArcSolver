@@ -369,14 +369,16 @@ class ArcTrainer(TrainerBase):
         (p, i), t, m = batch
         logits = self.model(p, i)
         loss = self.model.loss_fn(logits, t)
-        self._add_step_metrics(self.train_metrics, loss, logits, t, self.train_stats, m)
+        if not self.disable_checkpointing_and_logging:
+            self._add_step_metrics(self.train_metrics, loss, logits, t, self.train_stats, m)
         return loss
     
     def eval_step(self, batch):
         (p, i), t, m = batch
         logits = self.model(p, i)
         loss = self.model.loss_fn(logits, t)    
-        self._add_step_metrics(self.eval_metrics, loss, logits, t, self.eval_stats, m)
+        if not self.disable_checkpointing_and_logging:
+            self._add_step_metrics(self.eval_metrics, loss, logits, t, self.eval_stats, m)
         return loss
     
     def post_train_step(self, batch):

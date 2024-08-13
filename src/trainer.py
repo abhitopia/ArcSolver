@@ -155,8 +155,8 @@ class TrainerBase:
 
         self.info(f"Hparams: {json.dumps(self.hparams.as_dict(), indent=4)}")
         self.info(f"Checkpoint directory: {self.checkpoint_dir}")
-        self.disable_checkpointing = disable_checkpointing_and_logging
-        if self.disable_checkpointing:
+        self.disable_checkpointing_and_logging = disable_checkpointing_and_logging
+        if self.disable_checkpointing_and_logging:
             self.warning(f'It is a trial run. No checkpoints will be saved!')
 
         self.step = -1
@@ -318,7 +318,7 @@ class TrainerBase:
         return checkpoint_dir / f'checkpoint_{step:06d}.pth'
 
     def _save_checkpoint(self):
-        if self.disable_checkpointing:
+        if self.disable_checkpointing_and_logging:
             return
         checkpoint_path = self.checkpoint_path(self.checkpoint_dir, self.step)
         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
@@ -355,6 +355,8 @@ class TrainerBase:
         pass
 
     def _log_metrics(self, suffix, metrics):
+        if self.disable_checkpointing_and_logging:
+            return
         new_metrics = {f'{k}/{suffix}': v for k, v in metrics.items()} 
         wandb.log(data=new_metrics, step=self.step)
 
@@ -477,7 +479,7 @@ class TrainerBase:
     def find_lr(self, only_param_group: Optional[int] = None):
         assert isinstance(only_param_group, int) or only_param_group is None, 'only_param_group must be an integer or None'
 
-        self.disable_checkpointing = True
+        self.disable_checkpointing_and_logging = True
         self._at_training_start()
 
         import matplotlib.pyplot as plt
