@@ -28,7 +28,7 @@ if _DEV_MODE:
 
 def train_from_hparams(hparams, checkpoint, lr_find, debug=False, parent_dir=_BASE_DIR):
     if lr_find or debug:
-        hparams.run = f"{hparams.run}/debug"
+        hparams.run = f"{hparams.run}_debug"
 
     trainer = ArcTrainer(hparams=hparams,
                         parent_dir=parent_dir,
@@ -89,7 +89,7 @@ def train(
         pwd: float = typer.Option(0.0, min=0.0, help="Program Weight Decay"),
         data_aug: int = typer.Option(3, min=0, help="Data Augmentation Level. 0 means no augmentation"),
         num_diff_levels: int = typer.Option(15, min=1, help="Number of partitions of the data based on difficulty"),
-        diff_level: int = typer.Option(15, min=1, help="Difficulty level of the training data. Must be less than or equal to num_diff_levels"),
+        diff_level: int = typer.Option(1, min=1, help="Difficulty level of the training data. Must be less than or equal to num_diff_levels"),
         seed: int = typer.Option(42, min=0, help="Random seed for the data and experiment"),
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
         device: Optional[str] = typer.Option(None, help="Device to run the training on. If None, then it is automatically selected"),
