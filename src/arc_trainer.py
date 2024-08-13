@@ -288,6 +288,9 @@ class ArcTrainer(TrainerBase):
         self.train_stats = SampleStats()
 
     def at_epoch_end(self):
+        if self.disable_checkpointing_and_logging:
+            return
+
         self._epoch_end_log(self.train_stats, self.step, suffix="train")
 
         embd_weight = self.model.pte.weight
@@ -311,6 +314,8 @@ class ArcTrainer(TrainerBase):
         self.eval_stats = SampleStats()
 
     def at_eval_end(self):
+        if self.disable_checkpointing_and_logging:
+            return
         self._epoch_end_log(self.eval_stats, self.step, suffix="eval")
 
 
