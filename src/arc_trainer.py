@@ -214,7 +214,7 @@ class ArcTrainer(TrainerBase):
             dataset = self.prog2dataset[i]
             dataset_correct[dataset] += correct_programs[i]
 
-        dataset_table = wandb.Table(data=sorted([(k, dataset_correct[k], dataset_correct[k]/t if t > 0 else 0) for k, t in total_programs.items()]) ,columns=["key", "num_correct", "accuracy"])
+        dataset_table = wandb.Table(data=sorted([(k, dataset_correct[k], dataset_correct[k]/t) for k, t in total_programs.items() if t > 0]) ,columns=["key", "num_correct", "accuracy"])
         wandb.log({
                     f'dataset_accuracy/{suffix}': wandb.plot.bar(dataset_table, "key", "accuracy", title=f"Sample Accuracy per Datase/{suffix}"),
                     f'dataset_num_correct/{suffix}': wandb.plot.bar(dataset_table, "key", "num_correct", title=f"Number Correct Sample Predictions/{suffix}"),
