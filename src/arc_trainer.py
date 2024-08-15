@@ -330,6 +330,9 @@ class ArcTrainer(TrainerBase):
         # Check if all tokens in a sequence are correct for each sample
         correct_samples = correct_token_predictions.all(dim=1)
 
+        import time
+
+        start_time = time.time()
         for idx in range(len(correct_samples)):
             meta_idx = meta[idx]
             is_test = meta_idx['is_test']
@@ -339,6 +342,10 @@ class ArcTrainer(TrainerBase):
             stats.add('dataset_version', f"{meta_idx['dataset']}_{meta_idx['version']}", is_correct)
         # correct_sample_indices = correct_samples.nonzero(as_tuple=True)[0]
 
+        end_time = time.time()
+        print("Time taken(ms)", (end_time - start_time)*1000)
+        
+        # print(f"Time taken: {end_time - start_time}")
         total_correct_samples = correct_samples.sum()
         total_samples = y.shape[0]
 
