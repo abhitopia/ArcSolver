@@ -270,15 +270,10 @@ class ArcTrainer(TrainerBase):
         # Check if all tokens in a sequence are correct for each sample
         correct_samples = correct_token_predictions.all(dim=1)
 
-        start_time = time.time()
         correct_program_mask = correct_samples.to(dtype=torch.bool)
         correct_program_indices = program_indices[correct_program_mask, 0].cpu().numpy()
         correct_programs = self.correct_train_programs if is_train else self.correct_eval_programs
-        # increment the correct programs
         np.add.at(correct_programs, correct_program_indices, 1)
-        end_time = time.time()
-
-        print(f"Time taken(ms): {(end_time - start_time)*1000}")
         total_correct_samples = correct_samples.sum()
         total_samples = y.shape[0]
 
