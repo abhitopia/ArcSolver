@@ -287,8 +287,8 @@ class ArcTrainer(TrainerBase):
 
     def at_epoch_start(self):
         pass
-        self.correct_train_programs = np.zeros(len(self.model.program_tokenizer))
-        self.total_train_programs = np.zeros(len(self.model.program_tokenizer))
+        self.correct_train_programs = np.zeros(len(self.model.prog_tokenizer))
+        self.total_train_programs = np.zeros(len(self.model.prog_tokenizer))
         # self.train_stats = SampleStats()
 
     def at_epoch_end(self):
@@ -317,8 +317,8 @@ class ArcTrainer(TrainerBase):
 
 
     def at_eval_start(self):
-        self.correct_eval_programs = np.zeros(len(self.model.program_tokenizer))
-        self.total_eval_programs = np.zeros(len(self.model.program_tokenizer))
+        self.correct_eval_programs = np.zeros(len(self.model.prog_tokenizer))
+        self.total_eval_programs = np.zeros(len(self.model.prog_tokenizer))
         pass
         # self.eval_stats = SampleStats()
 
@@ -339,10 +339,9 @@ class ArcTrainer(TrainerBase):
         correct_samples = correct_token_predictions.all(dim=1)
 
         start_time = time.time()
-        correct_samples_np = correct_samples.cpu().numpy().astype(bool)
-        correct_program_indices = program_indices.cpu().numpy()[correct_samples_np, 0]
+        correct_program_mask = correct_samples.to(dtype=torch.bool)
+        correct_program_indices = program_indices[correct_program_mask, 0].detach().cpu().numpy()
         correct_programs = self.correct_train_programs if is_train else self.correct_eval_programs
-
         # increment the correct programs
         np.add.at(correct_programs, correct_program_indices, 1)
         end_time = time.time()
@@ -403,11 +402,11 @@ class ArcTrainer(TrainerBase):
         self.train_metrics.add_metric('ΔT(ms)', train_batch_time)
         self.train_metrics.add_metric('#TokensPerSec', num_tokens, (train_batch_time / 1000))
 
-        if torch.cuda.is_available():
-            torch.cuda.synchronize() # wait for the GPU to finish work
-        elif self.device.type == 'mps':
-            torch.mps.synchronize() # wait for the MPS to finish work
-            torch.mps.empty_cache() # clear the MPS cache
+        # if torch.cuda.is_available():
+        #     torch.cuda.synchronize() # wait for the GPU to finish work
+        # elif self.device.type == 'mps':
+        #     torch.mps.synchronize() # wait for the MPS to finish work
+        #     torch.mps.empty_cache() # clear the MPS cache
 
     def post_eval_step(self, batch):
         (_, _), t, m = batch
