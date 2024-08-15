@@ -116,22 +116,16 @@ class TaskToExamples:
         program = [task.id, task.version]
         program = '_'.join(program) if self.join_version else ' '.join(program)
 
-        rank = task.rank
-        dataset = task.dataset
-        task_id = task.id
-        version = task.version
-
-        def get_examples(inp_out_pairs, is_test):
+        def get_examples(inp_out_pairs):
             examples = []
             for idx, (inp, out) in enumerate(inp_out_pairs):
-                meta = dict(example_idx=idx, rank=rank, dataset=dataset, task_id=task_id, version=version, is_test=is_test)
                 inp_str = self.serialize_array(inp)
                 out_str = self.serialize_array(out)
-                example = ((program, inp_str), out_str, meta)
+                example = ((program, inp_str), out_str)
                 examples.append(example)
             return examples
 
-        return get_examples(task.train, is_test=False), get_examples(task.test, is_test=True)
+        return get_examples(task.train), get_examples(task.test)
 
 
 class TargetTokenCountBatchSampler(BatchSampler):
@@ -150,7 +144,7 @@ class TargetTokenCountBatchSampler(BatchSampler):
 
     @staticmethod
     def compute_example_len(example):
-        (p, i), o, m = example
+        (p, i), o = example
         return max(len(i), len(o))
 
     def create_batches(self):
@@ -221,7 +215,7 @@ class ArcExamplesDataset(Dataset):
     
     @staticmethod
     def collate_fn(batch, pad_idx, seq_length: Optional[int] = None, device=torch.device('cpu')):
-        programs_inputs, outputs, meta  = zip(*batch)
+        programs_inputs, outputs  = zip(*batch)
         
         programs, inputs = zip(*programs_inputs)
         programs = torch.from_numpy(np.array(programs, dtype=np.int64)).to(device, non_blocking=True)
@@ -245,7 +239,7 @@ class ArcExamplesDataset(Dataset):
         inputs_padded = torch.from_numpy(np.array(inputs_padded, dtype=np.int64)).to(device,  non_blocking=True)
         outputs_padded = torch.from_numpy(np.array(outputs_padded, dtype=np.int64)).to(device,  non_blocking=True)
 
-        return (programs, inputs_padded), outputs_padded, meta
+        return (programs, inputs_padded), outputs_padded
     
     def get_dataloader(self, batch_size: int, seq_len: Optional[int] = None, batch_by_token_count: bool = False, device=torch.device('cpu'), pin_memory=False, shuffle=True) -> DataLoader:
         """
@@ -377,16 +371,16 @@ class TrainingData:
     def tokenize_examples(self):
         self.program_tokenizer = ProgramTokenizer()
         self.grid_tokenizer = GridTokenizer()
-        programs = [p for examples in self.train_examples for ((p, _), _, _) in examples]
+        programs = [p for examples in self.train_examples for ((p, _), _) in examples]
         self.program_tokenizer.build(programs)
 
         def tokenize_examples(examples):
             tokenized_examples = []
-            for ((p, inp), out, meta) in examples:
+            for ((p, inp), out) in examples:
                 p = self.program_tokenizer.encode(p)
                 inp = self.grid_tokenizer.encode(inp)
                 out = self.grid_tokenizer.encode(out)
-                tokenized_examples.append(((p, inp), out, meta))
+                tokenized_examples.append(((p, inp), out))
             return tokenized_examples
 
         # No need to shuffle as examples are already shuffled

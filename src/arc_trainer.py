@@ -80,7 +80,6 @@ class ArcHparams(Hparams):
                                         pin_memory=True,
                                         shuffle=False)
 
-        # import ipdb; ipdb.set_trace()        
         self.state['num_train_batches'] = len(train_dl)
         self.state['num_eval_batches'] = len(eval_dl)
         return train_dl, eval_dl
@@ -140,71 +139,6 @@ class ArcHparams(Hparams):
         return scheduler
 
 
-
-# class SampleStats:
-#     def __init__(self) -> None:
-#         self.sample_stats: Dict[str, Stats] = {}
-
-#     def add(self, stat_name, key, correct=False):
-#         if stat_name not in self.sample_stats:
-#             self.sample_stats[stat_name] = Stats()
-#         self.sample_stats[stat_name].add(key, correct)
-
-#     def table(self, stat_name):
-#         return  self.sample_stats[stat_name].table()
-    
-#     def histogram(self, stat_name, correct=False, num_bins=20):
-#         return self.sample_stats[stat_name].histogram(correct, num_bins)
-
-
-# class Stats:
-#     def __init__(self) -> None:
-#         self.data_corrects = defaultdict(int)
-#         self.data_total = defaultdict(int)
-#         self.non_zero_total_keys = set()
-#         self.non_zero_correct_keys = set()
-
-#     def add(self, key, correct=False):
-#         self.data_total[key] += 1
-#         self.data_corrects[key] += (1 if correct else 0)
-#         self.non_zero_total_keys.add(key)
-#         if correct:
-#             self.non_zero_correct_keys.add(key)
-
-#     def table(self):
-#         data = []
-#         for key in self.data_total:
-#             data.append((key, self.data_corrects[key] / self.data_total[key], self.data_corrects[key], self.data_total[key]))
-#         table = wandb.Table(data=data, columns=["key", "accuracy", "num_correct", "num_total"])
-#         return table
-    
-#     def histogram(self, correct=False, num_bins=20):
-#         data_dict = self.data_corrects if correct else self.data_total
-#         key_set = self.non_zero_correct_keys if correct else self.non_zero_total_keys
-#         # Define your bin edges manually or use np.linspace, np.arange, etc.
-
-#         data_min = min(data_dict.keys())
-#         data_max = max(data_dict.keys())
-#         bin_edges = np.linspace(data_min, data_max, num_bins + 1)
-
-#         # Initialize histogram counts to zero
-#         hist = np.zeros(num_bins)
-
-#         # Iterate over the dictionary and add frequencies to the appropriate bins
-#         for value in key_set:
-#             frequency = data_dict[value]
-
-#             # Find the index of the bin to which the value belongs
-#             bin_index = np.digitize(value, bin_edges, right=True) - 1
-#             # Make sure the value is within the range of our bins
-#             bin_index = min(bin_index, num_bins - 1)
-#             # Add frequency to the corresponding bin
-#             hist[bin_index] += frequency
-
-#         return hist, bin_edges
-        
-
-
 def init_embedding_proj(token2idx):
     synth_datasets = {'_'.join(token.split('_')[1:3]) for token in token2idx if 'SYNTH' in token}
     sample_counter = Counter({dataset: 0 for dataset in synth_datasets})
@@ -233,69 +167,69 @@ class ArcTrainer(TrainerBase):
     def at_training_start(self):
         # wandb.watch(self.model, log='all', log_freq=max(len(self.train_dl)//4, 500))
         self.embd_token_indices, self.embedding_datasets = init_embedding_proj(self.model.prog_tokenizer.token2idx)
-        # def log_dataset_stats(dl, suffix="train"):
-        #     ranks = []
-        #     datasets = Counter()
-        #     versions = Counter()
-        #     dataset_versions = Counter()
-        #     for i, batch in enumerate(dl):
-        #         _, _, meta = batch
-        #         # ranks += [m['rank'] for m in meta]
-        #         datasets.update([m['dataset'] for m in meta])
-        #         versions.update([m['version'] for m in meta])
-        #         dataset_versions.update([f"{meta[i]['dataset']}_{meta[i]['version']}" for i in range(len(meta))])
+
+        self.train_dataset_programs = Counter()
+        self.eval_dataset_programs = Counter()
+        self.prog2dataset = []
+
+        idx2token = self.model.prog_tokenizer.idx2token
+        for pid in range(len(idx2token)):
+            token = idx2token[pid]
+            split_token = token.split('_')
+            third = split_token[2]
+            last_dataset_token_idx = 3 if third.isupper() else 2
+            dataset = '_'.join(split_token[:last_dataset_token_idx])
+            self.prog2dataset.append(dataset)
 
 
-        #     dataset_table = wandb.Table(data=sorted([(k, v) for k, v in datasets.items()]) ,columns=["key", "num_total"])
-        #     version_table = wandb.Table(data=sorted([(k, v) for k, v in versions.items()]) ,columns=["key", "num_total"])
-        #     dataset_version_table = wandb.Table(data=sorted([(k, v) for k, v in dataset_versions.items()]) ,columns=["key", "num_total"])
+        def log_dataset_stats(dl, dataset_programs, suffix):
+            total_programs = np.zeros(len(self.model.prog_tokenizer))
 
-        #     # ranks = [[r] for r in ranks]
-        #     # rank_table = wandb.Table(data=ranks, columns=["rank"])
+            for i, batch in enumerate(dl):
+                (p, i), t = batch
 
-        #     wandb.log({
-        #         f'dataset_samples/{suffix}': wandb.plot.bar(dataset_table, "key", "num_total", title=f"Sample Distribution per Dataset/{suffix}"),
-        #         f'version_samples/{suffix}': wandb.plot.bar(version_table, "key", "num_total", title=f"Sample Distribution per Version/{suffix}"),
-        #         f'dataset_version_samples/{suffix}': wandb.plot.bar(dataset_version_table, "key", "num_total", title=f"Sample Distribution per Dataset-Version/{suffix}"),
-        #         # f'rank_samples/{suffix}': wandb.plot.histogram(rank_table, "rank", title=f"Rank Distribution/{suffix}"),
-        #         },
-        #         commit=False
-        #         )
+                program_indices = p[:, 0].detach().cpu().numpy()
+                np.add.at(total_programs, program_indices, 1)
 
-        # log_dataset_stats(self.train_dl, "train")
-        # log_dataset_stats(self.eval_dl, "eval")
+            for i in range(len(total_programs)):
+                dataset = self.prog2dataset[i]
+                dataset_programs[dataset] += total_programs[i]
+
+            dataset_table = wandb.Table(data=sorted([(k, v) for k, v in dataset_programs.items()]) ,columns=["key", "num_total"])
+
+            wandb.log({f'dataset_samples/{suffix}': wandb.plot.bar(dataset_table, "key", "num_total", title=f"Sample Distribution per Dataset/{suffix}")},
+                commit=False)
 
 
-    @staticmethod
-    def _epoch_end_log(stats, step, suffix="train"):
-        return
-        dataset_table = stats.table('dataset')
-        version_table = stats.table('version')
-        dataset_version_table = stats.table('dataset_version')
-        rank_correct_hist = stats.histogram('rank', correct=True)
+        log_dataset_stats(self.train_dl, self.train_dataset_programs, "train")
+        log_dataset_stats(self.eval_dl, self.eval_dataset_programs, "eval")
+
+
+    def _epoch_end_log(self, step, suffix="train"):
+        correct_programs = self.correct_train_programs if suffix == "train" else self.correct_eval_programs
+        total_programs = self.train_dataset_programs if suffix == "train" else self.eval_dataset_programs
+
+        dataset_correct = Counter()
+        for i in range(len(correct_programs)):
+            dataset = self.prog2dataset[i]
+            dataset_correct[dataset] += correct_programs[i]
+
+        dataset_table = wandb.Table(data=sorted([(k, dataset_correct[k], dataset_correct[k]/t if t > 0 else 0) for k, t in total_programs.items()]) ,columns=["key", "num_correct", "accuracy"])
         wandb.log({
                     f'dataset_accuracy/{suffix}': wandb.plot.bar(dataset_table, "key", "accuracy", title=f"Sample Accuracy per Datase/{suffix}"),
                     f'dataset_num_correct/{suffix}': wandb.plot.bar(dataset_table, "key", "num_correct", title=f"Number Correct Sample Predictions/{suffix}"),
-                    f'version_accuracy/{suffix}': wandb.plot.bar(version_table, "key", "accuracy", title=f"Sample Accuracy per Version/{suffix}"),
-                    f'version_num_correct/{suffix}': wandb.plot.bar(version_table, "key", "num_correct", title=f"Number Correct Sample Predictions/{suffix}"),
-                    f'dataset_version_accuracy/{suffix}': wandb.plot.bar(dataset_version_table, "key", "accuracy", title=f"Sample Accuracy per Dataset_Version/{suffix}"),
-                    f'dataset_version_num_correct/{suffix}': wandb.plot.bar(dataset_version_table, "key", "num_correct", title=f"Number Correct Sample Predictions/{suffix}"),
-                    f'rank_corrects/{suffix}': wandb.Histogram(np_histogram=rank_correct_hist)
                 },
                 step=step)
 
 
     def at_epoch_start(self):
-        pass
         self.correct_train_programs = np.zeros(len(self.model.prog_tokenizer))
-        self.total_train_programs = np.zeros(len(self.model.prog_tokenizer))
-        # self.train_stats = SampleStats()
 
     def at_epoch_end(self):
         if self.disable_checkpointing_and_logging:
             return
 
-        # self._epoch_end_log(self.train_stats, self.step, suffix="train")
+        self._epoch_end_log(self.step, suffix="train")
 
         if self.epoch % 10 == 0:
             # Only log the embeddings every 10 epochs
@@ -318,14 +252,12 @@ class ArcTrainer(TrainerBase):
 
     def at_eval_start(self):
         self.correct_eval_programs = np.zeros(len(self.model.prog_tokenizer))
-        self.total_eval_programs = np.zeros(len(self.model.prog_tokenizer))
-        pass
-        # self.eval_stats = SampleStats()
-
+    
     def at_eval_end(self):
         if self.disable_checkpointing_and_logging:
             return
-        # self._epoch_end_log(self.eval_stats, self.step, suffix="eval")
+
+        self._epoch_end_log(self.step, suffix="eval")
 
 
     def _output_target_metrics(self, program_indices: torch.Tensor, logits: torch.Tensor, y: torch.Tensor, is_train):
@@ -340,7 +272,7 @@ class ArcTrainer(TrainerBase):
 
         start_time = time.time()
         correct_program_mask = correct_samples.to(dtype=torch.bool)
-        correct_program_indices = program_indices[correct_program_mask, 0].detach().cpu().numpy()
+        correct_program_indices = program_indices[correct_program_mask, 0].cpu().numpy()
         correct_programs = self.correct_train_programs if is_train else self.correct_eval_programs
         # increment the correct programs
         np.add.at(correct_programs, correct_program_indices, 1)
@@ -380,7 +312,7 @@ class ArcTrainer(TrainerBase):
         self.__eval_batch_time_start = time.time()
     
     def train_step(self, batch):
-        (p, i), t, m = batch
+        (p, i), t = batch
         logits = self.model(p, i)
         loss = self.model.loss_fn(logits, t)
         if not self.disable_checkpointing_and_logging:
@@ -388,7 +320,7 @@ class ArcTrainer(TrainerBase):
         return loss
     
     def eval_step(self, batch):
-        (p, i), t, m = batch
+        (p, i), t = batch
         logits = self.model(p, i)
         loss = self.model.loss_fn(logits, t)    
         if not self.disable_checkpointing_and_logging:
@@ -396,7 +328,7 @@ class ArcTrainer(TrainerBase):
         return loss
     
     def post_train_step(self, batch):
-        (_, _), t, m = batch
+        (_, _), t = batch
         num_tokens = t.numel()
         train_batch_time = (time.time() - self.__train_batch_time_start)*1000
         self.train_metrics.add_metric('ΔT(ms)', train_batch_time)
@@ -409,7 +341,7 @@ class ArcTrainer(TrainerBase):
         #     torch.mps.empty_cache() # clear the MPS cache
 
     def post_eval_step(self, batch):
-        (_, _), t, m = batch
+        (_, _), t = batch
         num_tokens = t.numel()
         eval_batch_time = (time.time() - self.__eval_batch_time_start)*1000
         self.eval_metrics.add_metric('ΔT(ms)', eval_batch_time)
