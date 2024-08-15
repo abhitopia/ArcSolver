@@ -31,7 +31,8 @@
 - [x] Visualise program embeddings
 - [x] Add model gradients
 - [x] Add Scaling synthetic data?
-
+- [ ] Track best accuracy and checkpoint
+- [ ] Add solver code to inrease the difficulty of the dataset
 
 
 # V2 Later  
