@@ -138,6 +138,9 @@ class TrainerBase:
                 disable_checkpointing_and_logging=False,
                 prevent_overwrite=True,
                 logger: Optional[logging.Logger] = None,
+                num_checkpoints_to_keep=2,
+                checkpoint_metric='loss',
+                checkpoint_metric_increases=False
             ):
         
         assert isinstance(hparams, Hparams), 'hparams must be an instance of Hparams'
@@ -197,6 +200,10 @@ class TrainerBase:
             resume="allow"  # Always allow resuming because we will handle it ourselves as manually deleting runs from the webinterface makes it impossible to create a new run with the same name
         )
 
+        self.num_checkpoints_to_keep = num_checkpoints_to_keep
+        self.checkpoint_metric = checkpoint_metric
+        self.checkpoint_metrics = {}
+        self.checkpoint_metric_increases = checkpoint_metric_increases
 
 
     @property
@@ -317,14 +324,53 @@ class TrainerBase:
     def checkpoint_path(checkpoint_dir, step):
         return checkpoint_dir / f'checkpoint_{step:06d}.pth'
 
-    def _save_checkpoint(self):
+    def _save_checkpoint(self, eval_metrics):
+
         if self.disable_checkpointing_and_logging:
             return
+        
+        # Always save the latest checkpoint
         checkpoint_path = self.checkpoint_path(self.checkpoint_dir, self.step)
         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
         assert checkpoint_path.exists() == False, f'Checkpoint file already exists: {checkpoint_path}'
         state_dict = self.state_dict()
         torch.save(state_dict, checkpoint_path)
+
+        checkpoint_metric = eval_metrics[self.checkpoint_metric]
+        if self.checkpoint_metric_increases:
+            checkpoint_metric = -checkpoint_metric
+
+        # Additionally also track the best checkpoints and delete any that are not needed (except the last checkpoint)
+        # Store step: metric value in the dictionary for reference.
+        if len(self.checkpoint_metrics) < self.num_checkpoints_to_keep:
+            self.checkpoint_metrics[self.step] = checkpoint_metric
+        else:
+            # Find the worst of the best checkpoints
+            worst_metric = max(self.checkpoint_metrics.values())
+            if checkpoint_metric < worst_metric:
+                worst_metric_step = [k for k, v in self.checkpoint_metrics.items() if v == worst_metric][0]
+                worst_metric_path = self.checkpoint_path(self.checkpoint_dir, worst_metric_step)
+                worst_metric_path.unlink()
+                self.debug(f'Deleted worst checkpoint at step: {worst_metric_step} with metric: {worst_metric}')
+                self.checkpoint_metrics.pop(worst_metric_step)
+                self.checkpoint_metrics[self.step] = checkpoint_metric
+                self.debug(f'Added new checkpoint at step: {self.step} with metric: {checkpoint_metric}')
+
+        # Checkpoints to keep
+        checkpoint_to_keep_paths = set([self.checkpoint_path(self.checkpoint_dir, k) for k in self.checkpoint_metrics.keys()] + [checkpoint_path])
+
+        # Delete any other checkpoints
+        for checkpoint_file in self.checkpoint_dir.glob('checkpoint_*.pth'):
+            if checkpoint_file not in checkpoint_to_keep_paths:
+                checkpoint_file.unlink()
+
+        # Log Wandb Summary
+        best_checkpoint_metric = min(self.checkpoint_metrics.values())
+        best_checkpoint_step = [k for k, v in self.checkpoint_metrics.items() if v == best_checkpoint_metric][0]
+
+        wandb.run.summary[f'best_{self.checkpoint_metric}'] = best_checkpoint_metric if not self.checkpoint_metric_increases else -best_checkpoint_metric
+        wandb.run.summary['best_step'] = best_checkpoint_step
+
         self.debug(f'Checkpoint saved for step: {self.step} at: {checkpoint_path}')
 
 
@@ -466,7 +512,7 @@ class TrainerBase:
         self._log_metrics(suffix='eval', metrics=epoch_metrics)
         self.model.train()
         if save_checkpoint:
-            self._save_checkpoint()
+            self._save_checkpoint(epoch_metrics)
 
         self.at_eval_end()
 

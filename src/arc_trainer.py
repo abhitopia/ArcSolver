@@ -165,6 +165,8 @@ def init_embedding_proj(token2idx):
 class ArcTrainer(TrainerBase):
 
     def at_training_start(self):
+        self.checkpoint_metric = 'SampleAcc(%)'
+        self.checkpoint_metric_increases = True
         # wandb.watch(self.model, log='all', log_freq=max(len(self.train_dl)//4, 500))
         self.embd_token_indices, self.embedding_datasets = init_embedding_proj(self.model.prog_tokenizer.token2idx)
 
