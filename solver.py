@@ -80,6 +80,7 @@ def train(
         blocks: int = typer.Option(1, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
         n_rec_block: int = typer.Option(1, min=1, max=10, help="Block level recurrence"),
         n_rec_layer: int = typer.Option(1, min=1, max=10, help="Layer level recurrence"),
+        dropout: float = typer.Option(0.0, min=0.0, max=1.0, help="Dropout probability"),
         mlr: float = typer.Option(0.001, min=-1.0, help="Learning Rate"),
         plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is automatically determined based on the schedule and data augmentation"),
         lr_warmup: int = typer.Option(2, min=0, help="Number of epochs for learning rate warmup. Only used for noam scheduler"),
@@ -114,6 +115,7 @@ def train(
         "n_blocks": blocks,
         "n_rec_block": n_rec_block,
         "n_rec_layer": n_rec_layer,
+        "dropout": dropout
     }
 
     optimizer_config = {
