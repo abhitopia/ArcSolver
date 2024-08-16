@@ -26,6 +26,7 @@ class InterpreterConfig:
     causal: bool = False # whether to use causal attention
     max_seq_len: int = 1024 # max sequence length
     n_dim: int = -1 # dimension of the model
+    dropout: float = 0.0 # dropout probability
 
     def __post_init__(self):
         assert is_power_of_two(self.prog_vocab_size), "Program vocab size must be a power of 2"
@@ -54,6 +55,7 @@ class InterpreterConfig:
             'causal': self.causal,
             'max_seq_len': self.max_seq_len,
             'n_dim': self.n_dim,
+            'dropout': self.dropout
         }
     
     @staticmethod
@@ -220,7 +222,7 @@ class SelfAttention(nn.Module):
         q = self.rope(q).transpose(1, 2)
 
         ## attention (materializes the large (T,T) matrix for all the queries and keys)
-        y = F.scaled_dot_product_attention(q, k, v, is_causal=self.config.causal) # flash attention
+        y = F.scaled_dot_product_attention(q, k, v, is_causal=self.config.causal, dropout_p=self.config.dropout) # flash attention
 
         y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
         # output projection
@@ -307,6 +309,7 @@ class TransformerBlock(nn.Module):
     def __init__(self, config: InterpreterConfig, rope: RotaryPositionalEmbeddings):
         super().__init__()
         self.config = config
+        self.dropout = nn.Dropout(config.dropout)
         self.normed_attn = nn.Sequential(
                         RMSNorm(config.n_dim),
                         SelfAttention(config, rope)
@@ -317,8 +320,8 @@ class TransformerBlock(nn.Module):
 
 
     def forward(self, x):
-        x = x + self.normed_attn(x)
-        x = x + self.normed_mlp(x)
+        x = x + self.dropout(self.normed_attn(x))
+        x = x + self.dropout(self.normed_mlp(x))
         return x    
 
 
