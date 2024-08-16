@@ -31,8 +31,9 @@
 - [x] Visualise program embeddings
 - [x] Add model gradients
 - [x] Add Scaling synthetic data?
-- [ ] Track best accuracy and checkpoint
-- [ ] Add solver code to inrease the difficulty of the dataset
+- [x] Track best accuracy and checkpoint (and delete rest to save space)
+- [x] Add best accuracy summary to the wandb
+- [ ] Add drop out to prevent overfitting
 
 
 # V2 Later  
