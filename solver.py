@@ -28,7 +28,7 @@ if _DEV_MODE:
 
 def train_from_hparams(hparams, checkpoint, lr_find, debug=False, parent_dir=_BASE_DIR):
     if lr_find or debug:
-        hparams.run = f"{hparams.run}_debug"
+        hparams.run = f"debug_{hparams.run}"
 
     trainer = ArcTrainer(hparams=hparams,
                         parent_dir=parent_dir,
