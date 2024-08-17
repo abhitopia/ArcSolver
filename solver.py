@@ -88,6 +88,8 @@ def train(
         lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
         mwd: float = typer.Option(0.01, min=0.0, help="Weight Decay"),
         pwd: float = typer.Option(0.0, min=0.0, help="Program Weight Decay"),
+        grok_alpha: float = typer.Option(0.0, min=0.0, help="Grok Alpha"),
+        grok_lambda: float = typer.Option(0.0, min=0.0, help="Grok Lambda"),
         data_aug: int = typer.Option(3, min=0, help="Data Augmentation Level. 0 means no augmentation"),
         num_diff_levels: int = typer.Option(15, min=1, help="Number of partitions of the data based on difficulty"),
         diff_level: int = typer.Option(1, min=1, help="Difficulty level of the training data. Must be less than or equal to num_diff_levels"),
@@ -102,7 +104,13 @@ def train(
     if _DEV_MODE:
         run = f"dev_{run}"
 
-    hparams = ArcHparams(experiment=experiment, run=run, seed=seed, device=device, eval_interval=eval_int)
+    hparams = ArcHparams(experiment=experiment,
+                        run=run, 
+                        seed=seed, 
+                        device=device, 
+                        eval_interval=eval_int,
+                        grok_alpha=grok_alpha,
+                        grok_lambda=grok_lambda)
     data_config = {
         "data_aug": data_aug,
         "diff_level": diff_level,

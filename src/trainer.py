@@ -13,11 +13,28 @@ import wandb
 import numpy as np
 import logging
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 from collections import defaultdict
 from tqdm import tqdm
 from .utils import add_logfile_handler, add_logging_funcs, get_git_commit_hash, get_logger, map_to_tensors, migrate_hparam_dict
 from dataclasses import dataclass
+
+
+def gradfilter_ema(
+    m: nn.Module,
+    grads: Optional[Dict[str, torch.Tensor]] = None,
+    alpha: float = 0.98,
+    lamb: float = 2.0,
+) -> Dict[str, torch.Tensor]:
+    if grads is None:
+        grads = {n: p.grad.data.detach() for n, p in m.named_parameters() if p.requires_grad and p.grad is not None}
+
+    for n, p in m.named_parameters():
+        if p.requires_grad and p.grad is not None:
+            grads[n] = grads[n] * alpha + p.grad.data.detach() * (1 - alpha)
+            p.grad.data = p.grad.data + grads[n] * lamb
+
+    return grads
 
 
 class MetricLogger:
@@ -66,6 +83,8 @@ class Hparams:
     seed: int = 1337  # Seed everything for reproducibility
     device: str = None # Device to use for training, None means automatically determine the best device
     eval_interval: Optional[int] = None # Evaluate every n steps, None means evaluate after every epoch
+    grok_alpha: Optional[float] = 0.0
+    grok_lambda: Optional[float] = 0.0
 
     def __post_init__(self):
         assert isinstance(self.experiment, str), 'experiment must be a string'
@@ -75,6 +94,12 @@ class Hparams:
         assert isinstance(self.seed, int), 'seed must be an integer'
         assert self.device is None or isinstance(self.device, str), 'device must be a string or None'
         assert self.eval_interval is None or self.eval_interval > 0, 'eval_interval must be None or a positive integer'
+
+        assert self.grok_alpha >= 0, 'grok_alpha must be zero or a positive float'
+        assert self.grok_lambda >= 0, 'grok_lambda must be zero or a positive'
+        assert self.grok_alpha == 0 or self.grok_lambda > 0, 'grok_lambda must be provided if grok_alpha is provided'
+        assert self.grok_lambda == 0 or self.grok_alpha > 0, 'grok_alpha must be provided if grok_lambda is provideds'
+
         self._state = {}
 
     def add_params(self, prefix='', **kwargs):
@@ -204,6 +229,7 @@ class TrainerBase:
         self.checkpoint_metric = checkpoint_metric
         self.checkpoint_metrics = {}
         self.checkpoint_metric_increases = checkpoint_metric_increases
+        self._ema_grads = None
 
 
     @property
@@ -434,6 +460,9 @@ class TrainerBase:
         self.post_train_step(batch)
 
         loss.backward()
+        if self.hparams.grok_alpha is not None:
+            self._ema_grads = gradfilter_ema(self.model, grads=self._ema_grads, alpha=self.hparams.grok_alpha, lamb=self.hparams.grok_lambda)
+
         if self.clip_grad_norm is not None:
             norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             self.train_metrics.add_metric('GradientNorm', norm.item())

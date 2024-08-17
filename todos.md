@@ -33,7 +33,13 @@
 - [x] Add Scaling synthetic data?
 - [x] Track best accuracy and checkpoint (and delete rest to save space)
 - [x] Add best accuracy summary to the wandb
-- [ ] Add drop out to prevent overfitting
+- [x] Add drop out to prevent overfitting
+- [x] Read grokking papers
+- [x] Add Grokfast to the model
+- [ ] Log param norms (with reduced frequency)
+- [ ] Can we measure grokking in the hideen phase
+- [ ] Implement MoE (Mixture of Experts)
+- [ ] Implement decreasing linear LR
 
 
 # V2 Later  
