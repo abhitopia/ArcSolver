@@ -69,13 +69,13 @@ class ArcHparams(Hparams):
         eval_ds = training_data.eval_ds(num_levels=self.data.diff_level).subset(config.max_examples)
         
         train_dl = train_ds.get_dataloader(batch_size=config.batch_size,
-                                           seq_len=1024,
+                                           seq_len=config.batch_seq_len,
                                            batch_by_token_count=True,
                                            pin_memory=True,
                                            shuffle=True)
 
         eval_dl = eval_ds.get_dataloader(batch_size=config.batch_size,
-                                        seq_len=1024,
+                                        seq_len=config.batch_seq_len,
                                         batch_by_token_count=True,
                                         pin_memory=True,
                                         shuffle=False)
