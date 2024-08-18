@@ -41,6 +41,25 @@ def noam_schedule(step, warmup_steps, max_steps, min_lr_scale=0.1):
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
     return min_lr + coeff * (max_lr - min_lr)
 
+
+def lin_decay_schedule(step, warmup_steps, max_steps, min_lr_scale=0.1):
+    max_lr = 1.0
+    min_lr = max_lr * min_lr_scale
+    # num_step_in_epoch = self.state['num_train_batches']
+    # warmup_steps = num_step_in_epoch * config.lr_warmup_epochs
+    # max_steps = num_step_in_epoch * config.lr_decay_epochs
+
+    # 1) linear warmup for warmup_iters steps
+    if step < warmup_steps:
+        return max_lr * (step + 1) / warmup_steps
+    # 2) if it > lr_decay_iters, return min learning rate
+    if step > max_steps:
+        return min_lr
+    # 3) in between, use linear decay down to min learning rate
+    decay_ratio = (step - warmup_steps) / (max_steps - warmup_steps)
+    assert 0 <= decay_ratio <= 1
+    return max_lr - decay_ratio * (max_lr - min_lr)
+
 def get_alt_schedulers(num_steps_in_epoch):
     first_scheduler = lambda step: 1.0 if (step // num_steps_in_epoch) % 2 == 0 else 0.0
     second_scheduler = lambda step: 0.0 if (step // num_steps_in_epoch) % 2 == 0 else 1.0
@@ -125,6 +144,10 @@ class ArcHparams(Hparams):
             warmup_steps = self.state['num_train_batches'] * config.lr_warmup_epochs
             max_steps = self.state['num_train_batches'] * config.lr_decay_epochs
             schedule = lambda step: noam_schedule(step, warmup_steps, max_steps)
+        elif config.lr_schedule == 'lindecay':
+            warmup_steps = self.state['num_train_batches'] * config.lr_warmup_epochs
+            max_steps = self.state['num_train_batches'] * config.lr_decay_epochs
+            schedule = lambda step: lin_decay_schedule(step, warmup_steps, max_steps)
         elif config.lr_schedule == 'const':
             schedule = lambda step: 1.0
         elif config.lr_schedule == 'alt':

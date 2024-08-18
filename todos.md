@@ -36,10 +36,17 @@
 - [x] Add drop out to prevent overfitting
 - [x] Read grokking papers
 - [x] Add Grokfast to the model
+- [x] Add lindecay lr schedule
+- [ ] Add warm up to constant LR schedule
 - [ ] Log param norms (with reduced frequency)
 - [ ] Can we measure grokking in the hideen phase
 - [ ] Implement MoE (Mixture of Experts)
 - [ ] Implement decreasing linear LR
+
+
+# Grokking Ideas
+- Start out with out augmentation 
+    - Helps with overfitting
 
 
 # V2 Later  
