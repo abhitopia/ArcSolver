@@ -639,11 +639,13 @@ class TrainerBase:
 
 
 
-    def train(self):
+    def train(self, max_steps: Optional[int] = None):
         try:
             self._at_training_start()
 
-            max_steps = len(self.train_dl) * self.num_epochs if self.num_epochs is not None else float('inf')
+            if max_steps is None:
+                max_steps = len(self.train_dl) * self.num_epochs if self.num_epochs is not None else float
+                
             eval_interval = self.eval_interval if self.eval_interval is not None else len(self.train_dl)
             self.info(f'Total training steps: {max_steps}')
                 
