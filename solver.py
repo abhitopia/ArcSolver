@@ -84,8 +84,9 @@ def train(
         dropout: float = typer.Option(0.0, min=0.0, max=1.0, help="Dropout probability"),
         mlr: float = typer.Option(0.001, min=-1.0, help="Learning Rate"),
         plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is automatically determined based on the schedule and data augmentation"),
-        lr_warmup: int = typer.Option(2, min=0, help="Number of epochs for learning rate warmup. Only used for noam and lindecay scheduler"),
-        lr_decay: int = typer.Option(8, min=0, help="Number of epochs for learning rate decay. Only used for noam and lindecay scheduler"),
+        lr_warmup: int = typer.Option(10, min=0, help="Number of epochs for learning rate warmup. Only used for noam and lindecay scheduler"),
+        lr_decay: int = typer.Option(1000, min=0, help="Number of epochs for learning rate decay. Only used for noam and lindecay scheduler"),
+        n_epochs: Optional[int] = typer.Option(None, min=1, help="Number of epochs to train for. If None, tha lr_decay is used"),
         lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
         mwd: float = typer.Option(0.01, min=0.0, help="Weight Decay"),
         pwd: float = typer.Option(0.0, min=0.0, help="Program Weight Decay"),
@@ -111,6 +112,7 @@ def train(
                         seed=seed, 
                         device=device, 
                         eval_interval=eval_int,
+                        num_epochs=n_epochs if n_epochs is not None else lr_decay + lr_warmup,
                         grok_alpha=grok_alpha,
                         grok_lambda=grok_lambda)
     data_config = {

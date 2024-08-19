@@ -42,6 +42,13 @@ def noam_schedule(step, warmup_steps, max_steps, min_lr_scale=0.1):
     return min_lr + coeff * (max_lr - min_lr)
 
 
+def const_schedule(step, warmup_steps):
+    max_lr = 1.0
+    if step < warmup_steps:
+        return max_lr * (step + 1) / warmup_steps
+    
+    return max_lr
+
 def lin_decay_schedule(step, warmup_steps, max_steps, min_lr_scale=0.1):
     max_lr = 1.0
     min_lr = max_lr * min_lr_scale
@@ -149,7 +156,8 @@ class ArcHparams(Hparams):
             max_steps = self.state['num_train_batches'] * config.lr_decay_epochs
             schedule = lambda step: lin_decay_schedule(step, warmup_steps, max_steps)
         elif config.lr_schedule == 'const':
-            schedule = lambda step: 1.0
+            warmup_steps = self.state['num_train_batches'] * config.lr_warmup_epochs
+            schedule = lambda step: const_schedule(step, warmup_steps)
         elif config.lr_schedule == 'alt':
             assert len(optimizer.param_groups) == 3, "Invalid LR Schedule"
             high_low_schedule, low_high_schedule = get_alt_schedulers(self.state['num_train_batches'])
