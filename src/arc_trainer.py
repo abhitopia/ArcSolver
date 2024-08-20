@@ -193,78 +193,139 @@ def init_embedding_proj(token2idx):
     return embd_token_indices, embedding_datasets
 
 
-class ArcTrainer(TrainerBase):
+class DatasetLevelStats:
+    def __init__(self, prog_level_map, prog_tokenizer, suffix):
+        self.prog_level_map = prog_level_map
+        self.prog_tokenizer = prog_tokenizer
+        self.suffix = suffix
+        self.prog2level = np.zeros(len(self.prog_tokenizer), dtype=int)
+        self.prog2dataset = np.zeros(len(self.prog_tokenizer), dtype=int)
+        for level, progs in self.prog_level_map.items():
+            for prog in progs:
+                self.prog2level[prog] = level-1
 
-    def at_training_start(self):
-        self.checkpoint_metric = 'SampleAcc(%)'
-        self.checkpoint_metric_increases = True
-        wandb.watch(self.model, log='all', log_freq=max(len(self.train_dl), 500))
-        self.embd_token_indices, self.embedding_datasets = init_embedding_proj(self.model.prog_tokenizer.token2idx)
 
-        self.train_dataset_programs = Counter()
-        self.eval_dataset_programs = Counter()
-        self.prog2dataset = []
+        idx2token = self.prog_tokenizer.idx2token
+        dataset2progs = defaultdict(set)
 
-        idx2token = self.model.prog_tokenizer.idx2token
         for pid in range(len(idx2token)):
             token = idx2token[pid]
             split_token = token.split('_')
             third = split_token[2]
             last_dataset_token_idx = 3 if third.isupper() else 2
             dataset = '_'.join(split_token[:last_dataset_token_idx])
-            self.prog2dataset.append(dataset)
+            dataset2progs[dataset].add(pid)
+
+        self.datasets = list(dataset2progs.keys())
+
+        for dataset, progs in dataset2progs.items():
+            for prog in progs:
+                self.prog2dataset[prog] = self.datasets.index(dataset)
+
+        self.num_levels = len(self.prog_level_map.keys())
+        self.num_progs = len(self.prog_tokenizer)
+        self.num_datasets = len(self.datasets)
+
+        self.totals = np.zeros((self.num_levels, self.num_datasets), dtype=int)
+        self.corrects = np.zeros((self.num_levels, self.num_datasets), dtype=int)
+
+    def epoch_reset(self):
+        self.corrects = np.zeros((self.num_levels, self.num_datasets))
+
+    def update_totals(self, prog_indices):
+        assert prog_indices.ndim == 1
+        all_prog_levels = self.prog2level[prog_indices]
+        all_prog_datasets = self.prog2dataset[prog_indices]
+        np.add.at(self.totals, (all_prog_levels, all_prog_datasets), 1)
+
+    def update_corrects(self, prog_indices):
+        correct_prog_levels = self.prog2level[prog_indices]
+        correct_prog_datasets = self.prog2dataset[prog_indices]
+        np.add.at(self.corrects, (correct_prog_levels, correct_prog_datasets), 1)
+        
+    def get_accuracy(self):
+        with np.errstate(divide='ignore', invalid='ignore'):
+            accuracy = np.divide(self.corrects, self.totals, where=self.totals!=0)
+            accuracy[self.totals == 0] = 0
+            return accuracy
+
+    def get_accuracy_by_level(self):
+        with np.errstate(divide='ignore', invalid='ignore'):
+            totals = self.totals.sum(axis=1)
+            accuracy = np.divide(self.corrects.sum(axis=1), totals, where=totals!=0)
+            accuracy[totals == 0] = 0
+            return accuracy
 
 
-        def log_dataset_stats(dl, dataset_programs, suffix):
-            total_programs = np.zeros(len(self.model.prog_tokenizer))
+    def get_accuracy_by_dataset(self):
+        with np.errstate(divide='ignore', invalid='ignore'):
+            totals = self.totals.sum(axis=0)
+            accuracy = np.divide(self.corrects.sum(axis=0), totals, where=totals!=0)
+            accuracy[totals == 0] = 0
+            return accuracy
 
+    def log_totals(self):
+        for level in range(self.num_levels):
+            data = [(self.datasets[did], self.totals[level, did]) for did in range(self.num_datasets)]
+            dataset_table = wandb.Table(data=data ,columns=["dataset", "total"])
+            wandb.log({f'totals/level_{level+1}/{self.suffix}': wandb.plot.bar(dataset_table, "dataset", "total", title=f"({self.suffix}) Totals at Level {level+1}")}, commit=False)
+
+
+    def log_accuracy(self, step):
+        accuracy = self.get_accuracy()
+        datasets_accuracy = self.get_accuracy_by_dataset()
+        level_accuracy = self.get_accuracy_by_level()
+
+        metrics = {}
+
+        for level in range(self.num_levels):
+            metrics[f'LevelAccuracy/{self.suffix}/level_{level+1}'] = level_accuracy[level]
+
+            for did in range(self.num_datasets):
+                if level == 0:
+                    metrics[f'DatasetAccuracy/{self.suffix}/{self.datasets[did]}'] = datasets_accuracy[did]
+
+                metrics[f'AccuracyDL/{self.suffix}/{self.datasets[did]}_L_{level+1}'] = accuracy[level, did]
+
+        # wandb.plot.line_series(metrics, step=step)
+        wandb.log(metrics, step=step)
+
+
+class ArcTrainer(TrainerBase):
+
+    def at_training_start(self):
+        self.checkpoint_metric = 'SampleAcc(%)'
+        self.checkpoint_metric_increases = True
+        
+        # Log params every 10 epochs
+        wandb.watch(self.model, log='all', log_freq=max(len(self.train_dl)*10, 500)) 
+        self.embd_token_indices, self.embedding_datasets = init_embedding_proj(self.model.prog_tokenizer.token2idx)
+
+        self.train_stats = DatasetLevelStats(self.train_dl.prog_level_map, self.model.prog_tokenizer, "train")
+        self.eval_stats = DatasetLevelStats(self.eval_dl.prog_level_map, self.model.prog_tokenizer, "eval")
+
+        def log_dataset_stats(dl, stats):
             for i, batch in enumerate(dl):
                 (p, i), t = batch
-
                 program_indices = p[:, 0].detach().cpu().numpy()
-                np.add.at(total_programs, program_indices, 1)
+                stats.update_totals(program_indices)
 
-            for i in range(len(total_programs)):
-                dataset = self.prog2dataset[i]
-                dataset_programs[dataset] += total_programs[i]
+            stats.log_totals()
 
-            dataset_table = wandb.Table(data=sorted([(k, v) for k, v in dataset_programs.items()]) ,columns=["key", "num_total"])
-
-            wandb.log({f'dataset_samples/{suffix}': wandb.plot.bar(dataset_table, "key", "num_total", title=f"Sample Distribution per Dataset/{suffix}")},
-                commit=False)
-
-
-        log_dataset_stats(self.train_dl, self.train_dataset_programs, "train")
-        log_dataset_stats(self.eval_dl, self.eval_dataset_programs, "eval")
-
-
-    def _epoch_end_log(self, step, suffix="train"):
-        correct_programs = self.correct_train_programs if suffix == "train" else self.correct_eval_programs
-        total_programs = self.train_dataset_programs if suffix == "train" else self.eval_dataset_programs
-
-        dataset_correct = Counter()
-        for i in range(len(correct_programs)):
-            dataset = self.prog2dataset[i]
-            dataset_correct[dataset] += correct_programs[i]
-
-        dataset_table = wandb.Table(data=sorted([(k, dataset_correct[k], dataset_correct[k]/t) for k, t in total_programs.items() if t > 0]) ,columns=["key", "num_correct", "accuracy"])
-        wandb.log({
-                    f'dataset_accuracy/{suffix}': wandb.plot.bar(dataset_table, "key", "accuracy", title=f"Sample Accuracy per Datase/{suffix}"),
-                    f'dataset_num_correct/{suffix}': wandb.plot.bar(dataset_table, "key", "num_correct", title=f"Number Correct Sample Predictions/{suffix}"),
-                },
-                step=step)
+        log_dataset_stats(self.train_dl, self.train_stats)
+        log_dataset_stats(self.eval_dl, self.eval_stats)
 
 
     def at_epoch_start(self):
-        self.correct_train_programs = np.zeros(len(self.model.prog_tokenizer))
+        self.train_stats.epoch_reset()
 
     def at_epoch_end(self):
         if self.disable_checkpointing_and_logging:
             return
 
-        self._epoch_end_log(self.step, suffix="train")
+        self.train_stats.log_accuracy(self.step)
 
-        if self.epoch % 10 == 0:
+        if self.epoch % 50 == 0:
             # Only log the embeddings every 10 epochs
             embd_weight = self.model.pte.weight
             indices = torch.tensor(self.embd_token_indices,
@@ -284,13 +345,13 @@ class ArcTrainer(TrainerBase):
 
 
     def at_eval_start(self):
-        self.correct_eval_programs = np.zeros(len(self.model.prog_tokenizer))
+        self.eval_stats.epoch_reset()
     
     def at_eval_end(self):
         if self.disable_checkpointing_and_logging:
             return
 
-        self._epoch_end_log(self.step, suffix="eval")
+        self.eval_stats.log_accuracy(self.step)
 
 
     def _output_target_metrics(self, program_indices: torch.Tensor, logits: torch.Tensor, y: torch.Tensor, is_train):
@@ -305,8 +366,9 @@ class ArcTrainer(TrainerBase):
 
         correct_program_mask = correct_samples.to(dtype=torch.bool)
         correct_program_indices = program_indices[correct_program_mask, 0].cpu().numpy()
-        correct_programs = self.correct_train_programs if is_train else self.correct_eval_programs
-        np.add.at(correct_programs, correct_program_indices, 1)
+
+        stats = self.train_stats if is_train else self.eval_stats
+        stats.update_corrects(correct_program_indices)
         total_correct_samples = correct_samples.sum()
         total_samples = y.shape[0]
 
