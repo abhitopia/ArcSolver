@@ -105,7 +105,7 @@ def train(
     ):
 
     if _DEV_MODE:
-        run = f"dev_{run}"
+        experiment = f"dev_{experiment}"
 
     hparams = ArcHparams(experiment=experiment,
                         run=run, 
