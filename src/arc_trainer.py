@@ -7,7 +7,7 @@ from typing import Dict, Tuple, Union
 import numpy as np
 import pandas as pd
 import torch
-from .dataset import GridTokenizer, ProgramTokenizer
+from .dataset import GridTokenizer, ProgramTokenizer, AUXILIARY_TASKLOADERS
 from .interpreter import Interpreter, InterpreterConfig
 from .trainer import TrainerBase, Hparams
 from torch.utils.data import DataLoader
@@ -80,6 +80,7 @@ class ArcHparams(Hparams):
         training_data = TrainingData(
                     augmentation_factor=self.data.data_aug,
                     join_version=True,
+                    auxilliary_loader=AUXILIARY_TASKLOADERS if self.data.use_aux else [],
                     num_levels=self.data.num_diff_levels,
                     seed=self.seed).load()
         

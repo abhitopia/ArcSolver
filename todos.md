@@ -37,12 +37,19 @@
 - [x] Read grokking papers
 - [x] Add Grokfast to the model
 - [x] Add lindecay lr schedule
-- [ ] Add warm up to constant LR schedule
-- [ ] Log param norms (with reduced frequency)
+- [x] Is there a reason to have min_lr instead of letting cosine annealing to go to 0?. Yes, otherwise it rises up again
+- [x] Add warm up to constant LR schedule to all
+- [x] Log param norms (with reduced frequency)
+- [x] Implement decreasing linear LR
+- [x] Shorten the DIVA dataset
+- [x] Log accuracy by dataset and level
+- [x] Log accuracy by Rank/Level
+- [x] Try only on the ARC dataset to see the effect of auxiliary tasks
+- [ ] Write sweep hyperparameter sweep using Wandb
 - [ ] Can we measure grokking in the hideen phase
 - [ ] Implement MoE (Mixture of Experts)
-- [ ] Implement decreasing linear LR
-
+- [ ] Once it works, may be introduce neural stack (transducers)
+- [ ] Change batch size for eval?
 
 # Grokking Ideas
 - Start out with out augmentation 
