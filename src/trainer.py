@@ -358,7 +358,10 @@ class TrainerBase:
         # Always save the latest checkpoint
         checkpoint_path = self.checkpoint_path(self.checkpoint_dir, self.step)
         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-        assert checkpoint_path.exists() == False, f'Checkpoint file already exists: {checkpoint_path}'
+
+        # Last checkpoint might be overwritten if self.num_epochs is specified. That is why disabling this check
+        # assert checkpoint_path.exists() == False, f'Checkpoint file already exists: {checkpoint_path}'
+        
         state_dict = self.state_dict()
         torch.save(state_dict, checkpoint_path)
 
@@ -652,7 +655,7 @@ class TrainerBase:
             # Run Evaluation before training starts if step > 0 (probably due to resuming from checkpoint)
             run_eval_at_start = True if self.step > 0 or self._eval_at_start else False 
 
-            while self.step <= max_steps:
+            while self.step < max_steps:
                 self.epoch_step = 0
                 self._at_epoch_start()
                 for epoch_step, batch in enumerate(self.train_dl):
@@ -670,10 +673,10 @@ class TrainerBase:
 
                     self._train_step(batch)                    
                     self.epoch_step = epoch_step
-
-                    
                 self._at_epoch_end()
+                
                 self.epoch += 1
+
 
             self._eval_loop(save_checkpoint=True)
         except KeyboardInterrupt:
