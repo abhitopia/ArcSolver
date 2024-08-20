@@ -95,6 +95,7 @@ def train(
         data_aug: int = typer.Option(3, min=0, help="Data Augmentation Level. 0 means no augmentation"),
         num_diff_levels: int = typer.Option(15, min=1, help="Number of partitions of the data based on difficulty"),
         diff_level: int = typer.Option(1, min=1, help="Difficulty level of the training data. Must be less than or equal to num_diff_levels"),
+        use_aux: bool = typer.Option(True, help="Use auxiliary data for training"),
         seed: int = typer.Option(42, min=0, help="Random seed for the data and experiment"),
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
         bsl: int = typer.Option(1024, min=1, help="Batch Seq Length"),
@@ -118,7 +119,8 @@ def train(
     data_config = {
         "data_aug": data_aug,
         "diff_level": diff_level,
-        "num_diff_levels": num_diff_levels
+        "num_diff_levels": num_diff_levels,
+        "use_aux": use_aux
     }
 
     model_config = {
@@ -171,97 +173,6 @@ def info(
     checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)       
     hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
     print(hparams_dict)
-
-def get_run_name(hparams_dict, new_hparams_dict):
-    diff_dict = get_diff_dict(hparams_dict, new_hparams_dict)
-    assert len(diff_dict) > 0, "At least one parameter should be changed"
-    new_run = hparams_dict['run'] 
-    for key, value in diff_dict.items():
-        name_key = key.split("_")[-1]
-        print(name_key, key)
-        if key == "run":
-            continue
-        new_run += f"|{name_key}_{new_hparams_dict[key]}"
-    return new_run
-
-@change_app.command("optim")
-def optim_change(
-        run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
-        mlr: float = typer.Option(None, min=0.0, help="Model Learning Rate"),
-        plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is scaled according to data augmentation level"),
-        lr_schedule: LRSchedule = typer.Option(None, help="Learning rate scheduler. Options: noam, alt, const"),
-        bs: int = typer.Option(None, min=1, help="Batch Size"),
-        lr_warmup: int = typer.Option(None, min=0, help="Number of epochs for learning rate warmup. Only used for noam scheduler"),
-        lr_decay: int = typer.Option(None, min=0, help="Number of epochs for learning rate decay. Only used for noam scheduler"),
-        lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
-        checkpoint: Optional[str] = typer.Option(None, help="Use this specific checkpoint"),
-        debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved")
-    ):
-    experiment, run, parent_dir = split_run_path(run_path)
-    checkpoint = get_checkpoint(experiment, run, checkpoint, parent_dir=parent_dir)
-    logger.info(f"Base Checkpoint: {checkpoint}")
-
-    hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
-    logger.info(f"Base Hparams: {hparams_dict}")
-
-    update_dict =  {
-        "batch_size": bs if bs is not None else hparams_dict['optim.batch_size'],  # Yes, this is optimizer config
-        "lr_model": 1 if  lr_find else (mlr if mlr is not None else hparams_dict['optim.lr_model']),
-        "lr_prog": plr if not lr_find else 1,
-        "lr_schedule": lr_schedule.value if lr_schedule is not None else hparams_dict['optim.lr_schedule'],
-        "lr_warmup_epochs": lr_warmup if lr_warmup is not None else hparams_dict['optim.lr_warmup_epochs'],
-        "lr_decay_epochs": lr_decay if lr_decay is not None else hparams_dict['optim.lr_decay_epochs'],
-    }
-
-    update_dict = {f'optim.{k}': v for k, v in update_dict.items()}
-    new_hparams_dict = deepcopy(hparams_dict)
-    new_hparams_dict.update(update_dict)
-    new_run = get_run_name(hparams_dict, new_hparams_dict)
-    new_hparams_dict['run'] = new_run
-
-    logger.info(f"Changed Hparams: {get_diff_dict(hparams_dict, new_hparams_dict)}")
-    new_params = ArcHparams.from_dict(new_hparams_dict)
-    train_from_hparams(new_params, checkpoint, lr_find, debug, parent_dir=parent_dir)
-
-
-
-@change_app.command("model")
-def change_model_size(
-        run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
-        prog_dim: int = typer.Option(4, min=4, max=512, help="Dimension of the model"),
-        heads: int = typer.Option(4, min=1, max=64, help="Number of heads within each self-attention block"),
-        blocks: int = typer.Option(1, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
-        n_rec_block: int = typer.Option(1, min=1, max=10, help="Block level recurrence"),
-        n_rec_layer: int = typer.Option(1, min=1, max=10, help="Layer level recurrence"),
-        checkpoint: Optional[str] = typer.Option(None, help="Use this specific checkpoint"),
-        lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
-        debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved")
-    ):
-
-    experiment, run, parent_dir = split_run_path(run_path)
-    checkpoint = get_checkpoint(experiment, run, checkpoint, parent_dir=parent_dir)
-    logger.info(f"Base Checkpoint: {checkpoint}")
-
-    hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
-    logger.info(f"Base Hparams: {hparams_dict}")
-
-
-    update_dict = {
-        "n_prog_embd": prog_dim if prog_dim is not None else hparams_dict['model.n_prog_embd'],
-        "n_heads": heads if heads is not None else hparams_dict['model.n_heads'],
-        "n_blocks": blocks if blocks is not None else hparams_dict['model.n_blocks'],
-        "n_rec_block": n_rec_block if n_rec_block is not None else hparams_dict['model.n_rec_block'],
-        "n_rec_layer": n_rec_layer if n_rec_layer is not None else hparams_dict['model.n_rec_layer'],
-    }
-
-    update_dict = {f'model.{k}': v for k, v in update_dict.items()}    
-    new_hparams_dict = deepcopy(hparams_dict)
-    new_hparams_dict.update(update_dict)
-    new_run = get_run_name(hparams_dict, new_hparams_dict)
-    new_hparams_dict['run'] = new_run
-    logger.info(f"Changed Hparams: {get_diff_dict(hparams_dict, new_hparams_dict)}")
-    new_params = ArcHparams.from_dict(new_hparams_dict)
-    train_from_hparams(new_params, checkpoint, lr_find, debug, parent_dir=parent_dir)
 
 
 
