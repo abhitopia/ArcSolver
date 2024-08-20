@@ -3,6 +3,7 @@
 from enum import Enum, auto
 import json
 from pathlib import Path
+import random
 from typing import List, Optional, Union
 import numpy as np
 
@@ -345,9 +346,10 @@ class TaskAugmenter:
     
 
 class ArcTasksLoader:
-    def __init__(self, name: str, path: str):
+    def __init__(self, name: str, path: str, max_tasks: Optional[int] = None):
         base_path = Path(__file__).resolve().parent.parent    
         self.path = base_path / Path(path)
+        self.max_tasks = max_tasks
         assert self.path.exists(), f'Path does not exist: {self.path}'
         self.name = name
 
@@ -370,6 +372,14 @@ class ArcTasksLoader:
                            dataset=self.name,
                            version='original')
             tasks.append(task)
+
+        if self.max_tasks is not None:
+            self.max_tasks = min(self.max_tasks, len(tasks))
+            local_random = random.Random()
+            local_random.seed(888)
+            indices = list(range(len(tasks)))
+            local_random.shuffle(indices)
+            tasks = [tasks[i] for i in indices[:self.max_tasks]]
         return tasks
     
     def load_tasks(self, augmentation_id: Optional[int] = None) -> List[ArcTask]:
@@ -399,8 +409,10 @@ class ArcTasksLoader:
 ARC_1D = ArcTasksLoader(name='ARC_1D', path='data/arc_dataset_collection/dataset/1D-ARC/data')
 ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
 ARC_SYTH_EXTEND = ArcTasksLoader(name='ARC_SYTH_EXTEND', path='data/arc_dataset_collection/dataset/ARC_synthetic_extend/data')
+
+# They seem to be bad quality tasks
 ARC_COMMUNITY = ArcTasksLoader(name='ARC_COMMUNITY', path='data/arc_dataset_collection/dataset/arc-community/data')
-ARC_DIVA = ArcTasksLoader(name='ARC_DIVA', path='data/arc_dataset_collection/dataset/arc-dataset-diva/data')
+ARC_DIVA = ArcTasksLoader(name='ARC_DIVA', path='data/arc_dataset_collection/dataset/arc-dataset-diva/data', max_tasks=100)
 ARC_CONCEPT = ArcTasksLoader(name='ARC_CONCEPT', path='data/arc_dataset_collection/dataset/ConceptARC/data')
 ARC_DBIGHAM = ArcTasksLoader(name='ARC_DBIGHAM', path='data/arc_dataset_collection/dataset/dbigham/data')
 ARC_MINI = ArcTasksLoader(name='ARC_MINI', path='data/arc_dataset_collection/dataset/Mini-ARC/data')
@@ -413,17 +425,17 @@ ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_data
 ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dataset/ARC/data/evaluation')
 
 # Synthetic tasks
-ARC_SYNTH_IDENT = ArcTasksLoader(name='ARC_SYNTH_IDENT', path='data/synthetic/synth-IDENT')
-ARC_SYNTH_RT090 = ArcTasksLoader(name='ARC_SYNTH_RT090', path='data/synthetic/synth-RT090')
-ARC_SYNTH_RT180 = ArcTasksLoader(name='ARC_SYNTH_RT180', path='data/synthetic/synth-RT180')
-ARC_SYNTH_RT270 = ArcTasksLoader(name='ARC_SYNTH_RT270', path='data/synthetic/synth-RT270')
-ARC_SYNTH_FLPLR = ArcTasksLoader(name='ARC_SYNTH_FLPLR', path='data/synthetic/synth-FLPLR')
-ARC_SYNTH_FLPUD = ArcTasksLoader(name='ARC_SYNTH_FLPUD', path='data/synthetic/synth-FLPUD')
-ARC_SYNTH_FLPDG = ArcTasksLoader(name='ARC_SYNTH_FLPDG', path='data/synthetic/synth-FLPDG')
-ARC_SYNTH_FLPAD = ArcTasksLoader(name='ARC_SYNTH_FLPAD', path='data/synthetic/synth-FLPAD')
-ARC_SYNTH_CLRPM = ArcTasksLoader(name='ARC_SYNTH_CLRPM', path='data/synthetic/synth-CLRPM')
-ARC_SYNTH_SCLDN = ArcTasksLoader(name='ARC_SYNTH_SCLDN', path='data/synthetic/synth-SCLDN')
-ARC_SYNTH_SCLUP = ArcTasksLoader(name='ARC_SYNTH_SCLUP', path='data/synthetic/synth-SCLUP')
+ARC_SYNTH_IDENT = ArcTasksLoader(name='ARC_SYNTH_IDENT', path='data/synthetic/synth-IDENT', max_tasks=150)
+ARC_SYNTH_RT090 = ArcTasksLoader(name='ARC_SYNTH_RT090', path='data/synthetic/synth-RT090', max_tasks=150)
+ARC_SYNTH_RT180 = ArcTasksLoader(name='ARC_SYNTH_RT180', path='data/synthetic/synth-RT180', max_tasks=150)
+ARC_SYNTH_RT270 = ArcTasksLoader(name='ARC_SYNTH_RT270', path='data/synthetic/synth-RT270', max_tasks=150)
+ARC_SYNTH_FLPLR = ArcTasksLoader(name='ARC_SYNTH_FLPLR', path='data/synthetic/synth-FLPLR', max_tasks=150)
+ARC_SYNTH_FLPUD = ArcTasksLoader(name='ARC_SYNTH_FLPUD', path='data/synthetic/synth-FLPUD', max_tasks=150)
+ARC_SYNTH_FLPDG = ArcTasksLoader(name='ARC_SYNTH_FLPDG', path='data/synthetic/synth-FLPDG', max_tasks=150)
+ARC_SYNTH_FLPAD = ArcTasksLoader(name='ARC_SYNTH_FLPAD', path='data/synthetic/synth-FLPAD', max_tasks=150)
+ARC_SYNTH_CLRPM = ArcTasksLoader(name='ARC_SYNTH_CLRPM', path='data/synthetic/synth-CLRPM', max_tasks=150)
+ARC_SYNTH_SCLDN = ArcTasksLoader(name='ARC_SYNTH_SCLDN', path='data/synthetic/synth-SCLDN', max_tasks=200)
+ARC_SYNTH_SCLUP = ArcTasksLoader(name='ARC_SYNTH_SCLUP', path='data/synthetic/synth-SCLUP', max_tasks=200)
 
 TRAINING_TASKLOADER = ARC_TRAIN
 EVALUATION_TASKLOADER = ARC_EVAL
