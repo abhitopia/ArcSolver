@@ -1,4 +1,5 @@
 #%%
+from collections import defaultdict
 import json
 import pickle
 import random
@@ -188,9 +189,10 @@ class TargetTokenCountBatchSampler(BatchSampler):
 
 
 class ArcExamplesDataset(Dataset):
-    def __init__(self, examples: List[Tuple[Tuple[List[int], List[int]], List[int]]], pad_idx: int):
+    def __init__(self, examples: List[Tuple[Tuple[List[int], List[int]], List[int]]], pad_idx: int, prog_level_map: dict = None):
         self.examples = examples
         self.pad_idx = pad_idx
+        self.prog_level_map = prog_level_map
 
     def __len__(self):
         return len(self.examples)
@@ -206,11 +208,11 @@ class ArcExamplesDataset(Dataset):
             return self
         
         indices = list(range(num_examples))
-        return ArcExamplesDataset([self.examples[i] for i in indices], pad_idx=self.pad_idx)
+        return ArcExamplesDataset([self.examples[i] for i in indices], pad_idx=self.pad_idx, prog_level_map=self.prog_level_map)
     
     @property
     def max_example_seq_len(self):
-        return max([len(p) + max(len(i), len(o)) for ((p, i), o) in self.examples])
+        return max([max(len(i), len(o)) for ((p, i), o) in self.examples])
 
     
     @staticmethod
@@ -270,16 +272,18 @@ class ArcExamplesDataset(Dataset):
                                     collate_fn=lambda b: self.collate_fn(b, self.pad_idx, seq_length=seq_len, device=device),
                                     pin_memory=pin_memory,
                                     drop_last=True)
+            
 
+        dataloader.prog_level_map = self.prog_level_map
         return dataloader
 
 
 
 class TrainingData:
-    def __init__(self, augmentation_factor: int = 2, join_version: bool = False,
+    def __init__(self, augmentation_factor: int = 2, join_version: bool = True,
                 training_loader: ArcTasksLoader = TRAINING_TASKLOADER,
                 auxilliary_loader: List[ArcTasksLoader] = AUXILIARY_TASKLOADERS,
-                num_levels = 15, seed: int = 42):
+                num_levels = 10, seed: int = 42):
         self.augmentation_factor = augmentation_factor
         self.training_loader = training_loader
         self.auxilliary_loader = sorted(auxilliary_loader) # Ensure reproducibility
@@ -436,21 +440,33 @@ class TrainingData:
         assert num_levels > 0 and num_levels <= self.num_levels, f'num_levels must be between 1 and {self.num_levels}'
         assert from_level >= 0 and from_level < num_levels, f'from_level must be between 0 and num_levels({num_levels})'
         examples = []
+        prog_level_map = defaultdict(set)
         for i in range(from_level, num_levels):
             examples.extend(self.tokenized_train_examples[i])
 
+            for example in self.tokenized_train_examples[i]:
+                (p, _), _ = example
+                
+                for prog in p:
+                    prog_level_map[i+1].add(prog)
+
         examples = self.shuffle(examples)
-        return ArcExamplesDataset(examples, pad_idx=self.grid_tokenizer.PAD_IDX)
+        return ArcExamplesDataset(examples, pad_idx=self.grid_tokenizer.PAD_IDX, prog_level_map=prog_level_map)
     
     def eval_ds(self, num_levels: int, from_level: int = 0):
         assert num_levels > 0 and num_levels <= self.num_levels, f'num_levels must be between 1 and {self.num_levels}'
         assert from_level >= 0 and from_level < num_levels, f'from_level must be between 0 and num_levels({num_levels})'
         examples = []
+        prog_level_map = defaultdict(set)
         for i in range(from_level, num_levels):
             examples.extend(self.tokenized_test_examples[i])
+            for example in self.tokenized_test_examples[i]:
+                (p, _), _ = example
+                for prog in p:
+                    prog_level_map[i+1].add(prog)
 
         examples = self.shuffle(examples)
-        return ArcExamplesDataset(examples, pad_idx=self.grid_tokenizer.PAD_IDX)
+        return ArcExamplesDataset(examples, pad_idx=self.grid_tokenizer.PAD_IDX, prog_level_map=prog_level_map)
 # %%
 
 # data = TrainingData().load()
