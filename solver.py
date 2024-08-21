@@ -180,11 +180,13 @@ def random_sweep(
         bsl: int = typer.Option(128, min=1, help="Batch Seq Length. BS is chosen randomly from [16, 32, 64, 128, 256]"),
         lr_decay: Optional[int] = typer.Option(5000, min=1, help="Number of steps to train for."),
         count: Optional[int] = typer.Option(10, min=1, help="Number of sequential runs"),
+        seed: int = typer.Option(42, min=0, help="Random seed for the data and experiment")
     ):
 
 
-    for i in range(count):
-        print(f"Starting Random Config: {i+1}/{count}")
+    run = 0
+    while run < count:
+        print(f"Starting Random Config: {run+1}/{count}")
         SWEEP_DICT = {
             "bs": [16, 32, 64, 128, 256],
             "prog_dim": 16,
@@ -217,14 +219,20 @@ def random_sweep(
         }
 
 
-        sweep_dict = construct_sweep_config(SWEEP_DICT, experiment, prog_dim, diff_level=diff_level, bsl=bsl, lr_decay=lr_decay)
+        sweep_dict = construct_sweep_config(SWEEP_DICT, experiment, prog_dim, diff_level=diff_level, bsl=bsl, lr_decay=lr_decay, seed=seed)
         print("Using following Sweep Config:")
         print(sweep_dict)
 
         config = generate_random_sweep_config(sweep_dict=sweep_dict)
         print("Using following Random Hparam Config:")
         print(config)
-        train(**config)
+        try:
+            train(**config)
+            print(f"Training for {run+1} finished")
+            run += 1
+        except e:
+            print("Error encountered. Trying again!")
+            continue
 
 
 
