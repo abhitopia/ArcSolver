@@ -207,6 +207,8 @@ class ArcExamplesDataset(Dataset):
         if num_examples <= 0:
             return self
         
+        num_examples = min(num_examples, len(self.examples))
+        
         indices = list(range(num_examples))
         return ArcExamplesDataset([self.examples[i] for i in indices], pad_idx=self.pad_idx, prog_level_map=self.prog_level_map)
     
@@ -468,76 +470,3 @@ class TrainingData:
         examples = self.shuffle(examples)
         return ArcExamplesDataset(examples, pad_idx=self.grid_tokenizer.PAD_IDX, prog_level_map=prog_level_map)
 # %%
-
-# data = TrainingData().load()
-# # %%
-# train_ds = data.train_ds
-# # %%
-# train_ds[0][0][0]
-
-# # %%
-# train_ds[0][0][1]
-
-# # %%
-# len(train_ds[0][1])
-
-# # %%
-# def compute_example_len(example):
-#     (p, i), o = example
-#     return len(p) + max(len(i), len(o))
-
-
-# sorted_indices = sorted(range(len(train_ds)), key=lambda i: compute_example_len(train_ds[i]))
-
-# seq_batches = []
-# max_seq_len = 1024
-# l, r = 0, len(sorted_indices)-1
-# while True:
-#     # right_len is always >= left_len by design
-#     batch_seq_len = 0
-#     seq_batch = []
-#     # Attempt to add as many right examples as possibles
-#     while r > l:
-#         right_idx = sorted_indices[r]
-#         right_len = compute_example_len(train_ds[right_idx])
-#         add_right_len = batch_seq_len + right_len 
-#         if add_right_len <= max_seq_len:
-#             seq_batch.append(right_idx)
-#             batch_seq_len = add_right_len
-#             r -= 1
-#         else:
-#             break
-
-        
-#     # Then attempt to add as many left examples as possible
-#     while l < r:
-#         left_idx = sorted_indices[l]
-#         left_len = compute_example_len(train_ds[left_idx])
-#         add_left_len = batch_seq_len + left_len
-#         if add_left_len <= max_seq_len:
-#             seq_batch.append(left_idx)
-#             batch_seq_len = add_left_len
-#             l += 1
-#         else:
-#             break
-
-#     seq_batches.append(seq_batch)
-#     if l == r:
-#         break
-
-
-# # %%
-    
-        
-# seq_batches
-# # %%
-# batch_lens = []
-# for batch in seq_batches:
-#     batch_len = sum([compute_example_len(train_ds[i]) for i in batch])
-#     batch_lens.append(batch_len)
-
-
-# # %%
-# batch_lens[-3]
-
-# # %%
