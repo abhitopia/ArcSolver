@@ -179,49 +179,52 @@ def random_sweep(
         diff_level: int = typer.Option(5, min=1, help="Difficulty level of the training data. Must be less than or equal to num_diff_levels"),
         bsl: int = typer.Option(128, min=1, help="Batch Seq Length. BS is chosen randomly from [16, 32, 64, 128, 256]"),
         lr_decay: Optional[int] = typer.Option(5000, min=1, help="Number of steps to train for."),
+        count: Optional[int] = typer.Option(10, min=1, help="Number of sequential runs"),
     ):
 
 
-    SWEEP_DICT = {
-        "bs": [16, 32, 64, 128, 256],
-        "prog_dim": 16,
-        "heads": [8, 16],
-        "blocks": [1, 3, 5],
-        "n_rec_block": 1,
-        "n_rec_layer": [1, 2, 3],
-        "dropout": [0.0, 0.01, 0.05, 0.1, 0.2, 0.5],
-        "mlr": [0.1, 0.01, 0.005, 0.001, 0.0005, 0.0001, 0.00005, 0.00001],
-        "plr": None,
-        "lr_warmup": [10, 50],
-        "lr_decay": [1000],
-        "n_steps": None,
-        "lr_schedule": ["noam", "const"],
-        "mwd": [0.0, 0.1, 0.01, 0.001, 0.0001],
-        "pwd": [0.0, 0.1, 0.01, 0.001, 0.0001],
-        "grok_alpha": [0.8, 0.85, 0.9, 0.95, 0.99],
-        "grok_lambda": [0.1, 0.5, 1, 2, 5],
-        "data_aug": [0, 1],
-        "num_diff_levels": 10,
-        "diff_level": 5,
-        "use_aux": True,
-        "seed": 42,
-        "lr_find": False,
-        "bsl": 128,
-        "device": None,
-        "eval_int": None,
-        "debug": False,
-        "checkpoint": None
-    }
+    for i in range(count):
+        print(f"Starting Random Config: {i+1}/{count}")
+        SWEEP_DICT = {
+            "bs": [16, 32, 64, 128, 256],
+            "prog_dim": 16,
+            "heads": [8, 16],
+            "blocks": [1, 3, 5],
+            "n_rec_block": 1,
+            "n_rec_layer": [1, 2, 3],
+            "dropout": [0.0, 0.01, 0.05, 0.1, 0.2, 0.5],
+            "mlr": [0.01, 0.005, 0.001, 0.0005, 0.0001, 0.00005, 0.00001],
+            "plr": None,
+            "lr_warmup": [10, 50],
+            "lr_decay": [1000],
+            "n_steps": None,
+            "lr_schedule": ["noam", "const"],
+            "mwd": [0.0, 0.1, 0.01, 0.001, 0.0001],
+            "pwd": [0.0, 0.1, 0.01, 0.001, 0.0001],
+            "grok_alpha": [0.8, 0.85, 0.9, 0.95, 0.99],
+            "grok_lambda": [0.1, 0.5, 1, 2, 5],
+            "data_aug": [0, 1],
+            "num_diff_levels": 10,
+            "diff_level": 5,
+            "use_aux": True,
+            "seed": 42,
+            "lr_find": False,
+            "bsl": 128,
+            "device": None,
+            "eval_int": None,
+            "debug": False,
+            "checkpoint": None
+        }
 
 
-    sweep_dict = construct_sweep_config(SWEEP_DICT, experiment, prog_dim, diff_level=diff_level, bsl=bsl, lr_decay=lr_decay)
-    print("Using following Sweep Config:")
-    print(sweep_dict)
+        sweep_dict = construct_sweep_config(SWEEP_DICT, experiment, prog_dim, diff_level=diff_level, bsl=bsl, lr_decay=lr_decay)
+        print("Using following Sweep Config:")
+        print(sweep_dict)
 
-    config = generate_random_sweep_config(sweep_dict=sweep_dict)
-    print("Using following Random Hparam Config:")
-    print(config)
-    train(**config)
+        config = generate_random_sweep_config(sweep_dict=sweep_dict)
+        print("Using following Random Hparam Config:")
+        print(config)
+        train(**config)
 
 
 
