@@ -178,7 +178,7 @@ def random_sweep(
         prog_dim: int = typer.Option(16, min=4, max=512, help="Dimension of the model"),
         diff_level: int = typer.Option(5, min=1, help="Difficulty level of the training data. Must be less than or equal to num_diff_levels"),
         bsl: int = typer.Option(128, min=1, help="Batch Seq Length. BS is chosen randomly from [16, 32, 64, 128, 256]"),
-        n_steps: Optional[int] = typer.Option(1000, min=1, help="Number of steps to train for."),
+        lr_decay: Optional[int] = typer.Option(5000, min=1, help="Number of steps to train for."),
     ):
 
 
@@ -214,7 +214,7 @@ def random_sweep(
     }
 
 
-    sweep_dict = construct_sweep_config(SWEEP_DICT, experiment, prog_dim, diff_level=diff_level, bsl=bsl, n_steps=n_steps)
+    sweep_dict = construct_sweep_config(SWEEP_DICT, experiment, prog_dim, diff_level=diff_level, bsl=bsl, lr_decay=lr_decay)
     print("Using following Sweep Config:")
     print(sweep_dict)
 
