@@ -1,6 +1,7 @@
 #%%
 import json
 import math
+import sys
 from box import Box
 from torch import nn
 import torch
@@ -679,6 +680,7 @@ class TrainerBase:
         except KeyboardInterrupt:
             self.warning('Training interrupted by user')
             self._at_training_end()
+            sys.exit(0)
 
 
     def initialise_from_checkpoint(self, checkpoint_path: Union[str, Path], strict=True):
