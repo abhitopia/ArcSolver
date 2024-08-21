@@ -2298,6 +2298,20 @@ files = [
 ]
 
 [[package]]
+name = "unique-names-generator"
+version = "1.0.2"
+description = "Generate unique and memorable name strings."
+optional = false
+python-versions = ">=3.6.0"
+files = [
+    {file = "unique-names-generator-1.0.2.tar.gz", hash = "sha256:1f8fcc95b27ae5f065b3df8ab62d5e749e9fd383ff7748607e63a10345248e7a"},
+    {file = "unique_names_generator-1.0.2-py2.py3-none-any.whl", hash = "sha256:ea3c7ba5e1d2926e82b183a306bbef924980b007fe7492a8f64b62b052de1b77"},
+]
+
+[package.extras]
+dev = ["coverage (==5.1)", "ipython (==7.14.0)", "pre-commit (==2.3.0)", "pytest (==5.4.1)", "pytest-mock (==3.1.0)"]
+
+[[package]]
 name = "urllib3"
 version = "2.2.2"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
@@ -2388,4 +2402,4 @@ watchdog = ["watchdog (>=2.3)"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "b9b135cf4097e1f03338eeec3895a73d4ee14853fb129933546ea9811123b4c1"
+content-hash = "b6a153742e61fe738aaa6c822fb182681613d540242459ca0484661b652063ee"
