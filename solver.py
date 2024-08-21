@@ -185,7 +185,7 @@ def random_sweep(
         "bs": [16, 32, 64, 128, 256],
         "prog_dim": 16,
         "heads": [8, 16],
-        "blocks": [2, 3, 5],
+        "blocks": [1, 3, 5],
         "n_rec_block": 1,
         "n_rec_layer": [1, 2, 3],
         "dropout": [0.0, 0.01, 0.05, 0.1, 0.2, 0.5],
