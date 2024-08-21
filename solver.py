@@ -230,7 +230,7 @@ def random_sweep(
             train(**config)
             print(f"Training for {run+1} finished")
             run += 1
-        except e:
+        except Exception:
             print("Error encountered. Trying again!")
             continue
 
