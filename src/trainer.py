@@ -78,7 +78,6 @@ class MetricLogger:
 class Hparams:
     experiment: str
     run: str
-    num_epochs: Optional[int] = None # Number of epochs to train, None means infinite
     clip_grad_norm: Optional[float] = 1.0 # Clip gradient norm, None means no clipping
     seed: int = 1337  # Seed everything for reproducibility
     device: str = None # Device to use for training, None means automatically determine the best device
@@ -89,7 +88,6 @@ class Hparams:
     def __post_init__(self):
         assert isinstance(self.experiment, str), 'experiment must be a string'
         assert isinstance(self.run, str), 'run must be a string'
-        assert self.num_epochs is None or self.num_epochs > 0, 'num_epochs must be None or a positive integer'
         assert self.clip_grad_norm is None or self.clip_grad_norm > 0, 'clip_grad_norm must be None or a positive float'
         assert isinstance(self.seed, int), 'seed must be an integer'
         assert self.device is None or isinstance(self.device, str), 'device must be a string or None'
@@ -194,7 +192,6 @@ class TrainerBase:
         # From Hparams (Direct)
         self.seed = self.hparams.seed
         self.clip_grad_norm = self.hparams.clip_grad_norm
-        self.num_epochs = self.hparams.num_epochs
         self.eval_interval = self.hparams.eval_interval
 
 
@@ -647,7 +644,7 @@ class TrainerBase:
             self._at_training_start()
 
             if max_steps is None:
-                max_steps = len(self.train_dl) * self.num_epochs if self.num_epochs is not None else float
+                max_steps = float('inf')
                 
             eval_interval = self.eval_interval if self.eval_interval is not None else len(self.train_dl)
             self.info(f'Total training steps: {max_steps}')
