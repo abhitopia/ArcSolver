@@ -9,7 +9,7 @@ import typer
 from src.arc_trainer import ArcTrainer, ArcHparams
 from rich import print
 
-from src.utils import get_diff_dict, get_logger
+from src.utils import generate_random_sweep_config, get_logger, construct_sweep_config
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
 train_app = typer.Typer()
@@ -136,7 +136,7 @@ def train(
         "wd_model": mwd,
         "lr_prog": plr if not lr_find else 1,
         "wd_prog": pwd,
-        "lr_schedule": lr_schedule.value,
+        "lr_schedule": lr_schedule.value if isinstance(lr_schedule, LRSchedule) else lr_schedule,
         "lr_warmup_steps": lr_warmup,
         "lr_decay_steps": lr_decay,
         "max_examples": 5000 if _DEV_MODE else -1 # Yes, this is optimizer config
@@ -170,6 +170,57 @@ def info(
     checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)       
     hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
     print(hparams_dict)
+
+
+@train_app.command("random")
+def random_sweep(
+        experiment: str = typer.Argument(..., help="Name of the experiment saved at `./runs/{name}`"),
+        prog_dim: int = typer.Option(16, min=4, max=512, help="Dimension of the model"),
+        diff_level: int = typer.Option(5, min=1, help="Difficulty level of the training data. Must be less than or equal to num_diff_levels"),
+        bsl: int = typer.Option(128, min=1, help="Batch Seq Length. BS is chosen randomly from [16, 32, 64, 128, 256]"),
+    ):
+
+
+    SWEEP_DICT = {
+        "bs": [16, 32, 64, 128, 256],
+        "prog_dim": 16,
+        "heads": [8, 16],
+        "blocks": [2, 3, 5],
+        "n_rec_block": 1,
+        "n_rec_layer": [1, 2, 3],
+        "dropout": [0.0, 0.01, 0.05, 0.1, 0.2, 0.5],
+        "mlr": [0.1, 0.01, 0.005, 0.001, 0.0005, 0.0001, 0.00005, 0.00001],
+        "plr": None,
+        "lr_warmup": [10, 50],
+        "lr_decay": [1000],
+        "n_steps": None,
+        "lr_schedule": ["noam", "const"],
+        "mwd": [0.0, 0.1, 0.01, 0.001, 0.0001],
+        "pwd": [0.0, 0.1, 0.01, 0.001, 0.0001],
+        "grok_alpha": [0.8, 0.85, 0.9, 0.95, 0.99],
+        "grok_lambda": [0.1, 0.5, 1, 2, 5],
+        "data_aug": [0, 1],
+        "num_diff_levels": 10,
+        "diff_level": 5,
+        "use_aux": True,
+        "seed": 42,
+        "lr_find": False,
+        "bsl": 128,
+        "device": None,
+        "eval_int": None,
+        "debug": False,
+        "checkpoint": None
+    }
+
+
+    sweep_dict = construct_sweep_config(SWEEP_DICT, experiment, prog_dim, diff_level=diff_level, bsl=bsl)
+    print("Using following Sweep Config:")
+    print(sweep_dict)
+
+    config = generate_random_sweep_config(sweep_dict=sweep_dict)
+    print("Using following Random Hparam Config:")
+    print(config)
+    train(**config)
 
 
 

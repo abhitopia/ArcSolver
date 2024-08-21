@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pathlib import Path
 import subprocess
 import torch.nn as nn
@@ -8,7 +9,47 @@ import hashlib
 import logging
 import time
 from rich.logging import RichHandler
+from unique_names_generator import get_random_name
 
+
+def find_factors(number):
+    factors = []
+    for i in range(1, int(number ** 0.5) + 1):
+        if number % i == 0:
+            factors.append(i)
+            if i != number // i:  # Check for square root to avoid duplicate factors
+                factors.append(number // i)
+    return sorted(factors)
+
+def get_possible_n_heads(prog_dim):
+    model_dim = prog_dim * 4
+    possible_n_heads = find_factors(model_dim)
+    possible_n_heads = [n_heads for n_heads in possible_n_heads if (model_dim/n_heads) >= 4 and (model_dim/n_heads) < model_dim and (model_dim/n_heads) % 2 == 0 and n_heads >= 4 ]
+
+    if prog_dim > 8:
+        possible_n_heads = [n_heads for n_heads in possible_n_heads if n_heads >= 8]
+    return possible_n_heads
+
+def generate_random_sweep_config(sweep_dict):
+    random_config = {}
+    for key, value in sweep_dict.items():
+        if callable(value):
+            random_config[key] = value()
+        elif isinstance(value, list):
+            random_config[key] = random.choice(value)
+        else:
+            random_config[key] = value
+    return random_config
+
+def construct_sweep_config(sweep_dict, experiment_name, prog_dim, **kwargs):
+    sweep_dict = deepcopy(sweep_dict)
+    sweep_dict["experiment"] = experiment_name
+    sweep_dict["run"] = get_random_name(separator="-")
+    sweep_dict["prog_dim"] = prog_dim
+    sweep_dict["heads"] = get_possible_n_heads(prog_dim)
+    for key, value in kwargs.items():
+        sweep_dict[key] = value
+    return sweep_dict
 
 def generate_loguniform_numbers(a, b, n):
     log_a = np.log(a)
