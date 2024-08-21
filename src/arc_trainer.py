@@ -132,9 +132,6 @@ class ArcHparams(Hparams):
 
         if config.lr_prog is None:
             config.lr_prog = config.lr_model
-            if config.lr_schedule == 'noam':
-                plr_scale = 1 if self.data.data_aug <= 0 else 8 * self.data.data_aug
-                config.lr_prog = config.lr_model * plr_scale
 
         optimizer = model.get_optimizer(
                                     model_lr=config.lr_model,
@@ -148,16 +145,13 @@ class ArcHparams(Hparams):
     def init_scheduler(self, optimizer)-> optim.lr_scheduler.LambdaLR:
         config = self.optim
 
-        if config.lr_schedule == 'noam':
-            warmup_steps = self.state['num_train_batches'] * config.lr_warmup_epochs
-            max_steps = self.state['num_train_batches'] * config.lr_decay_epochs
+        warmup_steps = config.lr_warmup_steps
+        max_steps = config.lr_warmup_steps +  config.lr_decay_steps
+        if config.lr_schedule == 'noam': 
             schedule = lambda step: noam_schedule(step, warmup_steps, max_steps)
         elif config.lr_schedule == 'lindecay':
-            warmup_steps = self.state['num_train_batches'] * config.lr_warmup_epochs
-            max_steps = self.state['num_train_batches'] * config.lr_decay_epochs
             schedule = lambda step: lin_decay_schedule(step, warmup_steps, max_steps)
         elif config.lr_schedule == 'const':
-            warmup_steps = self.state['num_train_batches'] * config.lr_warmup_epochs
             schedule = lambda step: const_schedule(step, warmup_steps)
         elif config.lr_schedule == 'alt':
             assert len(optimizer.param_groups) == 3, "Invalid LR Schedule"

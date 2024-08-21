@@ -10,6 +10,13 @@ import time
 from rich.logging import RichHandler
 
 
+def generate_loguniform_numbers(a, b, n):
+    log_a = np.log(a)
+    log_b = np.log(b)
+    uniform_samples = np.random.uniform(log_a, log_b, n)
+    loguniform_samples = np.exp(uniform_samples)
+    return loguniform_samples.tolist()
+
 
 def migrate_hparam_dict(hparam_dict):
     """For backward compatibility with old hyperparameter keys.

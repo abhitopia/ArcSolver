@@ -14,9 +14,7 @@ from src.utils import get_diff_dict, get_logger
 app = typer.Typer(pretty_exceptions_show_locals=False)
 train_app = typer.Typer()
 change_app = typer.Typer()
-lr_app = typer.Typer()
 app.add_typer(train_app, name="train")
-train_app.add_typer(change_app, name="change")
 
 logger = get_logger()
 
@@ -26,7 +24,7 @@ _BASE_DIR = "./runs"
 if _DEV_MODE:
     logger.warning("WARNING: Running in DEV mode")
 
-def train_from_hparams(hparams, checkpoint, lr_find, debug=False, parent_dir=_BASE_DIR):
+def train_from_hparams(hparams, checkpoint, lr_find, n_steps, debug=False, parent_dir=_BASE_DIR):
     if lr_find or debug:
         hparams.run = f"debug_{hparams.run}"
 
@@ -42,7 +40,7 @@ def train_from_hparams(hparams, checkpoint, lr_find, debug=False, parent_dir=_BA
     if lr_find:
         trainer.find_lr()
     else:
-        trainer.train()
+        trainer.train(max_steps=n_steps if n_steps is not None else hparams.optim.lr_decay_steps + hparams.optim.lr_warmup_steps)
 
 def get_checkpoint(name, run, checkpoint=None, parent_dir=_BASE_DIR):
     checkpoint_dir = ArcTrainer.get_checkpoint_dir(name, run, parent_dir=parent_dir)
@@ -83,10 +81,10 @@ def train(
         n_rec_layer: int = typer.Option(1, min=1, max=10, help="Layer level recurrence"),
         dropout: float = typer.Option(0.0, min=0.0, max=1.0, help="Dropout probability"),
         mlr: float = typer.Option(0.001, min=-1.0, help="Learning Rate"),
-        plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is automatically determined based on the schedule and data augmentation"),
-        lr_warmup: int = typer.Option(10, min=0, help="Number of epochs for learning rate warmup. Only used for noam and lindecay scheduler"),
-        lr_decay: int = typer.Option(1000, min=0, help="Number of epochs for learning rate decay. Only used for noam and lindecay scheduler"),
-        n_epochs: Optional[int] = typer.Option(None, min=1, help="Number of epochs to train for. If None, tha lr_decay is used"),
+        plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is set to mlr"),
+        lr_warmup: int = typer.Option(100, min=0, help="Number of steps for learning rate warmup. Only used for noam and lindecay scheduler"),
+        lr_decay: int = typer.Option(1000, min=0, help="Number of steps for learning rate decay. Only used for noam and lindecay scheduler"),
+        n_steps: Optional[int] = typer.Option(None, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
         lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
         mwd: float = typer.Option(0.01, min=0.0, help="Weight Decay"),
         pwd: float = typer.Option(0.0, min=0.0, help="Program Weight Decay"),
@@ -113,7 +111,6 @@ def train(
                         seed=seed, 
                         device=device, 
                         eval_interval=eval_int,
-                        num_epochs=n_epochs if n_epochs is not None else lr_decay + lr_warmup,
                         grok_alpha=grok_alpha,
                         grok_lambda=grok_lambda)
     data_config = {
@@ -140,15 +137,15 @@ def train(
         "lr_prog": plr if not lr_find else 1,
         "wd_prog": pwd,
         "lr_schedule": lr_schedule.value,
-        "lr_warmup_epochs": lr_warmup,
-        "lr_decay_epochs": lr_decay,
+        "lr_warmup_steps": lr_warmup,
+        "lr_decay_steps": lr_decay,
         "max_examples": 5000 if _DEV_MODE else -1 # Yes, this is optimizer config
     }
 
     hparams.add_params(prefix="data", **data_config)
     hparams.add_params(prefix="model", **model_config)
     hparams.add_params(prefix="optim", **optimizer_config)
-    train_from_hparams(hparams, checkpoint, lr_find, debug)
+    train_from_hparams(hparams=hparams, checkpoint=checkpoint, lr_find=lr_find, n_steps=n_steps, debug=debug)
 
 
 @train_app.command("resume")
