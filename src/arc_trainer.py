@@ -294,7 +294,9 @@ class ArcTrainer(TrainerBase):
         
         # Log params every 10 epochs
         wandb.watch(self.model, log='all', log_freq=max(len(self.train_dl)*10, 500)) 
-        self.embd_token_indices, self.embedding_datasets = init_embedding_proj(self.model.prog_tokenizer.token2idx)
+
+        if self.hparams.data.use_aux:
+            self.embd_token_indices, self.embedding_datasets = init_embedding_proj(self.model.prog_tokenizer.token2idx)
 
         self.train_stats = DatasetLevelStats(self.train_dl.prog_level_map, self.model.prog_tokenizer, "train")
         self.eval_stats = DatasetLevelStats(self.eval_dl.prog_level_map, self.model.prog_tokenizer, "eval")
@@ -320,7 +322,7 @@ class ArcTrainer(TrainerBase):
 
         self.train_stats.log_accuracy(self.step)
 
-        if self.epoch % 50 == 0:
+        if self.epoch % 50 == 0 and self.hparams.data.use_aux:
             # Only log the embeddings every 10 epochs
             embd_weight = self.model.pte.weight
             indices = torch.tensor(self.embd_token_indices,
