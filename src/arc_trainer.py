@@ -155,7 +155,7 @@ class ArcHparams(Hparams):
             schedule = lambda step: const_schedule(step, warmup_steps)
         elif config.lr_schedule == 'alt':
             assert len(optimizer.param_groups) == 3, "Invalid LR Schedule"
-            high_low_schedule, low_high_schedule = get_alt_schedulers(self.state['num_train_batches'])
+            high_low_schedule, low_high_schedule = get_alt_schedulers(config.lr_decay_steps)
             schedule = [high_low_schedule, low_high_schedule, low_high_schedule]
         else:
             raise ValueError(f"Invalid LR Schedule: {config.lr_schedule}. Options: noam, const, alt")
