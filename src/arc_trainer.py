@@ -97,13 +97,13 @@ class ArcHparams(Hparams):
         
         train_dl = train_ds.get_dataloader(batch_size=config.batch_size,
                                            seq_len=config.batch_seq_len,
-                                           batch_by_token_count=True,
+                                           batch_by_token_count=config.dynamic_batching,
                                            pin_memory=True,
                                            shuffle=True)
 
         eval_dl = eval_ds.get_dataloader(batch_size=config.batch_size,
                                         seq_len=config.batch_seq_len,
-                                        batch_by_token_count=True,
+                                        batch_by_token_count=config.dynamic_batching,
                                         pin_memory=True,
                                         shuffle=False)
 

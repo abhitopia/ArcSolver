@@ -97,6 +97,7 @@ def train(
         seed: int = typer.Option(42, min=0, help="Random seed for the data and experiment"),
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
         bsl: int = typer.Option(1024, min=1, help="Batch Seq Length"),
+        dynamic_batching: bool = typer.Option(True, help="Use dynamic batch size"),
         device: Optional[str] = typer.Option(None, help="Device to run the training on. If None, then it is automatically selected"),
         eval_int: Optional[int] = typer.Option(None, help="Number of steps between evaluations. None means evaluation at the end of each epoch"),
         debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved"),
@@ -132,6 +133,7 @@ def train(
     optimizer_config = {
         "batch_size": bs,  # Yes, this is optimizer config
         "batch_seq_len": bsl,
+        "dynamic_batching": dynamic_batching,
         "lr_model": mlr if not lr_find else 1,
         "wd_model": mwd,
         "lr_prog": plr if not lr_find else 1,
