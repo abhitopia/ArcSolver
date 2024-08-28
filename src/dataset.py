@@ -72,7 +72,7 @@ class GridTokenizer(Tokenizer):
     def decode(self, sequence, remove_padding=True):
         tokens = super().decode(sequence)
         if remove_padding:
-            tokens = [token for token in tokens.split(' ') if token != self.PAD]
+            tokens = [token for token in tokens.split(' ') if token != self.PAD_TOKEN]
         return ' '.join(tokens)
 
 
@@ -223,7 +223,6 @@ class ArcExamplesDataset(Dataset):
         
         programs, inputs = zip(*programs_inputs)
         programs = torch.from_numpy(np.array(programs, dtype=np.int64)).to(device, non_blocking=True)
-        prog_len = programs.shape[1]
 
         max_inp_out_len = max(max([len(i) for i in inputs]), max([len(o) for o in outputs]))
         if seq_length is not None:
@@ -231,7 +230,7 @@ class ArcExamplesDataset(Dataset):
             assert seq_length >= max_inp_out_len , 'Fixed Batch Sequence is too small'
             max_inp_out_len = seq_length
 
-        assert max_inp_out_len <= 1024 - prog_len, 'Maximum input/output length is 1024'
+        assert max_inp_out_len <= 1024, 'Maximum input/output length is 1024'
 
         inputs_padded = []
         outputs_padded = []

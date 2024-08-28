@@ -382,6 +382,25 @@ class Interpreter(nn.Module):
         return logits
     
 
+    def infer(self, prog_emb, inp_idx):
+        
+        inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_embd)
+        B2, T2 = inp_idx.size()
+
+        x = prog_emb[..., None] * inp_emb[:, :, None, :]
+        x = x.reshape(B2, T2, -1)
+
+        for _ in range(self.config.n_rec_layer):
+            for block in self.blocks:
+                for _ in range(self.config.n_rec_block):
+                    x = block(x)
+
+        # forward the final layernorm and the classifier
+        x = self.ln_f(x)
+        logits = self.lm_head(x) # (B, T, vocab_size)
+        return logits
+    
+
     @staticmethod
     def loss_fn(logits, targets):
         loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
