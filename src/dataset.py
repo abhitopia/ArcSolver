@@ -129,6 +129,7 @@ class TaskToExamples:
         return get_examples(task.train), get_examples(task.test)
 
 
+
 class TargetTokenCountBatchSampler(BatchSampler):
     def __init__(self, dataset: Dataset, target_token_count: int, shuffle: bool = True):
         self.dataset = dataset
@@ -146,18 +147,32 @@ class TargetTokenCountBatchSampler(BatchSampler):
     @staticmethod
     def compute_example_len(example):
         (p, i), o = example
-        return max(len(i), len(o))
+
+        inp_len = len(i) + len(p)
+        out_len = len(o)
+        return inp_len, out_len
+    
+    @staticmethod
+    def example_sort_metric(example):
+        (p, i), o = example
+        inp_len = len(i) + len(p)
+        out_len = len(o)
+        return (inp_len, out_len)
+
 
     def create_batches(self):
-        sorted_indices = sorted(range(len(self.dataset)), key=lambda i: self.compute_example_len(self.dataset[i]))
+        sorted_indices = sorted(range(len(self.dataset)), key=lambda i: self.example_sort_metric(self.dataset[i]))
         batches = [] 
         batch = []
         max_batch_len = 0
+        max_inp_len = 0
+        max_out_len = 0
         target_token_count = self.target_token_count
 
         for idx in sorted_indices:
-            example_len = self.compute_example_len(self.dataset[idx])
-            include_token_count = max(example_len, max_batch_len) * (len(batch) + 1)
+            example_inp_len, example_out_len = self.compute_example_len(self.dataset[idx])
+
+            include_token_count = (max(example_inp_len, max_inp_len) +  max(example_out_len, max_out_len))* (len(batch) + 1)
             exclude_token_count = max_batch_len * len(batch)
 
             if idx == len(sorted_indices) - 1:
@@ -167,10 +182,15 @@ class TargetTokenCountBatchSampler(BatchSampler):
             # elif include_token_count > target_token_count:
                 batches.append(batch)
                 batch = [idx]
-                max_batch_len = example_len
+                max_inp_len = example_inp_len
+                max_out_len = example_out_len
             else:
                 batch.append(idx)
-                max_batch_len = max(max_batch_len, example_len)
+                max_inp_len = max(max_inp_len, example_inp_len)
+                max_out_len = max(max_out_len, example_out_len)
+
+        if len(batch) > 0:
+            batches.append(batch)
 
         return batches
 
@@ -214,35 +234,32 @@ class ArcExamplesDataset(Dataset):
     
     @property
     def max_example_seq_len(self):
-        return max([max(len(i), len(o)) for ((p, i), o) in self.examples])
+        return max([len(i) + len(p) + len(o) + 1 for ((p, i), o) in self.examples])
 
-    
+
     @staticmethod
     def collate_fn(batch, pad_idx, seq_length: Optional[int] = None, device=torch.device('cpu')):
         programs_inputs, outputs  = zip(*batch)
-        
-        programs, inputs = zip(*programs_inputs)
-        programs = torch.from_numpy(np.array(programs, dtype=np.int64)).to(device, non_blocking=True)
 
-        max_inp_out_len = max(max([len(i) for i in inputs]), max([len(o) for o in outputs]))
+        inputs = [ p + i for p, i in programs_inputs]
+        max_inp_len = max([len(i) for i in inputs])
+        max_out_len = max([len(o) for o in outputs])
+
         if seq_length is not None:
-            assert seq_length <= 1024
-            assert seq_length >= max_inp_out_len , 'Fixed Batch Sequence is too small'
-            max_inp_out_len = seq_length
+            rem_len = seq_length - (max_inp_len + 1)  # +1 for the padding token
+            assert max_out_len <= rem_len, "The output sequence length is greater than the remaining sequence length"
+            max_out_len = rem_len
 
-        assert max_inp_out_len <= 1024, 'Maximum input/output length is 1024'
+        inputs = [[pad_idx] * (max_inp_len - len(i)) + i  for i in inputs]
+        outputs = [o + [pad_idx] * (max_out_len - len(o))  for o in outputs]
 
-        inputs_padded = []
-        outputs_padded = []
+        inputs = [i + [pad_idx] + o for i, o in zip(inputs, outputs)]
+        outputs  = [[pad_idx]*max_inp_len + o + [pad_idx] for o in outputs]
 
-        for i, o in zip(inputs, outputs):
-            inputs_padded.append(i + [pad_idx] * (max_inp_out_len - len(i)))
-            outputs_padded.append(o + [pad_idx] * (max_inp_out_len - len(o)))
-
-        inputs_padded = torch.from_numpy(np.array(inputs_padded, dtype=np.int64)).to(device,  non_blocking=True)
-        outputs_padded = torch.from_numpy(np.array(outputs_padded, dtype=np.int64)).to(device,  non_blocking=True)
-
-        return (programs, inputs_padded), outputs_padded
+        inputs_padded = torch.from_numpy(np.array(inputs, dtype=np.int64)).to(device,  non_blocking=True)
+        outputs_padded = torch.from_numpy(np.array(outputs, dtype=np.int64)).to(device,  non_blocking=True)
+    
+        return inputs_padded, outputs_padded
     
     def get_dataloader(self, batch_size: int, seq_len: Optional[int] = None, batch_by_token_count: bool = False, device=torch.device('cpu'), pin_memory=False, shuffle=True) -> DataLoader:
         """
