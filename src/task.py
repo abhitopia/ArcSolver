@@ -425,17 +425,17 @@ ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_data
 ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dataset/ARC/data/evaluation')
 
 # Synthetic tasks
-ARC_SYNTH_IDENT = ArcTasksLoader(name='ARC_SYNTH_IDENT', path='data/synthetic/synth-IDENT', max_tasks=150)
-ARC_SYNTH_RT090 = ArcTasksLoader(name='ARC_SYNTH_RT090', path='data/synthetic/synth-RT090', max_tasks=150)
-ARC_SYNTH_RT180 = ArcTasksLoader(name='ARC_SYNTH_RT180', path='data/synthetic/synth-RT180', max_tasks=150)
-ARC_SYNTH_RT270 = ArcTasksLoader(name='ARC_SYNTH_RT270', path='data/synthetic/synth-RT270', max_tasks=150)
-ARC_SYNTH_FLPLR = ArcTasksLoader(name='ARC_SYNTH_FLPLR', path='data/synthetic/synth-FLPLR', max_tasks=150)
-ARC_SYNTH_FLPUD = ArcTasksLoader(name='ARC_SYNTH_FLPUD', path='data/synthetic/synth-FLPUD', max_tasks=150)
-ARC_SYNTH_FLPDG = ArcTasksLoader(name='ARC_SYNTH_FLPDG', path='data/synthetic/synth-FLPDG', max_tasks=150)
-ARC_SYNTH_FLPAD = ArcTasksLoader(name='ARC_SYNTH_FLPAD', path='data/synthetic/synth-FLPAD', max_tasks=150)
-ARC_SYNTH_CLRPM = ArcTasksLoader(name='ARC_SYNTH_CLRPM', path='data/synthetic/synth-CLRPM', max_tasks=150)
-ARC_SYNTH_SCLDN = ArcTasksLoader(name='ARC_SYNTH_SCLDN', path='data/synthetic/synth-SCLDN', max_tasks=200)
-ARC_SYNTH_SCLUP = ArcTasksLoader(name='ARC_SYNTH_SCLUP', path='data/synthetic/synth-SCLUP', max_tasks=200)
+ARC_SYNTH_IDENT = ArcTasksLoader(name='ARC_SYNTH_IDENT', path='data/synthetic/synth-IDENT', max_tasks=100)
+ARC_SYNTH_RT090 = ArcTasksLoader(name='ARC_SYNTH_RT090', path='data/synthetic/synth-RT090', max_tasks=100)
+ARC_SYNTH_RT180 = ArcTasksLoader(name='ARC_SYNTH_RT180', path='data/synthetic/synth-RT180', max_tasks=100)
+ARC_SYNTH_RT270 = ArcTasksLoader(name='ARC_SYNTH_RT270', path='data/synthetic/synth-RT270', max_tasks=100)
+ARC_SYNTH_FLPLR = ArcTasksLoader(name='ARC_SYNTH_FLPLR', path='data/synthetic/synth-FLPLR', max_tasks=100)
+ARC_SYNTH_FLPUD = ArcTasksLoader(name='ARC_SYNTH_FLPUD', path='data/synthetic/synth-FLPUD', max_tasks=100)
+ARC_SYNTH_FLPDG = ArcTasksLoader(name='ARC_SYNTH_FLPDG', path='data/synthetic/synth-FLPDG', max_tasks=100)
+ARC_SYNTH_FLPAD = ArcTasksLoader(name='ARC_SYNTH_FLPAD', path='data/synthetic/synth-FLPAD', max_tasks=100)
+ARC_SYNTH_CLRPM = ArcTasksLoader(name='ARC_SYNTH_CLRPM', path='data/synthetic/synth-CLRPM', max_tasks=100)
+ARC_SYNTH_SCLDN = ArcTasksLoader(name='ARC_SYNTH_SCLDN', path='data/synthetic/synth-SCLDN', max_tasks=100)
+ARC_SYNTH_SCLUP = ArcTasksLoader(name='ARC_SYNTH_SCLUP', path='data/synthetic/synth-SCLUP', max_tasks=100)
 
 TRAINING_TASKLOADER = ARC_TRAIN
 EVALUATION_TASKLOADER = ARC_EVAL
