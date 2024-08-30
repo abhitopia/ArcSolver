@@ -115,11 +115,11 @@ class ArcHparams(Hparams):
         config = InterpreterConfig(
             prog_vocab_size = self.state['prog_vocab_size'],
             grid_vocab_size = self.state['grid_vocab_size'],
-            n_prog_embd = self.model.n_prog_embd, # size of the program embedding
+            n_dim = self.model.n_dim, # dimension of the model embedding
             n_head = self.model.n_heads, # number of heads within each self-attention block
+            n_blocks = self.model.n_blocks,
             n_rec_block = self.model.n_rec_block, 
             n_rec_layer = self.model.n_rec_layer, 
-            n_blocks = self.model.n_blocks
         )
         model = Interpreter(config,
                             prog_tokenizer=self.state['prog_tokenizer'],
@@ -351,7 +351,10 @@ class ArcTrainer(TrainerBase):
         self.eval_stats.log_accuracy(self.step)
 
 
-    def _output_target_metrics(self, program_indices: torch.Tensor, logits: torch.Tensor, y: torch.Tensor, is_train):
+    def _output_target_metrics(self, program_indices: torch.Tensor, logits: torch.Tensor, y: torch.Tensor, l: int, is_train):
+        logits = logits[:, l:, :]
+        y = y[:, l:]
+
         _, predicted_tokens = torch.max(logits, dim=2)
         correct_token_predictions = (predicted_tokens == y)
         total_correct_tokens = correct_token_predictions.sum()
@@ -376,9 +379,9 @@ class ArcTrainer(TrainerBase):
             'total_samples': total_samples
         }
     
-    def _add_step_metrics(self, loss, program_indices, logits, y, is_train):
+    def _add_step_metrics(self, loss, program_indices, logits, y, l, is_train):
         metrics_obj = self.train_metrics if is_train else self.eval_metrics
-        batch_metrics = self._output_target_metrics(program_indices, logits, y, is_train)
+        batch_metrics = self._output_target_metrics(program_indices, logits, y, l, is_train)
         metrics_obj.add_metric('Loss', loss.item())
         metrics_obj.add_metric('TokenAcc(%)',
                             batch_metrics['total_correct_tokens']*100, 
@@ -399,19 +402,19 @@ class ArcTrainer(TrainerBase):
         self.__eval_batch_time_start = time.time()
     
     def train_step(self, batch):
-        (p, i), t = batch
-        logits = self.model(p, i)
-        loss = self.model.loss_fn(logits, t)
+        (p, i, l), t = batch
+        logits = self.model(p, i, l)
+        loss = self.model.loss_fn(logits, t, l)
         if not self.disable_checkpointing_and_logging:
-            self._add_step_metrics(loss, p, logits, t, is_train=True)
+            self._add_step_metrics(loss, p, logits, t, l, is_train=True)
         return loss
     
     def eval_step(self, batch):
-        (p, i), t = batch
-        logits = self.model(p, i)
-        loss = self.model.loss_fn(logits, t)    
+        (p, i, l), t = batch
+        logits = self.model(p, i, l)
+        loss = self.model.loss_fn(logits, t, l)    
         if not self.disable_checkpointing_and_logging:
-            self._add_step_metrics(loss, p, logits, t, is_train=False)
+            self._add_step_metrics(loss, p, logits, t, l, is_train=False)
         return loss
     
     def post_train_step(self, batch):
