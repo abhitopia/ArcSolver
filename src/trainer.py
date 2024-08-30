@@ -221,7 +221,8 @@ class TrainerBase:
             # track hyperparameters and run metadata
             config=self.hparams.as_dict(),
             resume="allow",  # Always allow resuming because we will handle it ourselves as manually deleting runs from the webinterface makes it impossible to create a new run with the same name
-            reinit=True # Allows multiple runs from the same script one after another
+            reinit=True, # Allows multiple runs from the same script one after another
+            mode="disabled" if self.disable_checkpointing_and_logging else "online"
         )
 
         self.num_checkpoints_to_keep = num_checkpoints_to_keep
