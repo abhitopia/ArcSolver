@@ -17,23 +17,19 @@ logger = get_logger()
 class InterpreterConfig:
     prog_vocab_size: int # number of program tokens
     grid_vocab_size: int  # number of array element tokens (one extra for niceness)
-    n_prog_embd: int # embedding dimension for program tokens
+    n_dim: int  # dimension of the model
     n_head: int # number of heads within each self-attention block
     n_blocks: int # number of transformer blocks within each recurrence block
     n_rec_block: int = 1 # number of recurrences of each block 
     n_rec_layer: int = 1 # number of recurrences of the network
-    n_embd: int = 4 # embedding dimension (default is 4, 2^4 = 16 even if binary)
     causal: bool = False # whether to use causal attention
     max_seq_len: int = 1024 # max sequence length
-    n_dim: int = -1 # dimension of the model
     dropout: float = 0.0 # dropout probability
 
     def __post_init__(self):
         assert is_power_of_two(self.prog_vocab_size), "Program vocab size must be a power of 2"
         assert is_power_of_two(self.grid_vocab_size), "Grid vocab size must be a power of 2"
-        assert is_power_of_two(self.n_prog_embd), "Program embedding dimension must be a power of 2"
-        assert is_power_of_two(self.n_embd), "Model embedding dimension must be a power of 2"
-        self.n_dim = self.n_prog_embd * self.n_embd
+        assert is_power_of_two(self.n_dim), "Model dimension must be a power of 2"
 
         if self.n_dim % self.n_head != 0:
             raise ValueError("n_dim must be divisible by n_head")
@@ -46,15 +42,13 @@ class InterpreterConfig:
         return {
             'prog_vocab_size': self.prog_vocab_size,
             'grid_vocab_size': self.grid_vocab_size,
-            'n_prog_embd': self.n_prog_embd,
+            'n_dim': self.n_dim,
             'n_head': self.n_head,
             'n_blocks': self.n_blocks,
             'n_rec_block': self.n_rec_block,
             'n_rec_layer': self.n_rec_layer,
-            'n_embd': self.n_embd,
             'causal': self.causal,
             'max_seq_len': self.max_seq_len,
-            'n_dim': self.n_dim,
             'dropout': self.dropout
         }
     
@@ -203,7 +197,7 @@ class SelfAttention(nn.Module):
 
 
     def forward(self, x):
-        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
+        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_dim)
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         # nh is "number of heads", hs is "head size", and C (number of channels) = nh * hs
         # e.g. in GPT-2 (124M), n_head=12, hs=64, so nh*hs=C=768 channels in the Transformer
@@ -336,8 +330,8 @@ class Interpreter(nn.Module):
         self.prog_tokenizer = prog_tokenizer
         self.grid_tokenizer = grid_tokenizer
 
-        self.pte = nn.Embedding(config.prog_vocab_size, config.n_prog_embd)
-        self.wte = nn.Embedding(config.grid_vocab_size, config.n_embd)
+        self.pte = nn.Embedding(config.prog_vocab_size, config.n_dim)
+        self.wte = nn.Embedding(config.grid_vocab_size, config.n_dim)
 
 
         rope = RotaryPositionalEmbeddings(config.n_dim // config.n_head, config.max_seq_len)
@@ -362,14 +356,15 @@ class Interpreter(nn.Module):
         assert B1 == B2, "Batch size of program and input must match"
 
         assert T1 == 1, "Program input must be a single token"
-        assert T2 <= self.config.max_seq_len, f"Cannot forward sequence of length {T2}, max_seq_len is only {self.config.max_seq_len}"
+        assert T1+T2 <= self.config.max_seq_len, f"Cannot forward sequence of length {T2}, max_seq_len is only {self.config.max_seq_len}"
         # forward the token and posisition embeddings
-        prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_embd)
+        prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_dim)
+        inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_dim)
 
-        inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_embd)
+        # x = prog_emb[..., None] * inp_emb[:, :, None, :]
+        # x = x.reshape(B1, T2, -1)
 
-        x = prog_emb[..., None] * inp_emb[:, :, None, :]
-        x = x.reshape(B1, T2, -1)
+        x = torch.cat((prog_emb, inp_emb), dim=1)
 
         for _ in range(self.config.n_rec_layer):
             for block in self.blocks:
@@ -384,7 +379,7 @@ class Interpreter(nn.Module):
 
     def infer(self, prog_emb, inp_idx):
         
-        inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_embd)
+        inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_dim)
         B2, T2 = inp_idx.size()
 
         x = prog_emb[..., None] * inp_emb[:, :, None, :]
@@ -453,8 +448,6 @@ class Interpreter(nn.Module):
         and_conditions = [
             (config.n_dim == other_config.n_dim, "Model dimension should be the same"),
             (config.n_head == other_config.n_head, "Number of heads should be the same"),
-            (config.n_embd == other_config.n_embd, "Embedding dimension should be the same"),
-            (config.n_prog_embd == other_config.n_prog_embd, "Program embedding dimension should be the same"),
         ]
 
         for cond, msg in and_conditions:
