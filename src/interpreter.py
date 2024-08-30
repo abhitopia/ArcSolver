@@ -360,6 +360,7 @@ class Interpreter(nn.Module):
 
         attn_mask = torch.ones(output_len, output_len, dtype=torch.bool).tril(diagonal=0)
         attn_mask[:inp_len+1, :inp_len+1] = True
+        attn_mask = attn_mask.to(prog_idx.device)
 
         # forward the token and posisition embeddings
         prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_dim)

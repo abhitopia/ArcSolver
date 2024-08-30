@@ -292,8 +292,9 @@ class ArcTrainer(TrainerBase):
         self.checkpoint_metric = 'SampleAcc(%)'
         self.checkpoint_metric_increases = True
         
-        # Log params every 10 epochs
-        wandb.watch(self.model, log='all', log_freq=max(len(self.train_dl)*10, 500)) 
+        if not self.disable_checkpointing_and_logging:
+            # Log params every 10 epochs
+            wandb.watch(self.model, log='all', log_freq=max(len(self.train_dl)*10, 500)) 
 
         if self.hparams.data.use_aux:
             self.embd_token_indices, self.embedding_datasets = init_embedding_proj(self.model.prog_tokenizer.token2idx)
@@ -302,8 +303,8 @@ class ArcTrainer(TrainerBase):
         self.eval_stats = DatasetLevelStats(self.eval_dl.prog_level_map, self.model.prog_tokenizer, "eval")
 
         def log_dataset_stats(dl, stats):
-            for i, batch in enumerate(dl):
-                (p, i), t = batch
+            for _, batch in enumerate(dl):
+                (p, _, _), _ = batch
                 program_indices = p[:, 0].detach().cpu().numpy()
                 stats.update_totals(program_indices)
 
@@ -405,20 +406,20 @@ class ArcTrainer(TrainerBase):
         (p, i, l), t = batch
         logits = self.model(p, i, l)
         loss = self.model.loss_fn(logits, t, l)
-        if not self.disable_checkpointing_and_logging:
-            self._add_step_metrics(loss, p, logits, t, l, is_train=True)
+        # if not self.disable_checkpointing_and_logging:
+        self._add_step_metrics(loss, p, logits, t, l, is_train=True)
         return loss
     
     def eval_step(self, batch):
         (p, i, l), t = batch
         logits = self.model(p, i, l)
         loss = self.model.loss_fn(logits, t, l)    
-        if not self.disable_checkpointing_and_logging:
-            self._add_step_metrics(loss, p, logits, t, l, is_train=False)
+        # if not self.disable_checkpointing_and_logging:
+        self._add_step_metrics(loss, p, logits, t, l, is_train=False)
         return loss
     
     def post_train_step(self, batch):
-        (_, _), t = batch
+        (_, _, _), t = batch
         num_tokens = t.numel()
         train_batch_time = (time.time() - self.__train_batch_time_start)*1000
         self.train_metrics.add_metric('ΔT(ms)', train_batch_time)
@@ -431,7 +432,7 @@ class ArcTrainer(TrainerBase):
         #     torch.mps.empty_cache() # clear the MPS cache
 
     def post_eval_step(self, batch):
-        (_, _), t = batch
+        (_, _, _), t = batch
         num_tokens = t.numel()
         eval_batch_time = (time.time() - self.__eval_batch_time_start)*1000
         self.eval_metrics.add_metric('ΔT(ms)', eval_batch_time)
