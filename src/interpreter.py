@@ -215,6 +215,7 @@ class SelfAttention(nn.Module):
 
         ## attention (materializes the large (T,T) matrix for all the queries and keys)
         y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=self.config.dropout) # flash attention
+        # y = F.scaled_dot_product_attention(q, k, v, is_causal=True, dropout_p=self.config.dropout) # flash attention
 
         y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
         # output projection
@@ -357,8 +358,8 @@ class Interpreter(nn.Module):
 
         assert output_len <= self.config.max_seq_len, f"Cannot forward sequence of length {T2}, max_seq_len is only {self.config.max_seq_len}"
 
-        attn_mask = torch.ones(output_len, output_len).tril(diagonal=0).logical_not()
-        attn_mask[:inp_len+1, :inp_len+1] = False
+        attn_mask = torch.ones(output_len, output_len, dtype=torch.bool).tril(diagonal=0)
+        attn_mask[:inp_len+1, :inp_len+1] = True
 
         # forward the token and posisition embeddings
         prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_dim)
