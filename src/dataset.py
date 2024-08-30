@@ -73,7 +73,9 @@ class GridTokenizer(Tokenizer):
         tokens = super().decode(sequence)
         if remove_padding:
             tokens = [token for token in tokens.split(' ') if token != self.PAD_TOKEN]
-        return ' '.join(tokens)
+            return ' '.join(tokens)
+    
+        return tokens
 
 
 class ProgramTokenizer(Tokenizer):
@@ -161,7 +163,8 @@ class TargetTokenCountBatchSampler(BatchSampler):
 
 
     def create_batches(self):
-        sorted_indices = sorted(range(len(self.dataset)), key=lambda i: self.example_sort_metric(self.dataset[i]))
+        # reverse = True so if a last_drop = True, then it will be the smallest batch
+        sorted_indices = sorted(range(len(self.dataset)), key=lambda i: self.example_sort_metric(self.dataset[i]), reverse=True)
         batches = [] 
         batch = []
         max_batch_len = 0
@@ -241,8 +244,11 @@ class ArcExamplesDataset(Dataset):
     def collate_fn(batch, pad_idx, seq_length: Optional[int] = None, device=torch.device('cpu')):
         programs_inputs, outputs  = zip(*batch)
 
-        inputs = [ p + i for p, i in programs_inputs]
-        max_inp_len = max([len(i) for i in inputs])
+        programs, inputs = zip(*programs_inputs)
+        programs = torch.from_numpy(np.array(programs, dtype=np.int64)).to(device, non_blocking=True)
+        prog_len = programs.shape[1]
+
+        max_inp_len = max([len(i) for i in inputs]) + prog_len
         max_out_len = max([len(o) for o in outputs])
 
         if seq_length is not None:
@@ -250,7 +256,7 @@ class ArcExamplesDataset(Dataset):
             assert max_out_len <= rem_len, "The output sequence length is greater than the remaining sequence length"
             max_out_len = rem_len
 
-        inputs = [[pad_idx] * (max_inp_len - len(i)) + i  for i in inputs]
+        inputs = [[pad_idx] * (max_inp_len - len(i) - prog_len) + i  for i in inputs]
         outputs = [o + [pad_idx] * (max_out_len - len(o))  for o in outputs]
 
         inputs = [i + [pad_idx] + o for i, o in zip(inputs, outputs)]
@@ -259,7 +265,7 @@ class ArcExamplesDataset(Dataset):
         inputs_padded = torch.from_numpy(np.array(inputs, dtype=np.int64)).to(device,  non_blocking=True)
         outputs_padded = torch.from_numpy(np.array(outputs, dtype=np.int64)).to(device,  non_blocking=True)
     
-        return inputs_padded, outputs_padded
+        return (programs, inputs_padded), outputs_padded
     
     def get_dataloader(self, batch_size: int, seq_len: Optional[int] = None, batch_by_token_count: bool = False, device=torch.device('cpu'), pin_memory=False, shuffle=True) -> DataLoader:
         """
@@ -289,7 +295,8 @@ class ArcExamplesDataset(Dataset):
                                     shuffle=shuffle,
                                     collate_fn=lambda b: self.collate_fn(b, self.pad_idx, seq_length=seq_len, device=device),
                                     pin_memory=pin_memory,
-                                    drop_last=True)
+                                    # drop_last if all the batch and seq_len is specified so model can be compiled
+                                    drop_last=True if seq_len is not None else False)
             
 
         dataloader.prog_level_map = self.prog_level_map
