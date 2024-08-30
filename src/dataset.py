@@ -264,8 +264,8 @@ class ArcExamplesDataset(Dataset):
 
         inputs_padded = torch.from_numpy(np.array(inputs, dtype=np.int64)).to(device,  non_blocking=True)
         outputs_padded = torch.from_numpy(np.array(outputs, dtype=np.int64)).to(device,  non_blocking=True)
-    
-        return (programs, inputs_padded), outputs_padded
+
+        return (programs, inputs_padded, max_inp_len), outputs_padded
     
     def get_dataloader(self, batch_size: int, seq_len: Optional[int] = None, batch_by_token_count: bool = False, device=torch.device('cpu'), pin_memory=False, shuffle=True) -> DataLoader:
         """

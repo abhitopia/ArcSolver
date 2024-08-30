@@ -22,7 +22,6 @@ class InterpreterConfig:
     n_blocks: int # number of transformer blocks within each recurrence block
     n_rec_block: int = 1 # number of recurrences of each block 
     n_rec_layer: int = 1 # number of recurrences of the network
-    causal: bool = False # whether to use causal attention
     max_seq_len: int = 1024 # max sequence length
     dropout: float = 0.0 # dropout probability
 
@@ -47,7 +46,6 @@ class InterpreterConfig:
             'n_blocks': self.n_blocks,
             'n_rec_block': self.n_rec_block,
             'n_rec_layer': self.n_rec_layer,
-            'causal': self.causal,
             'max_seq_len': self.max_seq_len,
             'dropout': self.dropout
         }
@@ -196,7 +194,7 @@ class SelfAttention(nn.Module):
         self.n_dim = config.n_dim
 
 
-    def forward(self, x):
+    def forward(self, x, attn_mask):
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_dim)
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         # nh is "number of heads", hs is "head size", and C (number of channels) = nh * hs
@@ -216,7 +214,7 @@ class SelfAttention(nn.Module):
         q = self.rope(q).transpose(1, 2)
 
         ## attention (materializes the large (T,T) matrix for all the queries and keys)
-        y = F.scaled_dot_product_attention(q, k, v, is_causal=self.config.causal, dropout_p=self.config.dropout) # flash attention
+        y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=self.config.dropout) # flash attention
 
         y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
         # output projection
@@ -304,17 +302,15 @@ class TransformerBlock(nn.Module):
         super().__init__()
         self.config = config
         self.dropout = nn.Dropout(config.dropout)
-        self.normed_attn = nn.Sequential(
-                        RMSNorm(config.n_dim),
-                        SelfAttention(config, rope)
-                    )
+        self.rmsnorm = RMSNorm(config.n_dim)
+        self.attn = SelfAttention(config, rope)
         self.normed_mlp = nn.Sequential(
                             RMSNorm(config.n_dim),
                             SwiGLUFFN(config.n_dim, 4 * config.n_dim))
 
 
-    def forward(self, x):
-        x = x + self.dropout(self.normed_attn(x))
+    def forward(self, x, attn_mask):
+        x = x + self.dropout(self.attn(self.rmsnorm(x), attn_mask))
         x = x + self.dropout(self.normed_mlp(x))
         return x    
 
@@ -349,14 +345,21 @@ class Interpreter(nn.Module):
         # self.apply(self._init_weights)
 
  
-    def forward(self, prog_idx, inp_idx):
+    def forward(self, prog_idx, inp_idx, inp_len):
         # idx is of shape (B, T)
         B1, T1 = prog_idx.size()
         B2, T2 = inp_idx.size()
         assert B1 == B2, "Batch size of program and input must match"
 
         assert T1 == 1, "Program input must be a single token"
-        assert T1+T2 <= self.config.max_seq_len, f"Cannot forward sequence of length {T2}, max_seq_len is only {self.config.max_seq_len}"
+
+        output_len = T1 + T2
+
+        assert output_len <= self.config.max_seq_len, f"Cannot forward sequence of length {T2}, max_seq_len is only {self.config.max_seq_len}"
+
+        attn_mask = torch.ones(output_len, output_len).tril(diagonal=0).logical_not()
+        attn_mask[:inp_len+1, :inp_len+1] = False
+
         # forward the token and posisition embeddings
         prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_dim)
         inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_dim)
@@ -369,7 +372,7 @@ class Interpreter(nn.Module):
         for _ in range(self.config.n_rec_layer):
             for block in self.blocks:
                 for _ in range(self.config.n_rec_block):
-                    x = block(x)
+                    x = block(x, attn_mask)
 
         # forward the final layernorm and the classifier
         x = self.ln_f(x)
@@ -459,7 +462,6 @@ class Interpreter(nn.Module):
             (config.grid_vocab_size == other_config.grid_vocab_size, "Grid vocab size should be the same"),
             (config.prog_vocab_size == other_config.prog_vocab_size, "Program vocab size should be the same"),
             (config.n_blocks == other_config.n_blocks, "Number of blocks should be the same"),
-            (config.causal == other_config.causal, "Causal should be the same"),
             (config.max_seq_len == other_config.max_seq_len, "Max sequence length should be the same"),
             (config.n_rec_block == other_config.n_rec_block, "Number of recurrence blocks should be the same"),
             (config.n_rec_layer == other_config.n_rec_layer, "Number of recurrence layers should be the same"),
