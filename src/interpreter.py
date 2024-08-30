@@ -22,7 +22,7 @@ class InterpreterConfig:
     n_blocks: int # number of transformer blocks within each recurrence block
     n_rec_block: int = 1 # number of recurrences of each block 
     n_rec_layer: int = 1 # number of recurrences of the network
-    max_seq_len: int = 1024 # max sequence length
+    max_seq_len: int = 2048 # max sequence length
     dropout: float = 0.0 # dropout probability
 
     def __post_init__(self):
@@ -400,11 +400,12 @@ class Interpreter(nn.Module):
     
 
     @staticmethod
-    def loss_fn(logits, targets):
-        loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+    def loss_fn(logits, targets, l):
+        logits_outs = logits[:, l:, :]
+        targets_outs = targets[:, l:]
+        loss =  F.cross_entropy(logits_outs.reshape(-1, logits_outs.size(-1)), targets_outs.reshape(-1))
         return loss
     
-
     def get_optimizer(
                 self, 
                 model_lr,

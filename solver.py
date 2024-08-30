@@ -74,7 +74,7 @@ def train(
         experiment: str = typer.Argument(..., help="Name of the experiment saved at `./runs/{name}`"),
         run: str = typer.Argument(..., help="Name of the run within the experiment saved at `./runs/{name}/{run}`"),
         bs: int = typer.Option(32, min=1, help="Batch Size"),
-        prog_dim: int = typer.Option(4, min=4, max=512, help="Dimension of the model"),
+        n_dim: int = typer.Option(4, min=4, max=512, help="Dimension of the model"),
         heads: int = typer.Option(4, min=1, max=64, help="Number of heads within each self-attention block"),
         blocks: int = typer.Option(1, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
         n_rec_block: int = typer.Option(1, min=1, max=10, help="Block level recurrence"),
@@ -122,7 +122,7 @@ def train(
     }
 
     model_config = {
-        "n_prog_embd": prog_dim,
+        "n_dim": n_dim,
         "n_heads": heads,
         "n_blocks": blocks,
         "n_rec_block": n_rec_block,
