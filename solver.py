@@ -1,14 +1,9 @@
-from copy import deepcopy
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Tuple
-
 import typer
-
-
 from src.arc_trainer import ArcTrainer, ArcHparams
 from rich import print
-
 from src.utils import generate_random_sweep_config, get_logger, construct_sweep_config
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
