@@ -117,8 +117,7 @@ class ArcHparams(Hparams):
             grid_vocab_size = self.state['grid_vocab_size'],
             n_dim = self.model.n_dim, # dimension of the model embedding
             n_head = self.model.n_heads, # number of heads within each self-attention block
-            n_layer = self.model.n_layers, # number of self-attention blocks
-            n_loop = self.model.n_loops, 
+            n_layer = self.model.n_layers # number of self-attention blocks
         )
         model = Interpreter(config,
                             prog_tokenizer=self.state['prog_tokenizer'],

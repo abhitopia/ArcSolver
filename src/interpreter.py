@@ -19,7 +19,6 @@ class InterpreterConfig:
     grid_vocab_size: int  # number of array element tokens (one extra for niceness)
     n_dim: int  # dimension of the model
     n_head: int # number of heads within each self-attention block
-    n_loop: int = 3 # number of recurrences of the network
     n_layer: int = 1 # number of transformer blocks / layers
     max_seq_len: int = 2048 # max sequence length
     dropout: float = 0.0 # dropout probability
@@ -42,7 +41,6 @@ class InterpreterConfig:
             'grid_vocab_size': self.grid_vocab_size,
             'n_dim': self.n_dim,
             'n_head': self.n_head,
-            'n_loop': self.n_loop,
             'n_layer': self.n_layer,
             'max_seq_len': self.max_seq_len,
             'dropout': self.dropout
@@ -346,18 +344,20 @@ class Interpreter(nn.Module):
         # self.apply(self._init_weights)
 
  
-    def forward(self, prog_idx, inp_idx, inp_len):
+    def forward(self, prog_idx, inp_idx, inp_len, n_loops, max_grad_loops=None):
         # idx is of shape (B, T)
         B1, T1 = prog_idx.size()
         B2, T2 = inp_idx.size()
-        assert B1 == B2, "Batch size of program and input must match"
-
-        assert T1 == 1, "Program input must be a single token"
-
         output_len = T1 + T2
-
         assert output_len <= self.config.max_seq_len, f"Cannot forward sequence of length {T2}, max_seq_len is only {self.config.max_seq_len}"
+        assert B1 == B2, "Batch size of program and input must match"
+        assert T1 == 1, "Program input must be a single token"
+        assert n_loops > 0, "Number of loops must be greater than 0"
+        if max_grad_loops is None or max_grad_loops > n_loops: 
+            max_grad_loops = n_loops
+        assert 0 < max_grad_loops <= n_loops, "max_grad_loops must be less than or equal to n_loops and greater than 0"  
 
+        grad_loop_start = n_loops - max_grad_loops
         attn_mask = torch.ones(output_len, output_len, dtype=torch.bool).tril(diagonal=0)
         attn_mask[:inp_len+1, :inp_len+1] = True
         attn_mask = attn_mask.to(prog_idx.device)
@@ -372,13 +372,13 @@ class Interpreter(nn.Module):
         x = torch.cat((prog_emb, inp_emb), dim=1)
         output = torch.zeros_like(x)
 
-        for _ in range(self.config.n_loop):
+        for loop_id in range(n_loops):
             # Only inject input 
-            layer_inp = torch.cat((x, output), dim=-1) # (B, T, 2*n_dim)
-            output = self.inp_inject(layer_inp)  # (B, T, n_dim)
-
-            for block in self.blocks:
-                output = block(output, attn_mask)
+            with torch.set_grad_enabled(loop_id >= grad_loop_start and self.training):
+                layer_inp = torch.cat((x, output), dim=-1) # (B, T, 2*n_dim)
+                output = self.inp_inject(layer_inp)  # (B, T, n_dim)
+                for block in self.blocks:
+                    output = block(output, attn_mask)
 
         # forward the final layernorm and the classifier
         output = self.ln_f(output)
@@ -470,7 +470,6 @@ class Interpreter(nn.Module):
             (config.prog_vocab_size == other_config.prog_vocab_size, "Program vocab size should be the same"),
             (config.n_layer == other_config.n_layer, "Number of blocks should be the same"),
             (config.max_seq_len == other_config.max_seq_len, "Max sequence length should be the same"),
-            (config.n_loop == other_config.n_loop, "Number of recurrence loops should be the same"),
         ]
 
         for cond, msg in strict_conditions:
