@@ -19,9 +19,8 @@ class InterpreterConfig:
     grid_vocab_size: int  # number of array element tokens (one extra for niceness)
     n_dim: int  # dimension of the model
     n_head: int # number of heads within each self-attention block
-    n_blocks: int # number of transformer blocks within each recurrence block
-    n_rec_block: int = 1 # number of recurrences of each block 
-    n_rec_layer: int = 1 # number of recurrences of the network
+    n_loop: int = 3 # number of recurrences of the network
+    n_layer: int = 1 # number of transformer blocks / layers
     max_seq_len: int = 2048 # max sequence length
     dropout: float = 0.0 # dropout probability
 
@@ -43,9 +42,8 @@ class InterpreterConfig:
             'grid_vocab_size': self.grid_vocab_size,
             'n_dim': self.n_dim,
             'n_head': self.n_head,
-            'n_blocks': self.n_blocks,
-            'n_rec_block': self.n_rec_block,
-            'n_rec_layer': self.n_rec_layer,
+            'n_loop': self.n_loop,
+            'n_layer': self.n_layer,
             'max_seq_len': self.max_seq_len,
             'dropout': self.dropout
         }
@@ -329,10 +327,12 @@ class Interpreter(nn.Module):
 
         self.pte = nn.Embedding(config.prog_vocab_size, config.n_dim)
         self.wte = nn.Embedding(config.grid_vocab_size, config.n_dim)
-
-
+        
         rope = RotaryPositionalEmbeddings(config.n_dim // config.n_head, config.max_seq_len)
-        self.blocks = nn.ModuleList([TransformerBlock(config, rope=rope) for _ in range(config.n_blocks)])
+        
+        self.inp_inject = nn.Linear(2*config.n_dim, config.n_dim, bias=False)
+
+        self.blocks = nn.ModuleList([TransformerBlock(config, rope=rope) for _ in range(config.n_layer)])
         self.ln_f = RMSNorm(config.n_dim)
 
         self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
@@ -370,35 +370,39 @@ class Interpreter(nn.Module):
         # x = x.reshape(B1, T2, -1)
 
         x = torch.cat((prog_emb, inp_emb), dim=1)
+        output = torch.zeros_like(x)
 
-        for _ in range(self.config.n_rec_layer):
+        for _ in range(self.config.n_loop):
+            # Only inject input 
+            layer_inp = torch.cat((x, output), dim=-1) # (B, T, 2*n_dim)
+            output = self.inp_inject(layer_inp)  # (B, T, n_dim)
+
             for block in self.blocks:
-                for _ in range(self.config.n_rec_block):
-                    x = block(x, attn_mask)
+                output = block(output, attn_mask)
 
         # forward the final layernorm and the classifier
-        x = self.ln_f(x)
-        logits = self.lm_head(x) # (B, T, vocab_size)
+        output = self.ln_f(output)
+        logits = self.lm_head(output) # (B, T, vocab_size)
         return logits
     
 
-    def infer(self, prog_emb, inp_idx):
+    # def infer(self, prog_emb, inp_idx):
         
-        inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_dim)
-        B2, T2 = inp_idx.size()
+    #     inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_dim)
+    #     B2, T2 = inp_idx.size()
 
-        x = prog_emb[..., None] * inp_emb[:, :, None, :]
-        x = x.reshape(B2, T2, -1)
+    #     x = prog_emb[..., None] * inp_emb[:, :, None, :]
+    #     x = x.reshape(B2, T2, -1)
 
-        for _ in range(self.config.n_rec_layer):
-            for block in self.blocks:
-                for _ in range(self.config.n_rec_block):
-                    x = block(x)
+    #     for _ in range(self.config.n_rec_layer):
+    #         for block in self.blocks:
+    #             for _ in range(self.config.n_rec_block):
+    #                 x = block(x)
 
-        # forward the final layernorm and the classifier
-        x = self.ln_f(x)
-        logits = self.lm_head(x) # (B, T, vocab_size)
-        return logits
+    #     # forward the final layernorm and the classifier
+    #     x = self.ln_f(x)
+    #     logits = self.lm_head(x) # (B, T, vocab_size)
+    #     return logits
     
 
     @staticmethod
@@ -464,10 +468,9 @@ class Interpreter(nn.Module):
             (self.grid_tokenizer == other.grid_tokenizer, "Grid tokenizers should be the same"),
             (config.grid_vocab_size == other_config.grid_vocab_size, "Grid vocab size should be the same"),
             (config.prog_vocab_size == other_config.prog_vocab_size, "Program vocab size should be the same"),
-            (config.n_blocks == other_config.n_blocks, "Number of blocks should be the same"),
+            (config.n_layer == other_config.n_layer, "Number of blocks should be the same"),
             (config.max_seq_len == other_config.max_seq_len, "Max sequence length should be the same"),
-            (config.n_rec_block == other_config.n_rec_block, "Number of recurrence blocks should be the same"),
-            (config.n_rec_layer == other_config.n_rec_layer, "Number of recurrence layers should be the same"),
+            (config.n_loop == other_config.n_loop, "Number of recurrence loops should be the same"),
         ]
 
         for cond, msg in strict_conditions:
@@ -524,16 +527,16 @@ class Interpreter(nn.Module):
         # copy program embeddings
         copy_embedding_weights('pte.', trg_prog_token2idx, src_prog_token2idx)
 
-        if config_trg.n_blocks < config_src.n_blocks:
-            logger.warning(f"WARNING: Number of blocks in target model is less than source model. Copying only the first {config_trg.n_blocks} blocks")
+        if config_trg.n_layer < config_src.n_layer:
+            logger.warning(f"WARNING: Number of blocks in target model is less than source model. Copying only the first {config_trg.n_layer} blocks")
 
         # Copy transformer blocks
-        for block_idx in range(config_trg.n_blocks):
+        for block_idx in range(config_trg.n_layer):
             trg_block_key = f'blocks.{block_idx}'
 
-            if block_idx >= config_src.n_blocks:
+            if block_idx >= config_src.n_layer:
                 logger.warning(f"WARNING: Copying block {block_idx} from the last block of the source model")
-                src_block_idx = config_src.n_blocks - 1
+                src_block_idx = config_src.n_layer - 1
             else:
                 src_block_idx = block_idx
 

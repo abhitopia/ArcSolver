@@ -45,11 +45,26 @@
 - [x] Log accuracy by dataset and level
 - [x] Log accuracy by Rank/Level
 - [x] Try only on the ARC dataset to see the effect of auxiliary tasks
-- [ ] Write sweep hyperparameter sweep using Wandb
-- [ ] Can we measure grokking in the hideen phase
-- [ ] Implement MoE (Mixture of Experts)
+- [x] Convert into encoder-decoder architecture
+- [x] Change the program code for synthetic data to be task independent (decided not to because of scale up)
+- [x] [LOOPED TRANSFORMERS ARE BETTER AT LEARNINGLEARNING ALGORITHMS](https://arxiv.org/pdf/2311.12424)
+- [x] [End-to-end Algorithm Synthesis with Recurrent Networks: Logical Extrapolation Without Overthinking](https://arxiv.org/abs/2202.05826)
+- [x] Implement Input injection
+- [ ] Implement progressive loss
+- [ ] Implement truncated looped transformer backprop
+
+- [ ] Start using Gumbel Softmax (Make it switchable hyperparameter)
+- [ ] Start using MetaLearning
+- [ ] Implement MoE (Mixture of Experts) (dependent on the program encoder)
+- [ ] Read about Latformer https://infoscience.epfl.ch/entities/publication/89c8f500-c685-42b9-83cf-d55666c6afdc
+- [ ] Should switch to graph NN? 
+- [ ] Can we measure grokking in the hidden phase
 - [ ] Once it works, may be introduce neural stack (transducers)
 - [ ] Change batch size for eval?
+
+
+## Future Reads
+- [ ] [Looped Transformers as Programmable Computers](https://arxiv.org/pdf/2301.13196)]
 
 # Grokking Ideas
 - Start out with out augmentation 
