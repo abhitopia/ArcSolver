@@ -72,8 +72,7 @@ def train(
         n_dim: int = typer.Option(16, min=4, max=512, help="Dimension of the model"),
         heads: int = typer.Option(4, min=1, max=64, help="Number of heads within each self-attention block"),
         blocks: int = typer.Option(1, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
-        n_rec_block: int = typer.Option(1, min=1, max=100, help="Block level recurrence"),
-        n_rec_layer: int = typer.Option(1, min=1, max=100, help="Layer level recurrence"),
+        loops: int = typer.Option(1, min=1, max=100, help="Network level recurrence"),
         dropout: float = typer.Option(0.0, min=0.0, max=1.0, help="Dropout probability"),
         mlr: float = typer.Option(0.001, min=-1.0, help="Learning Rate"),
         plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is set to mlr"),
@@ -119,9 +118,8 @@ def train(
     model_config = {
         "n_dim": n_dim,
         "n_heads": heads,
-        "n_blocks": blocks,
-        "n_rec_block": n_rec_block,
-        "n_rec_layer": n_rec_layer,
+        "n_layers": blocks,
+        "n_loops": loops,
         "dropout": dropout
     }
 
@@ -189,8 +187,7 @@ def random_sweep(
             "prog_dim": 16,
             "heads": [8, 16],
             "blocks": [1, 3, 5],
-            "n_rec_block": 1,
-            "n_rec_layer": [1, 2, 3],
+            "loops": [1, 2, 3],
             "dropout": [0.0, 0.01, 0.05, 0.1, 0.2, 0.5],
             "mlr": [0.01, 0.005, 0.001, 0.0005, 0.0001, 0.00005, 0.00001],
             "plr": None,
