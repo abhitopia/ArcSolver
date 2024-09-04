@@ -119,7 +119,7 @@ def train(
         "n_dim": n_dim,
         "n_heads": heads,
         "n_layers": blocks,
-        "n_loops": loops,
+        # "n_loops": loops,
         "dropout": dropout
     }
 
