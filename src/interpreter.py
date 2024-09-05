@@ -371,19 +371,25 @@ class Interpreter(nn.Module):
 
         x = torch.cat((prog_emb, inp_emb), dim=1)
         output = torch.zeros_like(x)
+        convergence_mse = []
 
         for loop_id in range(n_loops):
             # Only inject input 
+
+            prev_output = output
             with torch.set_grad_enabled(loop_id >= grad_loop_start and self.training):
                 layer_inp = torch.cat((x, output), dim=-1) # (B, T, 2*n_dim)
                 output = self.inp_inject(layer_inp)  # (B, T, n_dim)
                 for block in self.blocks:
                     output = block(output, attn_mask)
 
+            output_mse = F.mse_loss(output, prev_output)
+            convergence_mse.append(output_mse.item())
+
         # forward the final layernorm and the classifier
         output = self.ln_f(output)
         logits = self.lm_head(output) # (B, T, vocab_size)
-        return logits
+        return logits, convergence_mse
     
 
     # def infer(self, prog_emb, inp_idx):

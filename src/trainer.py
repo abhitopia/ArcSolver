@@ -14,7 +14,7 @@ import wandb
 import numpy as np
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 from collections import defaultdict
 from tqdm import tqdm
 from .utils import add_logfile_handler, add_logging_funcs, get_git_commit_hash, get_logger, map_to_tensors, migrate_hparam_dict
@@ -164,7 +164,8 @@ class TrainerBase:
                 logger: Optional[logging.Logger] = None,
                 num_checkpoints_to_keep=2,
                 checkpoint_metric='loss',
-                checkpoint_metric_increases=False
+                checkpoint_metric_increases=False,
+                console_metrics: Optional[List[str]] = ['Loss']
             ):
         
         assert isinstance(hparams, Hparams), 'hparams must be an instance of Hparams'
@@ -207,6 +208,7 @@ class TrainerBase:
 
         self.train_metrics = MetricLogger()
         self.eval_metrics = MetricLogger()
+        self.console_metrics = set(console_metrics)
 
         self.hparams.init_dataloaders()
         self._eval_at_start = False
@@ -492,7 +494,6 @@ class TrainerBase:
         pass
 
     def _metrics_string(self, prefix, metrics, eval=False):
-
         if eval:
             num_batches = len(self.eval_dl)
             epoch_step  = self.eval_epoch_step
@@ -505,7 +506,7 @@ class TrainerBase:
 
         skip_prefix = ['LR/ParamGroup', 'GradientNorm']
         for k, v in metrics.items():
-            if any([k.startswith(p) for p in skip_prefix]):
+            if any([k.startswith(p) for p in skip_prefix]) or (k not in self.console_metrics):
                 continue
             text += f' | {k}: {v:7.3f}'
         return text
