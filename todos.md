@@ -50,8 +50,10 @@
 - [x] [LOOPED TRANSFORMERS ARE BETTER AT LEARNINGLEARNING ALGORITHMS](https://arxiv.org/pdf/2311.12424)
 - [x] [End-to-end Algorithm Synthesis with Recurrent Networks: Logical Extrapolation Without Overthinking](https://arxiv.org/abs/2202.05826)
 - [x] Implement Input injection
+- [x] Implement truncated looped transformer backprop
+- [x] design loop curriculum
 - [ ] Implement progressive loss
-- [ ] Implement truncated looped transformer backprop
+- [ ] Log convergence of output wrt to loop
 
 - [ ] Start using Gumbel Softmax (Make it switchable hyperparameter)
 - [ ] Start using MetaLearning

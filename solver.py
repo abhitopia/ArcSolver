@@ -68,33 +68,55 @@ class LRSchedule(str, Enum):
 def train(
         experiment: str = typer.Argument(..., help="Name of the experiment saved at `./runs/{name}`"),
         run: str = typer.Argument(..., help="Name of the run within the experiment saved at `./runs/{name}/{run}`"),
+
+        # Batch Config
         bs: int = typer.Option(32, min=1, help="Batch Size"),
+        bsl: int = typer.Option(1024, min=1, help="Batch Seq Length"),
+        dynamic_batching: bool = typer.Option(True, help="Use dynamic batch size"),
+
+        # Model Config
         n_dim: int = typer.Option(16, min=4, max=512, help="Dimension of the model"),
         heads: int = typer.Option(4, min=1, max=64, help="Number of heads within each self-attention block"),
         blocks: int = typer.Option(1, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
-        loops: int = typer.Option(1, min=1, max=100, help="Network level recurrence"),
         dropout: float = typer.Option(0.0, min=0.0, max=1.0, help="Dropout probability"),
+
+        # Loop Config
+        max_loops: int = typer.Option(16, min=1, max=100, help="Network level recurrence"),
+        min_loops: int = typer.Option(2, min=0, help="Minimum number of loops"),
+        inc_loops: int = typer.Option(1, min=1, help="Number of loops to increase by"),
+        int_loops: int = typer.Option(100, min=1, help="Interval for increasing number of loops"),
+        max_loops_prob: float = typer.Option(0.5, min=0.0, max=1.0, help="Probability of choosing max loops during training"),
+
+        # Learning Rate Config
         mlr: float = typer.Option(0.001, min=-1.0, help="Learning Rate"),
         plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is set to mlr"),
         lr_warmup: int = typer.Option(100, min=0, help="Number of steps for learning rate warmup. Only used for noam and lindecay scheduler"),
         lr_decay: int = typer.Option(1000, min=0, help="Number of steps for learning rate decay. Only used for noam and lindecay scheduler"),
-        n_steps: Optional[int] = typer.Option(None, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
         lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
+
+        # Weight Decay Config
         mwd: float = typer.Option(0.01, min=0.0, help="Weight Decay"),
         pwd: float = typer.Option(0.0, min=0.0, help="Program Weight Decay"),
+
+        # Grok Config
         grok_alpha: float = typer.Option(0.0, min=0.0, help="Grok Alpha"),
         grok_lambda: float = typer.Option(0.0, min=0.0, help="Grok Lambda"),
+
+        # Data Config
         data_aug: int = typer.Option(3, min=0, help="Data Augmentation Level. 0 means no augmentation"),
         num_diff_levels: int = typer.Option(5, min=1, help="Number of partitions of the data based on difficulty"),
         diff_level: int = typer.Option(1, min=1, help="Difficulty level of the training data. Must be less than or equal to num_diff_levels"),
         use_aux: bool = typer.Option(True, help="Use auxiliary data for training"),
+
+        # Misc Config
+        n_steps: Optional[int] = typer.Option(None, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
         seed: int = typer.Option(42, min=0, help="Random seed for the data and experiment"),
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
-        bsl: int = typer.Option(1024, min=1, help="Batch Seq Length"),
-        dynamic_batching: bool = typer.Option(True, help="Use dynamic batch size"),
         device: Optional[str] = typer.Option(None, help="Device to run the training on. If None, then it is automatically selected"),
         eval_int: Optional[int] = typer.Option(None, help="Number of steps between evaluations. None means evaluation at the end of each epoch"),
         debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved"),
+
+        # Checkpoint Config
         checkpoint: Optional[str] = typer.Option(None, help="Initialize the model from the given checkpoint. Training will start from the beginning")
     ):
 
@@ -119,21 +141,33 @@ def train(
         "n_dim": n_dim,
         "n_heads": heads,
         "n_layers": blocks,
-        # "n_loops": loops,
         "dropout": dropout
     }
 
     optimizer_config = {
+        # Batch Size
         "batch_size": bs,  # Yes, this is optimizer config
         "batch_seq_len": bsl,
         "dynamic_batching": dynamic_batching,
+
+        # Loop Curriculum
+        "max_loops": max_loops,
+        "min_loops": min_loops,
+        "inc_loops": inc_loops,
+        "int_loops": int_loops,
+        "max_loops_prob": max_loops_prob,
+
+        # Learning Rate
         "lr_model": mlr if not lr_find else 1,
-        "wd_model": mwd,
         "lr_prog": plr if not lr_find else 1,
-        "wd_prog": pwd,
         "lr_schedule": lr_schedule.value if isinstance(lr_schedule, LRSchedule) else lr_schedule,
         "lr_warmup_steps": lr_warmup,
         "lr_decay_steps": lr_decay,
+
+        # Weight Decay
+        "wd_model": mwd,
+        "wd_prog": pwd,
+        
         "max_examples": 5000 if _DEV_MODE else -1 # Yes, this is optimizer config
     }
 
