@@ -290,6 +290,7 @@ class ArcTrainer(TrainerBase):
 
     def at_training_start(self):
         self.checkpoint_metric = 'SampleAcc(%)'
+        self.console_metrics = self.console_metrics.union({'SampleAcc(%)', 'TokenAcc(%)', '#Loops', 'ΔT(ms)', '#TokensPerSec'})
         self.checkpoint_metric_increases = True
         self.loop_curriculum = Curriculum(
             start=self.hparams.optim.min_loops,
@@ -386,21 +387,24 @@ class ArcTrainer(TrainerBase):
             'total_samples': total_samples
         }
     
-    def _add_step_metrics(self, loss, program_indices, logits, y, l, is_train, max_loops):
+    def _add_step_metrics(self, loss, program_indices, logits, y, l, is_train, max_loops, convergence_mse):
         metrics_obj = self.train_metrics if is_train else self.eval_metrics
         batch_metrics = self._output_target_metrics(program_indices, logits, y, l, is_train)
         metrics_obj.add_metric('Loss', loss.item())
-        metrics_obj.add_metric('TokenAcc(%)',
-                            batch_metrics['total_correct_tokens']*100, 
-                            batch_metrics['total_tokens'])
-        
-        metrics_obj.add_metric('BatchSize(#Tokens)', batch_metrics['total_tokens'])
         metrics_obj.add_metric('SampleAcc(%)',
                             batch_metrics['total_correct_samples']*100,
                             batch_metrics['total_samples'])
+        metrics_obj.add_metric('TokenAcc(%)',
+                            batch_metrics['total_correct_tokens']*100, 
+                            batch_metrics['total_tokens'])
+        metrics_obj.add_metric('#Loops', max_loops)
+        
+        metrics_obj.add_metric('BatchSize(#Tokens)', batch_metrics['total_tokens'])
         metrics_obj.add_metric('#Samples', batch_metrics['total_samples'])
         metrics_obj.add_metric('SeqLen', y.shape[1])
-        metrics_obj.add_metric('#Loops', max_loops)
+
+        for loop in range(len(convergence_mse)):
+            metrics_obj.add_metric(f'ConvergenceMSE/Loop_{loop+1}', convergence_mse[loop])
         
 
     def pre_train_step(self, batch):
@@ -418,20 +422,21 @@ class ArcTrainer(TrainerBase):
         if random.random() < self.hparams.optim.max_loops_prob:
             max_loops = random.randint(min_loops, max_loops)
     
-        logits = self.model(p, i, l, max_loops)
+        logits, convergence_mse = self.model(p, i, l, max_loops)
         loss = self.model.loss_fn(logits, t, l)
+
         # if not self.disable_checkpointing_and_logging:
-        self._add_step_metrics(loss, p, logits, t, l, is_train=True, max_loops=max_loops)
+        self._add_step_metrics(loss, p, logits, t, l, is_train=True, max_loops=max_loops, convergence_mse=convergence_mse)
         return loss
     
     def eval_step(self, batch):
         (p, i, l), t = batch
         max_loops = self.loop_curriculum.update(self.step)
 
-        logits = self.model(p, i, l, max_loops)
+        logits, convergence_mse = self.model(p, i, l, max_loops)
         loss = self.model.loss_fn(logits, t, l)    
         # if not self.disable_checkpointing_and_logging:
-        self._add_step_metrics(loss, p, logits, t, l, is_train=False, max_loops=max_loops)
+        self._add_step_metrics(loss, p, logits, t, l, is_train=False, max_loops=max_loops, convergence_mse=convergence_mse)
         return loss
     
     def post_train_step(self, batch):
