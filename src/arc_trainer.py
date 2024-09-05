@@ -2,6 +2,7 @@ from collections import defaultdict, Counter
 import logging
 import math
 from pathlib import Path
+import random
 import time
 from typing import Dict, Tuple, Union
 import numpy as np
@@ -17,6 +18,7 @@ from src.dataset import TrainingData
 from src.interpreter import Interpreter, InterpreterConfig
 from src.trainer import Hparams
 from src.utils import nearest_greater_power_of_2
+from src.curriculum import Curriculum
 import math
 import wandb
 
@@ -289,6 +291,12 @@ class ArcTrainer(TrainerBase):
     def at_training_start(self):
         self.checkpoint_metric = 'SampleAcc(%)'
         self.checkpoint_metric_increases = True
+        self.loop_curriculum = Curriculum(
+            start=self.hparams.optim.min_loops,
+            end=self.hparams.optim.max_loops,
+            inc=self.hparams.optim.inc_loops,
+            interval=self.hparams.optim.int_loops
+        )
         
         if not self.disable_checkpointing_and_logging:
             # Log params every 10 epochs
@@ -378,7 +386,7 @@ class ArcTrainer(TrainerBase):
             'total_samples': total_samples
         }
     
-    def _add_step_metrics(self, loss, program_indices, logits, y, l, is_train):
+    def _add_step_metrics(self, loss, program_indices, logits, y, l, is_train, max_loops):
         metrics_obj = self.train_metrics if is_train else self.eval_metrics
         batch_metrics = self._output_target_metrics(program_indices, logits, y, l, is_train)
         metrics_obj.add_metric('Loss', loss.item())
@@ -392,6 +400,7 @@ class ArcTrainer(TrainerBase):
                             batch_metrics['total_samples'])
         metrics_obj.add_metric('#Samples', batch_metrics['total_samples'])
         metrics_obj.add_metric('SeqLen', y.shape[1])
+        metrics_obj.add_metric('#Loops', max_loops)
         
 
     def pre_train_step(self, batch):
@@ -402,18 +411,27 @@ class ArcTrainer(TrainerBase):
     
     def train_step(self, batch):
         (p, i, l), t = batch
-        logits = self.model(p, i, l)
+
+        max_loops = self.loop_curriculum.update(self.step)
+        min_loops = self.hparams.optim.min_loops
+
+        if random.random() < self.hparams.optim.max_loops_prob:
+            max_loops = random.randint(min_loops, max_loops)
+    
+        logits = self.model(p, i, l, max_loops)
         loss = self.model.loss_fn(logits, t, l)
         # if not self.disable_checkpointing_and_logging:
-        self._add_step_metrics(loss, p, logits, t, l, is_train=True)
+        self._add_step_metrics(loss, p, logits, t, l, is_train=True, max_loops=max_loops)
         return loss
     
     def eval_step(self, batch):
         (p, i, l), t = batch
-        logits = self.model(p, i, l)
+        max_loops = self.loop_curriculum.update(self.step)
+
+        logits = self.model(p, i, l, max_loops)
         loss = self.model.loss_fn(logits, t, l)    
         # if not self.disable_checkpointing_and_logging:
-        self._add_step_metrics(loss, p, logits, t, l, is_train=False)
+        self._add_step_metrics(loss, p, logits, t, l, is_train=False, max_loops=max_loops)
         return loss
     
     def post_train_step(self, batch):
