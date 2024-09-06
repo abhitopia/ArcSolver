@@ -181,14 +181,25 @@ def train(
 
 @train_app.command("resume")
 def resume(
-       run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
+        run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
+        n_steps: Optional[int] = typer.Option(None, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
+        start_loops: Optional[int] = typer.Option(None, min=1, help="Starting number of loops for the curriculum"),
+        max_loops: int = typer.Option(None, min=1, max=100, help="Network level recurrence"),
+
     ):
     experiment, run, parent_dir = split_run_path(run_path)
     checkpoint_dir = ArcTrainer.get_checkpoint_dir(experiment, run, parent_dir=parent_dir)
     assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
     checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)       
     trainer = ArcTrainer.from_checkpoint(checkpoint, resume=True)
-    trainer.train()
+    
+    if max_loops is not None:
+        trainer.hparams.optim.max_loops = max_loops
+
+    if start_loops is not None:
+        trainer.hparams.optim.start_loops = start_loops
+
+    trainer.train(max_steps=n_steps if n_steps is not None else trainer.hparams.optim.lr_decay_steps + trainer.hparams.optim.lr_warmup_steps)
 
 
 @train_app.command("info")
