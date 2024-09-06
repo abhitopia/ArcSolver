@@ -325,6 +325,13 @@ class ArcTrainer(TrainerBase):
         self.train_stats.epoch_reset()
 
     def at_epoch_end(self):
+        if torch.cuda.is_available():
+            torch.cuda.synchronize() # wait for the GPU to finish work
+            torch.cuda.empty_cache()
+        elif self.device.type == 'mps':
+            torch.mps.synchronize() # wait for the MPS to finish work
+            torch.mps.empty_cache() # clear the MPS cache
+
         if self.disable_checkpointing_and_logging:
             return
 
@@ -353,6 +360,13 @@ class ArcTrainer(TrainerBase):
         self.eval_stats.epoch_reset()
     
     def at_eval_end(self):
+        if torch.cuda.is_available():
+            torch.cuda.synchronize() # wait for the GPU to finish work
+            torch.cuda.empty_cache()
+        elif self.device.type == 'mps':
+            torch.mps.synchronize() # wait for the MPS to finish work
+            torch.mps.empty_cache() # clear the MPS cache
+
         if self.disable_checkpointing_and_logging:
             return
 
