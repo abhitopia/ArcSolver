@@ -86,6 +86,7 @@ def train(
         inc_loops: int = typer.Option(1, min=1, help="Number of loops to increase by"),
         int_loops: int = typer.Option(100, min=1, help="Interval for increasing number of loops"),
         max_loops_prob: float = typer.Option(0.5, min=0.0, max=1.0, help="Probability of choosing max loops during training"),
+        start_loops: Optional[int] = typer.Option(None, min=1, help="Starting number of loops for the curriculum"),
 
         # Learning Rate Config
         mlr: float = typer.Option(0.001, min=-1.0, help="Learning Rate"),
@@ -156,6 +157,7 @@ def train(
         "inc_loops": inc_loops,
         "int_loops": int_loops,
         "max_loops_prob": max_loops_prob,
+        "start_loops": start_loops if start_loops is not None else min_loops,
 
         # Learning Rate
         "lr_model": mlr if not lr_find else 1,

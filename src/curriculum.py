@@ -8,6 +8,7 @@ class Curriculum:
         self.inc = inc
         self.interval = interval
         assert all(isinstance(x, int) for x in [start, end, inc, interval]), "All arguments must be integers"
+        assert start <= end, "Start value must be less than end value"
 
         self.step_count = 0
         self._val = start
