@@ -293,7 +293,7 @@ class ArcTrainer(TrainerBase):
         self.console_metrics = self.console_metrics.union({'SampleAcc(%)', 'TokenAcc(%)', '#Loops', 'ΔT(ms)', '#TokensPerSec'})
         self.checkpoint_metric_increases = True
         self.loop_curriculum = Curriculum(
-            start=self.hparams.optim.min_loops,
+            start=self.hparams.optim.start_loops,
             end=self.hparams.optim.max_loops,
             inc=self.hparams.optim.inc_loops,
             interval=self.hparams.optim.int_loops
