@@ -192,7 +192,7 @@ def fork(
         # Batch Config
         bs: Optional[int] = typer.Option(None, min=1, help="Batch Size"),
         bsl: Optional[int] = typer.Option(None, min=1, help="Batch Seq Length"),
-        dynamic_batching: Optional[bool] = typer.Option(None, help="Use dynamic batch size"),
+        dynamic_batching: Optional[bool] = typer.Option(True, help="Use dynamic batch size"),
 
         # Learning Rate Config
         mlr: Optional[float] = typer.Option(None, min=0.0, help="Learning Rate"),
@@ -217,7 +217,7 @@ def fork(
         data_aug: Optional[int] = typer.Option(None, min=0, help="Data Augmentation Level. 0 means no augmentation"),
         num_diff_levels: Optional[int] = typer.Option(None, min=1, help="Number of partitions of the data based on difficulty"),
         diff_level: Optional[int] = typer.Option(None, min=1, help="Difficulty level of the training data. Must be less than or equal to num_diff_levels"),
-        use_aux: Optional[bool] = typer.Option(None, help="Use auxiliary data for training"),
+        use_aux: Optional[bool] = typer.Option(True, help="Use auxiliary data for training"),
 
         # Misc Config
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
@@ -283,6 +283,7 @@ def fork(
     override_hparams(hparams.model, model_config)
     override_hparams(hparams.optim, optimizer_config)
 
+
     if debug:
         hparams.run = f"debug_{hparams.run}"
 
@@ -300,73 +301,6 @@ def fork(
         trainer.find_lr()
     else:
         trainer.train(max_steps=n_steps if n_steps is not None else hparams.optim.lr_decay_steps + hparams.optim.lr_warmup_steps)
-
-
-# @train_app.command("resume")
-# def resume(
-#         run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
-
-#         # Misc Config
-#         n_steps: Optional[int] = typer.Option(None, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
-
-#         # Loop Curriculum
-#         start_loops: Optional[int] = typer.Option(None, min=1, help="Starting number of loops for the curriculum"),
-#         max_loops: Optional[int] = typer.Option(None, min=1, max=100, help="Network level recurrence"),
-#         inc_loops: int = typer.Option(1, min=1, help="Number of loops to increase by"),
-#         int_loops: int = typer.Option(100, min=1, help="Interval for increasing number of loops"),
-#         max_loops_prob: float = typer.Option(0.5, min=0.0, max=1.0, help="Probability of choosing max loops during training"),
-
-#         # Batch Config
-#         bs: Optional[int] = typer.Option(None, min=1, help="Batch Size"),
-#         bsl: Optional[int] = typer.Option(None, min=1, help="Batch Seq Length"),
-#         dynamic_batching: Optional[bool] = typer.Option(None, help="Use dynamic batch size"),
-
-#         # Learning Rate Config
-#         mlr: Optional[float] = typer.Option(None, min=0.0, help="Learning Rate"),
-#         plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is set to mlr"),
-
-#         # Weight Decay Config
-#         mwd: Optional[float] = typer.Option(None, min=0.0, help="Weight Decay"),
-#         pwd: Optional[float] = typer.Option(None, min=0.0, help="Program Weight Decay"),
-
-#         # Model Config
-#         dropout: Optional[float] = typer.Option(None, min=0.0, max=1.0, help="Dropout probability"),
-
-#         # Grok Config
-#         grok_alpha: Optional[float] = typer.Option(None, min=0.0, help="Grok Alpha"),
-#         grok_lambda: Optional[float] = typer.Option(None, min=0.0, help="Grok Lambda"),
-
-#         # Misc Config
-#         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
-#         debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved"),
-
-#     ):
-#     experiment, run, parent_dir = split_run_path(run_path)
-#     checkpoint_dir = ArcTrainer.get_checkpoint_dir(experiment, run, parent_dir=parent_dir)
-#     assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
-#     checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)       
-
-#     fork(experiment=experiment,
-#         run=run,
-#         checkpoint=checkpoint,
-#         n_steps=n_steps,
-#         start_loops=start_loops,
-#         max_loops=max_loops,
-#         inc_loops=inc_loops,
-#         int_loops=int_loops,
-#         max_loops_prob=max_loops_prob,
-#         bs=bs,
-#         bsl=bsl,
-#         dynamic_batching=dynamic_batching,
-#         mlr=mlr,
-#         plr=plr,
-#         mwd=mwd, 
-#         pwd=pwd,
-#         dropout=dropout,
-#         grok_alpha=grok_alpha,
-#         grok_lambda=grok_lambda,
-#         lr_find=lr_find,
-#         debug=debug)
 
 
 @train_app.command("info")
