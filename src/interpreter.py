@@ -532,6 +532,8 @@ class Interpreter(nn.Module):
         # copy program embeddings
         copy_embedding_weights('pte.', trg_prog_token2idx, src_prog_token2idx)
 
+        copy_('inp_inject.')
+
         if config_trg.n_layer < config_src.n_layer:
             logger.warning(f"WARNING: Number of blocks in target model is less than source model. Copying only the first {config_trg.n_layer} blocks")
 
