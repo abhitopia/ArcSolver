@@ -162,7 +162,7 @@ class TrainerBase:
                 disable_checkpointing_and_logging=False,
                 prevent_overwrite=True,
                 logger: Optional[logging.Logger] = None,
-                num_checkpoints_to_keep=2,
+                num_checkpoints_to_keep=3,
                 checkpoint_metric='loss',
                 checkpoint_metric_increases=False,
                 console_metrics: Optional[List[str]] = ['Loss']
@@ -314,7 +314,7 @@ class TrainerBase:
         if torch.backends.mps.is_available():
             torch.mps.manual_seed(seed)
 
-    def load_state_dict(self, state_dict, resume=True, strict=True):
+    def load_state_dict(self, state_dict, load_optim=True, strict=True):
         self.model.load_state_dict(state_dict['model_state_dict'], strict=strict)
         self.model.to(self.device)
         self._eval_at_start = True
@@ -323,14 +323,16 @@ class TrainerBase:
         if saved_commit_hash is not None and saved_commit_hash != current_commit_hash:
             self.warning(f'Git commit hash mismatch: Current: {current_commit_hash}, Checkpoint: {saved_commit_hash}')
 
-        if resume:
+        if strict:
             hparams_dict = state_dict['hparams']
             assert hparams_dict == self.hparams.as_dict(), 'Hparams do not match! Cannot resume training.'
+
+        if load_optim:
             self.step = state_dict['step']
             self.epoch = state_dict['epoch']
             self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
             self.scheduler.load_state_dict(state_dict['scheduler_state_dict'])
-            self.info(f"Resuming from Step: {self.step}, Epoch: {self.epoch}")
+            self.info(f"Continuing from Step: {self.step}, Epoch: {self.epoch}")
         else:
             # Resetting those just to be safe!!
             self._optimizer = None
@@ -686,7 +688,7 @@ class TrainerBase:
             sys.exit(0)
 
 
-    def initialise_from_checkpoint(self, checkpoint_path: Union[str, Path], strict=True):
+    def initialise_from_checkpoint(self, checkpoint_path: Union[str, Path], strict=True, load_optim=False):
         checkpoint_path = Path(checkpoint_path)
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
         state_dict = torch.load(checkpoint_path, map_location=self.device.type)
@@ -695,7 +697,7 @@ class TrainerBase:
         state_dict['hparams'] = migrate_hparam_dict(state_dict['hparams'])
 
         self.info(f"Initialising model from checkpoint: {checkpoint_path}")
-        self.load_state_dict(state_dict, resume=False, strict=strict) # Prevent loading optimizer and scheduler state
+        self.load_state_dict(state_dict, load_optim=load_optim, strict=strict) # Prevent loading optimizer and scheduler state
 
     @staticmethod
     def load_hparams_dict(checkpoint_path: Union[str, Path]):
@@ -706,34 +708,5 @@ class TrainerBase:
 
         # TODO: Migrate hparams to new format
         hparams_dict = migrate_hparam_dict(hparams_dict)
-        return hparams_dict
-
-    @classmethod
-    def from_checkpoint(cls, Hparams_cls,
-                    checkpoint_path: Union[str, Path],
-                    resume=True,
-                    logger=None,
-                    disable_checkpointing_and_logging=False,
-                    parent_dir=None
-                ):
-        checkpoint_path = Path(checkpoint_path)
-        assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
-
-        state_dict = torch.load(checkpoint_path, map_location='cpu')
-        hparams_dict = state_dict['hparams']
-        hparams = Hparams_cls.from_dict(hparams_dict)
-        trainer = cls(hparams,
-                    logger=logger,
-                    disable_checkpointing_and_logging=disable_checkpointing_and_logging,
-                    parent_dir=parent_dir,
-                    prevent_overwrite=False
-                )
-        if resume:
-            trainer.info(f"Resuming from checkpoint: {checkpoint_path}")
-        else:
-            trainer.info(f"Initialising model from: {checkpoint_path}")
-
-        state_dict_device = torch.load(checkpoint_path, map_location=trainer.device.type)
-        trainer.load_state_dict(state_dict_device, resume=resume)
-        return trainer        
+        return hparams_dict 
 #%%

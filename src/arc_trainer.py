@@ -469,48 +469,29 @@ class ArcTrainer(TrainerBase):
         state_dict['model_config'] = self.model.config.to_dict()
         return state_dict
     
-    def load_state_dict(self, state_dict, resume=True, strict=True):
+    def load_state_dict(self, state_dict, load_optim=True, strict=True):
         prog_tokenizer = ProgramTokenizer.from_dict(state_dict['tokenizers']['program_tokenizer'])
         grid_tokenizer = GridTokenizer.from_dict(state_dict['tokenizers']['grid_tokenizer'])
         model_config = InterpreterConfig.from_dict(state_dict['model_config'])
 
-        if resume: # Make sure that the model is exactly the same
-            assert model_config == self.model.config, "Cannot resume, Model Configs do not match!"
-            assert prog_tokenizer == self.model.prog_tokenizer, "Cannot resume, Program Tokenizers do not match!"
-            assert grid_tokenizer == self.model.grid_tokenizer, "Cannot resume, Grid Tokenizers do not match!"
-            super().load_state_dict(state_dict, resume=resume, strict=strict)    
-        else:
-            # We don't want default behavior of loading model state dict. We want special 
-            # which is able to copy the weights from a compatible model
-            checkpoint_model = Interpreter(model_config, prog_tokenizer, grid_tokenizer)
-            checkpoint_model.load_state_dict(state_dict['model_state_dict'])
-            self.info("Loading model from checkpoint using load_from_model method")
-            self.model.load_from_model(checkpoint_model, strict=strict)
+        if strict:
+            assert model_config == self.model.config, "Model Configs do not match!"
+            assert prog_tokenizer == self.model.prog_tokenizer, "Program Tokenizers do not match!"
+            assert grid_tokenizer == self.model.grid_tokenizer, "Grid Tokenizers do not match!"
 
-            if prog_tokenizer != self.model.prog_tokenizer or grid_tokenizer != self.model.grid_tokenizer:
-                self.warning("Loaded model has different tokenizers than the current model. Loading anyway as the models are compatible.")
-                self.warning("If this is not intened, stop and re-evaluate the situation.")
+        super().load_state_dict(state_dict, load_optim=load_optim, strict=strict)
 
-            self._eval_at_start = True
-       
-    
-    @classmethod
-    def from_checkpoint(
-                cls,
-                checkpoint_path: Union[str, Path],
-                resume=True,
-                logger=None,
-                disable_checkpointing_and_logging=False,
-                parent_dir=None
-            ):
-        
-        return super(ArcTrainer, cls).from_checkpoint(
-                    ArcHparams,
-                    checkpoint_path=checkpoint_path,
-                    resume=resume,
-                    logger=logger,
-                    disable_checkpointing_and_logging=disable_checkpointing_and_logging,
-                    parent_dir=parent_dir)
-    
+        # After default model statedict is loaded, load the model from with special method
+        checkpoint_model = Interpreter(model_config, prog_tokenizer, grid_tokenizer)
+        checkpoint_model.load_state_dict(state_dict['model_state_dict'])
+        checkpoint_model.to(self.model.device)
 
+        self.info("Loading model from checkpoint using load_from_model method")
+        self.model.load_from_model(checkpoint_model, strict=strict)
+
+        if prog_tokenizer != self.model.prog_tokenizer or grid_tokenizer != self.model.grid_tokenizer:
+            self.warning("Loaded model has different tokenizers than the current model. Loading anyway as the models are compatible.")
+            self.warning("If this is not intened, stop and re-evaluate the situation.")
+            
+        self._eval_at_start = True
 

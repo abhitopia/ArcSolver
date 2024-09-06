@@ -52,8 +52,10 @@
 - [x] Implement Input injection
 - [x] Implement truncated looped transformer backprop
 - [x] design loop curriculum
-- [ ] Implement progressive loss
-- [ ] Log convergence of output wrt to loop
+- [x] Implement progressive loss
+- [x] Log convergence of output wrt to loop
+- [x] Implement fork functionality allowing to fork a training (resume + override + new run)
+- [ ] Make curriculum resume easier?
 
 - [ ] Start using Gumbel Softmax (Make it switchable hyperparameter)
 - [ ] Start using MetaLearning
