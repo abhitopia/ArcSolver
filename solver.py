@@ -19,35 +19,6 @@ _BASE_DIR = "./runs"
 if _DEV_MODE:
     logger.warning("WARNING: Running in DEV mode")
 
-def train_from_hparams(hparams, checkpoint, lr_find, n_steps, debug=False, parent_dir=_BASE_DIR):
-    if lr_find or debug:
-        hparams.run = f"debug_{hparams.run}"
-
-    trainer = ArcTrainer(hparams=hparams,
-                        parent_dir=parent_dir,
-                        prevent_overwrite=True,
-                        disable_checkpointing_and_logging=True if (lr_find or debug) else False)
-    if checkpoint is not None:
-        existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
-        assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
-        trainer.initialise_from_checkpoint(checkpoint, strict=False)    # NO RESUME, start from the beginning 
-
-    if lr_find:
-        trainer.find_lr()
-    else:
-        trainer.train(max_steps=n_steps if n_steps is not None else hparams.optim.lr_decay_steps + hparams.optim.lr_warmup_steps)
-
-def get_checkpoint(name, run, checkpoint=None, parent_dir=_BASE_DIR):
-    checkpoint_dir = ArcTrainer.get_checkpoint_dir(name, run, parent_dir=parent_dir)
-    assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
-
-    if checkpoint is None:
-        checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)
-        assert checkpoint is not None, f"No checkpoint found in {checkpoint_dir}"
-
-    checkpoint = Path(checkpoint)
-    assert checkpoint.parent == checkpoint_dir, f"Checkpoint {checkpoint} is not in the checkpoint directory {checkpoint_dir}"
-    return checkpoint
 
 def split_run_path(run_path: str) -> Tuple[str, str]:
     run_path = Path(run_path)
@@ -176,30 +147,226 @@ def train(
     hparams.add_params(prefix="data", **data_config)
     hparams.add_params(prefix="model", **model_config)
     hparams.add_params(prefix="optim", **optimizer_config)
-    train_from_hparams(hparams=hparams, checkpoint=checkpoint, lr_find=lr_find, n_steps=n_steps, debug=debug)
 
 
-@train_app.command("resume")
-def resume(
-        run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
-        n_steps: Optional[int] = typer.Option(None, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
-        start_loops: Optional[int] = typer.Option(None, min=1, help="Starting number of loops for the curriculum"),
-        max_loops: int = typer.Option(None, min=1, max=100, help="Network level recurrence"),
+    if debug:
+        hparams.run = f"debug_{hparams.run}"
 
-    ):
-    experiment, run, parent_dir = split_run_path(run_path)
-    checkpoint_dir = ArcTrainer.get_checkpoint_dir(experiment, run, parent_dir=parent_dir)
-    assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
-    checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)       
-    trainer = ArcTrainer.from_checkpoint(checkpoint, resume=True)
+    trainer = ArcTrainer(hparams=hparams,
+                        parent_dir=_BASE_DIR,
+                        prevent_overwrite=True,
+                        num_checkpoints_to_keep=4 if hparams.run == run else 3,
+                        disable_checkpointing_and_logging=True if (lr_find or debug) else False)
     
-    if max_loops is not None:
-        trainer.hparams.optim.max_loops = max_loops
+    if checkpoint is not None:
+        existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
+        assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
+        trainer.initialise_from_checkpoint(checkpoint, strict=False, load_optim=False)    # NO RESUME, start from the beginning 
 
-    if start_loops is not None:
-        trainer.hparams.optim.start_loops = start_loops
+    if lr_find:
+        trainer.find_lr()
+    else:
+        trainer.train(max_steps=n_steps if n_steps is not None else hparams.optim.lr_decay_steps + hparams.optim.lr_warmup_steps)
 
-    trainer.train(max_steps=n_steps if n_steps is not None else trainer.hparams.optim.lr_decay_steps + trainer.hparams.optim.lr_warmup_steps)
+
+
+@train_app.command("fork")
+def fork(
+        experiment: str = typer.Argument(..., help="Name of the experiment saved at `./runs/{name}`"),
+        run: str = typer.Argument(..., help="Name of the run within the experiment saved at `./runs/{name}/{run}`"),
+        checkpoint: str = typer.Argument(..., help="Path to the checkpoint file to fork training from"),
+
+        # Misc Config
+        n_steps: Optional[int] = typer.Option(None, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
+        seed: Optional[int] = typer.Option(None, min=0, help="Random seed for the data and experiment"),
+
+
+        # Loop Curriculum
+        start_loops: Optional[int] = typer.Option(None, min=1, help="Starting number of loops for the curriculum"),
+        max_loops: Optional[int] = typer.Option(None, min=1, max=100, help="Network level recurrence"),
+        inc_loops: int = typer.Option(1, min=1, help="Number of loops to increase by"),
+        int_loops: int = typer.Option(100, min=1, help="Interval for increasing number of loops"),
+        min_loops: int = typer.Option(2, min=0, help="Minimum number of loops"),
+        max_loops_prob: float = typer.Option(0.5, min=0.0, max=1.0, help="Probability of choosing max loops during training"),
+
+        # Batch Config
+        bs: Optional[int] = typer.Option(None, min=1, help="Batch Size"),
+        bsl: Optional[int] = typer.Option(None, min=1, help="Batch Seq Length"),
+        dynamic_batching: Optional[bool] = typer.Option(None, help="Use dynamic batch size"),
+
+        # Learning Rate Config
+        mlr: Optional[float] = typer.Option(None, min=0.0, help="Learning Rate"),
+        plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is set to mlr"),
+        lr_warmup: Optional[int] = typer.Option(None, min=0, help="Number of steps for learning rate warmup. Only used for noam and lindecay scheduler"),
+        lr_decay: Optional[int] = typer.Option(None, min=0, help="Number of steps for learning rate decay. Only used for noam and lindecay scheduler"),
+        lr_schedule: Optional[LRSchedule] = typer.Option(None, help="Learning rate scheduler. Options: noam, alt, const"),
+
+
+        # Weight Decay Config
+        mwd: Optional[float] = typer.Option(None, min=0.0, help="Weight Decay"),
+        pwd: Optional[float] = typer.Option(None, min=0.0, help="Program Weight Decay"),
+
+        # Model Config
+        dropout: Optional[float] = typer.Option(None, min=0.0, max=1.0, help="Dropout probability"),
+
+        # Grok Config
+        grok_alpha: Optional[float] = typer.Option(None, min=0.0, help="Grok Alpha"),
+        grok_lambda: Optional[float] = typer.Option(None, min=0.0, help="Grok Lambda"),
+
+        # Data Config
+        data_aug: Optional[int] = typer.Option(None, min=0, help="Data Augmentation Level. 0 means no augmentation"),
+        num_diff_levels: Optional[int] = typer.Option(None, min=1, help="Number of partitions of the data based on difficulty"),
+        diff_level: Optional[int] = typer.Option(None, min=1, help="Difficulty level of the training data. Must be less than or equal to num_diff_levels"),
+        use_aux: Optional[bool] = typer.Option(None, help="Use auxiliary data for training"),
+
+        # Misc Config
+        lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
+        debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved"),
+    ):
+
+    hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
+    hparams = ArcHparams.from_dict(hparams_dict)
+
+    base_config = {
+        "experiment": experiment,
+        "run": run,
+        "seed": seed,
+        "grok_alpha": grok_alpha,
+        "grok_lambda": grok_lambda,
+    }
+
+    data_config = {
+        "data_aug": data_aug,
+        "diff_level": diff_level,
+        "num_diff_levels": num_diff_levels,
+        "use_aux": use_aux
+    }
+
+    model_config = {
+        "dropout": dropout
+    }
+
+    optimizer_config = {
+        # Batch Size
+        "batch_size": bs,  # Yes, this is optimizer config
+        "batch_seq_len": bsl,
+        "dynamic_batching": dynamic_batching,
+
+        # Loop Curriculum
+        "max_loops": max_loops,
+        "min_loops": min_loops,
+        "inc_loops": inc_loops,
+        "int_loops": int_loops,
+        "max_loops_prob": max_loops_prob,
+        "start_loops": start_loops if start_loops is not None else min_loops,
+
+        # Learning Rate
+        "lr_model": mlr if not lr_find else 1,
+        "lr_prog": plr if not lr_find else 1,
+        "lr_schedule": lr_schedule.value if isinstance(lr_schedule, LRSchedule) else lr_schedule,
+        "lr_warmup_steps": lr_warmup,
+        "lr_decay_steps": lr_decay,
+
+        # Weight Decay
+        "wd_model": mwd,
+        "wd_prog": pwd,        
+    }
+
+    def override_hparams(hparams, config):
+        for key, value in config.items():
+            if value is not None:
+                setattr(hparams, key, value)
+
+
+    override_hparams(hparams, base_config)
+    override_hparams(hparams.data, data_config)
+    override_hparams(hparams.model, model_config)
+    override_hparams(hparams.optim, optimizer_config)
+
+    if debug:
+        hparams.run = f"debug_{hparams.run}"
+
+    trainer = ArcTrainer(hparams=hparams,
+                        parent_dir=_BASE_DIR,
+                        prevent_overwrite=True,
+                        disable_checkpointing_and_logging=True if (lr_find or debug) else False)
+
+
+    existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
+    assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
+    trainer.initialise_from_checkpoint(checkpoint, strict=False, load_optim=True)    # Fork start from the beginning 
+
+    if lr_find:
+        trainer.find_lr()
+    else:
+        trainer.train(max_steps=n_steps if n_steps is not None else hparams.optim.lr_decay_steps + hparams.optim.lr_warmup_steps)
+
+
+# @train_app.command("resume")
+# def resume(
+#         run_path: str = typer.Argument(..., help="Path to the run folder (not checkpoint) to resume training from"),
+
+#         # Misc Config
+#         n_steps: Optional[int] = typer.Option(None, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
+
+#         # Loop Curriculum
+#         start_loops: Optional[int] = typer.Option(None, min=1, help="Starting number of loops for the curriculum"),
+#         max_loops: Optional[int] = typer.Option(None, min=1, max=100, help="Network level recurrence"),
+#         inc_loops: int = typer.Option(1, min=1, help="Number of loops to increase by"),
+#         int_loops: int = typer.Option(100, min=1, help="Interval for increasing number of loops"),
+#         max_loops_prob: float = typer.Option(0.5, min=0.0, max=1.0, help="Probability of choosing max loops during training"),
+
+#         # Batch Config
+#         bs: Optional[int] = typer.Option(None, min=1, help="Batch Size"),
+#         bsl: Optional[int] = typer.Option(None, min=1, help="Batch Seq Length"),
+#         dynamic_batching: Optional[bool] = typer.Option(None, help="Use dynamic batch size"),
+
+#         # Learning Rate Config
+#         mlr: Optional[float] = typer.Option(None, min=0.0, help="Learning Rate"),
+#         plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is set to mlr"),
+
+#         # Weight Decay Config
+#         mwd: Optional[float] = typer.Option(None, min=0.0, help="Weight Decay"),
+#         pwd: Optional[float] = typer.Option(None, min=0.0, help="Program Weight Decay"),
+
+#         # Model Config
+#         dropout: Optional[float] = typer.Option(None, min=0.0, max=1.0, help="Dropout probability"),
+
+#         # Grok Config
+#         grok_alpha: Optional[float] = typer.Option(None, min=0.0, help="Grok Alpha"),
+#         grok_lambda: Optional[float] = typer.Option(None, min=0.0, help="Grok Lambda"),
+
+#         # Misc Config
+#         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
+#         debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved"),
+
+#     ):
+#     experiment, run, parent_dir = split_run_path(run_path)
+#     checkpoint_dir = ArcTrainer.get_checkpoint_dir(experiment, run, parent_dir=parent_dir)
+#     assert checkpoint_dir.exists(), f"Checkpoint directory {checkpoint_dir} does not exist"
+#     checkpoint = ArcTrainer.get_latest_checkpoint(checkpoint_dir)       
+
+#     fork(experiment=experiment,
+#         run=run,
+#         checkpoint=checkpoint,
+#         n_steps=n_steps,
+#         start_loops=start_loops,
+#         max_loops=max_loops,
+#         inc_loops=inc_loops,
+#         int_loops=int_loops,
+#         max_loops_prob=max_loops_prob,
+#         bs=bs,
+#         bsl=bsl,
+#         dynamic_batching=dynamic_batching,
+#         mlr=mlr,
+#         plr=plr,
+#         mwd=mwd, 
+#         pwd=pwd,
+#         dropout=dropout,
+#         grok_alpha=grok_alpha,
+#         grok_lambda=grok_lambda,
+#         lr_find=lr_find,
+#         debug=debug)
 
 
 @train_app.command("info")
