@@ -55,6 +55,8 @@
 - [x] Implement progressive loss
 - [x] Log convergence of output wrt to loop
 - [x] Implement fork functionality allowing to fork a training (resume + override + new run)
+- [x] Forking does not change the LR initial learning rate, this needs to be fixed!
+    - https://discuss.pytorch.org/t/optimizer-lr-changing-after-loading-state-dict/86285
 - [ ] Make curriculum resume easier?
 
 - [ ] Start using Gumbel Softmax (Make it switchable hyperparameter)
