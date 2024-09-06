@@ -185,7 +185,7 @@ class TrainerBase:
         self.info(f"Checkpoint directory: {self.checkpoint_dir}")
         self.disable_checkpointing_and_logging = disable_checkpointing_and_logging
         if self.disable_checkpointing_and_logging:
-            self.warning(f'It is a trial run. No checkpoints will be saved!')
+            self.warning(f'Checkpointing and logging are disabled. No checkpoints will be saved and no logs will be written to WandB.')
 
         self.step = -1
         self.epoch = 0 
