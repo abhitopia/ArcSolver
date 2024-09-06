@@ -227,6 +227,11 @@ def fork(
     hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
     hparams = ArcHparams.from_dict(hparams_dict)
 
+    prev_exp = f"{hparams.experiment}_{hparams.run}"
+    new_exp = f"{experiment}_{run}"
+
+    is_resume = prev_exp == new_exp
+
     base_config = {
         "experiment": experiment,
         "run": run,
@@ -289,12 +294,18 @@ def fork(
 
     trainer = ArcTrainer(hparams=hparams,
                         parent_dir=_BASE_DIR,
-                        prevent_overwrite=True,
+                        prevent_overwrite=False if is_resume else True, # Important if resuming
                         disable_checkpointing_and_logging=True if (lr_find or debug) else False)
 
 
     existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
-    assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
+
+    if not is_resume:
+        existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
+        assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
+    else:
+        trainer.info("Attemping to resume {experiment}/{run}")
+
     trainer.initialise_from_checkpoint(checkpoint, strict=False, load_optim=True)    # Fork start from the beginning 
 
     if lr_find:
