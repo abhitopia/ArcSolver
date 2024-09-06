@@ -484,7 +484,7 @@ class ArcTrainer(TrainerBase):
         # After default model statedict is loaded, load the model from with special method
         checkpoint_model = Interpreter(model_config, prog_tokenizer, grid_tokenizer)
         checkpoint_model.load_state_dict(state_dict['model_state_dict'])
-        checkpoint_model.to(self.model.device)
+        checkpoint_model.to(self.device)
 
         self.info("Loading model from checkpoint using load_from_model method")
         self.model.load_from_model(checkpoint_model, strict=strict)

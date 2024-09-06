@@ -329,20 +329,18 @@ class TrainerBase:
 
         if load_optim:
             self.step = state_dict['step']
-            self.epoch = state_dict['epoch']
             self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
             self.scheduler.load_state_dict(state_dict['scheduler_state_dict'])
-            self.info(f"Continuing from Step: {self.step}, Epoch: {self.epoch}")
+            self.info(f"Continuing from Step: {self.step}")
         else:
             # Resetting those just to be safe!!
             self._optimizer = None
             self._scheduler = None
-            self.info(f"Loaded only model from state dict. Starting with Step: {self.step}, Epoch: {self.epoch}")
+            self.info(f"Loaded only model from state dict. Starting with Step: {self.step}")
 
     def state_dict(self):
         return {
             'step': self.step,
-            'epoch': self.epoch,
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
@@ -658,6 +656,10 @@ class TrainerBase:
             # Run Evaluation before training starts if step > 0 (probably due to resuming from checkpoint)
             run_eval_at_start = True if self.step > 0 or self._eval_at_start else False 
 
+
+            self.epoch = self.step // len(self.train_dl)
+            self.info(f'Setting starting epoch to: {self.epoch}')
+
             while self.step < max_steps:
                 self.epoch_step = 0
                 self._at_epoch_start()
@@ -670,14 +672,14 @@ class TrainerBase:
 
                     self.step = step  # Set the step instead of incrementing it. This ensures that self._epoch_end as 
 
-                    if (self.step > 0 or run_eval_at_start) and self.step % eval_interval == 0:
+                    if run_eval_at_start or (self.step > 0 and self.step % eval_interval == 0):
                         self._eval_loop(save_checkpoint=False if run_eval_at_start else True)
                         run_eval_at_start = False
 
                     self._train_step(batch)                    
                     self.epoch_step = epoch_step
+
                 self._at_epoch_end()
-                
                 self.epoch += 1
 
 
@@ -706,7 +708,5 @@ class TrainerBase:
         state_dict = torch.load(checkpoint_path, map_location='cpu')
         hparams_dict = state_dict['hparams']
 
-        # TODO: Migrate hparams to new format
-        hparams_dict = migrate_hparam_dict(hparams_dict)
         return hparams_dict 
 #%%
