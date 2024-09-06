@@ -330,15 +330,15 @@ class TrainerBase:
         if load_optim:
             self.step = state_dict['step']
 
-            # Loading optimizer state_dict rewrites the initial LR. So we need to set it to new values
             src_optim_sd = self.optimizer.state_dict()
-            trg_optim_sd = state_dict['optimizer_state_dict']
 
-            for src_pg, trg_pg in zip(src_optim_sd['param_groups'], trg_optim_sd['param_groups']):
-                trg_pg['initial_lr'] = src_pg['initial_lr']
+            self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
 
-            self.optimizer.load_state_dict(trg_pg)
-            self.scheduler.load_state_dict(state_dict['scheduler_state_dict'])
+            # Loading scheduler state_dict rewrites the initial LR. So we need to set it to new values
+            scheduler_sd = state_dict['scheduler_state_dict']
+            scheduler_sd['base_lrs'] = [pg['lr'] for pg in src_optim_sd['param_groups']]
+
+            self.scheduler.load_state_dict(scheduler_sd)
             self.info(f"Continuing from Step: {self.step}")
         else:
             # Resetting those just to be safe!!
