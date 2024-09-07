@@ -57,6 +57,9 @@
 - [x] Implement fork functionality allowing to fork a training (resume + override + new run)
 - [x] Forking does not change the LR initial learning rate, this needs to be fixed!
     - https://discuss.pytorch.org/t/optimizer-lr-changing-after-loading-state-dict/86285
+
+- [ ] Write Evaluation + Visualisation Script
+
 - [ ] Make curriculum resume easier?
 
 - [ ] Start using Gumbel Softmax (Make it switchable hyperparameter)
@@ -67,6 +70,25 @@
 - [ ] Can we measure grokking in the hidden phase
 - [ ] Once it works, may be introduce neural stack (transducers)
 - [ ] Change batch size for eval?
+
+## Evaluation
+
+### ARC_TRAIN
+- [ 
+- [ ] Fine tune program embedding on ARC_TRAIN
+    - when mlr == 0.0, set requires_grad = False for the rest of the model
+
+- [ ] Measure the impact of beam search on the accuracy
+    - [ ] Given eval example, embedding and loops, generate possible outputs
+    - [ ] Save visualisations of the outputs
+
+- [ ] Measure the impact of loops on the accuracy. Could it be that higher levels just need more loops??
+    - [ ] plot against the levels to ensure changing loops doesn't change the accuracy of the lower levels
+
+## ARC_EVAL
+- [ ] Ability to Specify dataset in solver.py
+- [ ] Repeat for ARC_EVAL
+
 
 
 ## Future Reads
