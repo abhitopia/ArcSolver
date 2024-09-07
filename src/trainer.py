@@ -314,9 +314,11 @@ class TrainerBase:
         if torch.backends.mps.is_available():
             torch.mps.manual_seed(seed)
 
-    def load_state_dict(self, state_dict, load_optim=True, strict=True):
-        self.model.load_state_dict(state_dict['model_state_dict'], strict=strict)
-        self.model.to(self.device)
+    def load_state_dict(self, state_dict, load_model=True, load_optim=True, strict=True):
+        if load_model:
+            self.model.load_state_dict(state_dict['model_state_dict'], strict=strict)
+            self.model.to(self.device)
+
         self._eval_at_start = True
         current_commit_hash = get_git_commit_hash()
         saved_commit_hash = state_dict.get('git_commit_hash', None)
@@ -698,7 +700,7 @@ class TrainerBase:
             sys.exit(0)
 
 
-    def initialise_from_checkpoint(self, checkpoint_path: Union[str, Path], strict=True, load_optim=False):
+    def initialise_from_checkpoint(self, checkpoint_path: Union[str, Path], strict=True, load_model=True, load_optim=False):
         checkpoint_path = Path(checkpoint_path)
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
         state_dict = torch.load(checkpoint_path, map_location=self.device.type)
@@ -707,7 +709,7 @@ class TrainerBase:
         state_dict['hparams'] = migrate_hparam_dict(state_dict['hparams'])
 
         self.info(f"Initialising model from checkpoint: {checkpoint_path}")
-        self.load_state_dict(state_dict, load_optim=load_optim, strict=strict) # Prevent loading optimizer and scheduler state
+        self.load_state_dict(state_dict, load_model=load_model, load_optim=load_optim, strict=strict) # Prevent loading optimizer and scheduler state
 
     @staticmethod
     def load_hparams_dict(checkpoint_path: Union[str, Path]):

@@ -483,7 +483,7 @@ class ArcTrainer(TrainerBase):
         state_dict['model_config'] = self.model.config.to_dict()
         return state_dict
     
-    def load_state_dict(self, state_dict, load_optim=True, strict=True):
+    def load_state_dict(self, state_dict, load_model=True, load_optim=True, strict=True):
         prog_tokenizer = ProgramTokenizer.from_dict(state_dict['tokenizers']['program_tokenizer'])
         grid_tokenizer = GridTokenizer.from_dict(state_dict['tokenizers']['grid_tokenizer'])
         model_config = InterpreterConfig.from_dict(state_dict['model_config'])
@@ -493,19 +493,22 @@ class ArcTrainer(TrainerBase):
             assert prog_tokenizer == self.model.prog_tokenizer, "Program Tokenizers do not match!"
             assert grid_tokenizer == self.model.grid_tokenizer, "Grid Tokenizers do not match!"
 
-        super().load_state_dict(state_dict, load_optim=load_optim, strict=strict)
+        super().load_state_dict(state_dict, load_model=False, load_optim=load_optim, strict=strict)
 
         # After default model statedict is loaded, load the model from with special method
-        checkpoint_model = Interpreter(model_config, prog_tokenizer, grid_tokenizer)
-        checkpoint_model.load_state_dict(state_dict['model_state_dict'])
-        checkpoint_model.to(self.device)
+        if load_model:
+            checkpoint_model = Interpreter(model_config, prog_tokenizer, grid_tokenizer)
+            checkpoint_model.load_state_dict(state_dict['model_state_dict'])
+            checkpoint_model.to(self.device)
 
-        self.info("Loading model from checkpoint using load_from_model method")
-        self.model.load_from_model(checkpoint_model, strict=strict)
+            self.info("Loading model from checkpoint using load_from_model method")
+            self.model.load_from_model(checkpoint_model, strict=strict)
 
-        if prog_tokenizer != self.model.prog_tokenizer or grid_tokenizer != self.model.grid_tokenizer:
-            self.warning("Loaded model has different tokenizers than the current model. Loading anyway as the models are compatible.")
-            self.warning("If this is not intened, stop and re-evaluate the situation.")
-            
+            del checkpoint_model
+
+            if prog_tokenizer != self.model.prog_tokenizer or grid_tokenizer != self.model.grid_tokenizer:
+                self.warning("Loaded model has different tokenizers than the current model. Loading anyway as the models are compatible.")
+                self.warning("If this is not intened, stop and re-evaluate the situation.")
+                
         self._eval_at_start = True
 
