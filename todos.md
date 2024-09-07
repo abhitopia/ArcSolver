@@ -74,8 +74,7 @@
 ## Evaluation
 
 ### ARC_TRAIN
-- [ 
-- [ ] Fine tune program embedding on ARC_TRAIN
+- [x] Fine tune program embedding on ARC_TRAIN
     - when mlr == 0.0, set requires_grad = False for the rest of the model
 
 - [ ] Measure the impact of beam search on the accuracy

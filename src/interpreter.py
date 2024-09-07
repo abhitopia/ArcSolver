@@ -426,6 +426,16 @@ class Interpreter(nn.Module):
                 prog_wd=0.0,
                 device_type=None,
             ):
+
+        # Freeze model params if model_lr is 0, needed for finetuning
+        if model_lr == 0.0:
+            logger.warning("Freezing model parameters. Only embedding parameters will be trained.")
+            logger.warning("This setting should only be used for training without resuming/forkin (with optimizer state load disabled)")
+
+            for n, p in self.named_parameters():
+                if 'pte' not in n:
+                    p.requires_grad = False
+
         # Separate the embedding parameters
         program_params = [p for n, p in self.named_parameters() if 'pte' in n and p.requires_grad]
         model_params = [p for n, p in self.named_parameters() if 'pte' not in n and p.requires_grad]
