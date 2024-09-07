@@ -26,7 +26,7 @@ class InterpreterConfig:
     def __post_init__(self):
         assert is_power_of_two(self.prog_vocab_size), "Program vocab size must be a power of 2"
         assert is_power_of_two(self.grid_vocab_size), "Grid vocab size must be a power of 2"
-        assert is_power_of_two(self.n_dim), "Model dimension must be a power of 2"
+        # assert is_power_of_two(self.n_dim), "Model dimension must be a power of 2"
 
         if self.n_dim % self.n_head != 0:
             raise ValueError("n_dim must be divisible by n_head")
