@@ -333,8 +333,13 @@ class TrainerBase:
             self.step = state_dict['step']
 
             src_optim_sd = self.optimizer.state_dict()
+            trg_optim_sd = state_dict['optimizer_state_dict']
 
-            self.optimizer.load_state_dict(state_dict['optimizer_state_dict'])
+            # Copy over the new weight decays
+            for spg, tpg in zip(src_optim_sd['param_groups'], trg_optim_sd['param_groups']):
+                tpg['weight_decay'] = spg['weight_decay']
+          
+            self.optimizer.load_state_dict(trg_optim_sd)
 
             # Loading scheduler state_dict rewrites the initial LR. So we need to set it to new values
             scheduler_sd = state_dict['scheduler_state_dict']
