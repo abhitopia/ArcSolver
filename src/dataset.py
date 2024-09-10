@@ -255,6 +255,7 @@ class ArcExamplesDataset(Dataset):
         len_program = len(programs[0])
         assert len_program == 1
         example_inputs = [inputs[i] + [pad_idx] + outputs[i] for i in range(len(batch))]
+        example_outputs = [[pad_idx]*len(inputs[i]) + outputs[i] for i in range(len(batch))]
 
         max_inp_len = max([len(i) for i in example_inputs])
 
@@ -262,18 +263,17 @@ class ArcExamplesDataset(Dataset):
             assert max_inp_len + len_program <= seq_length, "The output sequence length is greater than the specified batch sequence length"
             max_inp_len = seq_length - len_program
 
-        # Added plus 1 to extract causal input and outputs
-        examples_padded = [i + [pad_idx] * (max_inp_len + 1 - len(i)) for i in example_inputs]
-        examples_padded = torch.from_numpy(np.array(examples_padded, dtype=np.int64)).to(device,  non_blocking=True)
-
+        x = [i + [pad_idx] * (max_inp_len - len(i)) for i in example_inputs]
+        x = torch.from_numpy(np.array(x, dtype=np.int64)).to(device,  non_blocking=True)
+        y = [o + [pad_idx] * (max_inp_len - len(o)) for o in example_outputs]
+        y = torch.from_numpy(np.array(y, dtype=np.int64)).to(device, non_blocking=True)
         p = torch.tensor(programs, dtype=torch.long).to(device, non_blocking=True)
-        x = examples_padded[:, :max_inp_len]
-        y = examples_padded[:, 1:]
-        pad_column = torch.full((y.size(0), len_program), pad_idx, dtype=torch.long, device=device)
+
+        pad_column = torch.full((p.size(0), p.size(1)), pad_idx, dtype=torch.long, device=device)
         y = torch.cat((pad_column, y), dim=1)
+
         inp_lens = torch.tensor(inp_lens, dtype=torch.long).to(device, non_blocking=True)
         out_lens = torch.tensor(out_lens, dtype=torch.long).to(device, non_blocking=True)
-
         return (p, x, inp_lens), (y, out_lens)
 
     
