@@ -44,6 +44,8 @@ def train(
         bs: int = typer.Option(32, min=1, help="Batch Size"),
         bsl: int = typer.Option(1024, min=1, help="Batch Seq Length"),
         dynamic_batching: bool = typer.Option(True, help="Use dynamic batch size"),
+        batch_noise: float = typer.Option(0.1, min=0.0, max=1.0, help="Batch Length Noise"),
+        batch_max_len_pctl: int = typer.Option(90, min=0, max=100, help="Max Length Percentile for Batch Length for adding noise"),
 
         # Model Config
         n_dim: int = typer.Option(16, min=4, max=512, help="Dimension of the model"),
@@ -121,6 +123,8 @@ def train(
         "batch_size": bs,  # Yes, this is optimizer config
         "batch_seq_len": bsl,
         "dynamic_batching": dynamic_batching,
+        "batch_noise": batch_noise,
+        "batch_max_len_pctl": batch_max_len_pctl,
 
         # Loop Curriculum
         "max_loops": max_loops,

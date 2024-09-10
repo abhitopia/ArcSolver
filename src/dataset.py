@@ -158,7 +158,7 @@ class TargetTokenCountBatchSampler(BatchSampler):
 
     def create_batches(self):
         example_lens = [self.example_len(self.dataset[i]) for i in range(len(self.dataset))]
-        max_len = np.percentile(example_lens, self.max_len_pctl)
+        max_len = int(np.percentile(example_lens, self.max_len_pctl))
 
         # Adding noise so every different batches are created
         noisy_lens = []
@@ -277,7 +277,8 @@ class ArcExamplesDataset(Dataset):
         return (p, x, inp_lens), (y, out_lens)
 
     
-    def get_dataloader(self, batch_size: int, seq_len: Optional[int] = None, batch_by_token_count: bool = False, device=torch.device('cpu'), pin_memory=False, shuffle=True) -> DataLoader:
+    def get_dataloader(self, batch_size: int, seq_len: Optional[int] = None, batch_by_token_count: bool = False, device=torch.device('cpu'),
+                    pin_memory=False, shuffle=True, noise_pct=0.1, max_len_pctl=90) -> DataLoader:
         """
         batch_size: The batch size for the dataloader. 
         seq_len: If > 0, the input and output sequences will be padded to this length.
@@ -289,7 +290,7 @@ class ArcExamplesDataset(Dataset):
         if batch_by_token_count:
             assert seq_len is not None, 'seq_len must be specified for batch_by_token_count'
             target_token_count = batch_size * seq_len
-            batch_sampler = TargetTokenCountBatchSampler(self, target_token_count=target_token_count, shuffle=shuffle)
+            batch_sampler = TargetTokenCountBatchSampler(self, target_token_count=target_token_count, noise_pct=noise_pct, max_len_pctl=max_len_pctl, shuffle=shuffle)
             dataloader = DataLoader(dataset=self,
                                     batch_sampler=batch_sampler,
                                     collate_fn=lambda b: self.collate_fn(b, pad_idx=self.pad_idx, seq_length=None, device=device),
@@ -306,7 +307,7 @@ class ArcExamplesDataset(Dataset):
                                     collate_fn=lambda b: self.collate_fn(b, self.pad_idx, seq_length=seq_len, device=device),
                                     pin_memory=pin_memory,
                                     # drop_last if all the batch and seq_len is specified so model can be compiled
-                                    drop_last=True if seq_len is not None else False)
+                                    drop_last=False)
             
 
         dataloader.prog_level_map = self.prog_level_map

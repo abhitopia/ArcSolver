@@ -97,17 +97,28 @@ class ArcHparams(Hparams):
         train_ds = training_data.train_ds(num_levels=self.data.diff_level).subset(config.max_examples)
         eval_ds = training_data.eval_ds(num_levels=self.data.diff_level).subset(config.max_examples)
         
+        if not hasattr(self, 'called_once'):
+            self.called_once = True
+            print(f"Training Dataset: {len(train_ds)} examples")
+            print(f"Evaluation Dataset: {len(eval_ds)} examples")
+
         train_dl = train_ds.get_dataloader(batch_size=config.batch_size,
                                            seq_len=config.batch_seq_len,
                                            batch_by_token_count=config.dynamic_batching,
                                            pin_memory=True,
-                                           shuffle=True)
+                                           shuffle=True,
+                                           noise_pct=config.batch_noise,
+                                           max_len_pctl=config.batch_max_len_pctl
+                                           )
 
         eval_dl = eval_ds.get_dataloader(batch_size=config.batch_size,
                                         seq_len=config.batch_seq_len,
                                         batch_by_token_count=config.dynamic_batching,
                                         pin_memory=True,
-                                        shuffle=False)
+                                        shuffle=False,
+                                        noise_pct=config.batch_noise,
+                                        max_len_pctl=config.batch_max_len_pctl
+                                        )
 
         self.state['num_train_batches'] = len(train_dl)
         self.state['num_eval_batches'] = len(eval_dl)
@@ -303,7 +314,8 @@ class ArcTrainer(TrainerBase):
             # Log params every 10 epochs
             wandb.watch(self.model, log='all', log_freq=max(len(self.train_dl)*10, 500)) 
 
-        if self.hparams.data.use_aux:
+        # Embeddings only work for upto 100 dims (https://docs.wandb.ai/guides/app/features/panels/query-panel/embedding-projector)
+        if self.hparams.data.use_aux and self.hparams.model.n_dim <= 50:
             self.embd_token_indices, self.embedding_datasets = init_embedding_proj(self.model.prog_tokenizer.token2idx)
 
         self.train_stats = DatasetLevelStats(self.train_dl.prog_level_map, self.model.prog_tokenizer, "train")
@@ -337,7 +349,7 @@ class ArcTrainer(TrainerBase):
 
         self.train_stats.log_accuracy(self.step)
 
-        if self.epoch % 50 == 0 and self.hparams.data.use_aux:
+        if self.epoch % 50 == 0 and self.hparams.data.use_aux and self.hparams.model.n_dim <= 50:
             # Only log the embeddings every 10 epochs
             embd_weight = self.model.pte.weight
             indices = torch.tensor(self.embd_token_indices,
