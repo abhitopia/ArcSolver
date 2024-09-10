@@ -299,6 +299,14 @@ class DatasetLevelStats:
 
 class ArcTrainer(TrainerBase):
 
+    def clear_gpu_cache(self):
+        if torch.cuda.is_available():
+            torch.cuda.synchronize() # wait for the GPU to finish work
+            torch.cuda.empty_cache()
+        elif self.device.type == 'mps':
+            torch.mps.synchronize() # wait for the MPS to finish work
+            torch.mps.empty_cache() # clear the MPS cache
+
     def at_training_start(self):
         self.checkpoint_metric = 'SampleAcc(%)'
         self.console_metrics = self.console_metrics.union({'SampleAcc(%)', 'TokenAcc(%)', '#Loops', 'ΔT(ms)', '#TokensPerSec'})
@@ -337,12 +345,7 @@ class ArcTrainer(TrainerBase):
         self.train_stats.epoch_reset()
 
     def at_epoch_end(self):
-        if torch.cuda.is_available():
-            torch.cuda.synchronize() # wait for the GPU to finish work
-            torch.cuda.empty_cache()
-        elif self.device.type == 'mps':
-            torch.mps.synchronize() # wait for the MPS to finish work
-            torch.mps.empty_cache() # clear the MPS cache
+        self.clear_gpu_cache()
 
         if self.disable_checkpointing_and_logging:
             return
@@ -372,13 +375,7 @@ class ArcTrainer(TrainerBase):
         self.eval_stats.epoch_reset()
     
     def at_eval_end(self):
-        if torch.cuda.is_available():
-            torch.cuda.synchronize() # wait for the GPU to finish work
-            torch.cuda.empty_cache()
-        elif self.device.type == 'mps':
-            torch.mps.synchronize() # wait for the MPS to finish work
-            torch.mps.empty_cache() # clear the MPS cache
-
+        self.clear_gpu_cache()
         if self.disable_checkpointing_and_logging:
             return
 
@@ -472,11 +469,8 @@ class ArcTrainer(TrainerBase):
         self.train_metrics.add_metric('ΔT(ms)', train_batch_time)
         self.train_metrics.add_metric('#TokensPerSec', num_tokens, (train_batch_time / 1000))
 
-        # if torch.cuda.is_available():
-        #     torch.cuda.synchronize() # wait for the GPU to finish work
-        # elif self.device.type == 'mps':
-        #     torch.mps.synchronize() # wait for the MPS to finish work
-        #     torch.mps.empty_cache() # clear the MPS cache
+        if self.step % self.hparams.optim.clear_cache_interval == 0:
+            self.clear_gpu_cache()
 
     def post_eval_step(self, batch):        
         (_, _, _), (t, _) = batch
