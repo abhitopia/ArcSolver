@@ -672,7 +672,7 @@ class TrainerBase:
             run_eval_at_start = True if self.step > 0 or self._eval_at_start else False 
 
 
-            self.epoch = self.step // len(self.train_dl)
+            self.epoch = self.step // len(self.train_dl) if self.step > 0 else 0
             self.info(f'Setting starting epoch to: {self.epoch}')
 
             while self.step < max_steps:
