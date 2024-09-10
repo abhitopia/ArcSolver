@@ -62,9 +62,9 @@
 - [x] Prediction is dependent on input size. Need to fix that. Provide a variable mask. Modify input batching.
 - [x] Also randomize the input order for each epoch. Introduce noise in length
 
-- [ ] Check that output doesn't change by modifying the input size.
+- [x] Check that output doesn't change by modifying the input size.
 
-- [ ] Fix the downstream metrics, etc in ArcTrainer.py calculations to account for above dataset collate_fn changes
+- [x] Fix the downstream metrics, etc in ArcTrainer.py calculations to account for above dataset collate_fn changes
 
 - [ ] Allow for bigger batch size by periodically clearing the cache
 - [ ] Remove IDENT_CID tranformation in favour of `original` version
@@ -73,7 +73,6 @@
 - [ ] Write Evaluation + Visualisation Script
 
 - [ ] Make curriculum resume easier?
-
 - [ ] Start using Gumbel Softmax (Make it switchable hyperparameter)
 - [ ] Start using MetaLearning
 - [ ] Implement MoE (Mixture of Experts) (dependent on the program encoder)
@@ -104,7 +103,8 @@
 
 ## Future Reads
 - [ ] [Looped Transformers as Programmable Computers](https://arxiv.org/pdf/2301.13196)]
-
+- [ ] [Trace Dataset](https://arc-visualizations.github.io/index.html)
+- [ ] [Larc DSL to assist training](https://arxiv.org/pdf/2106.07824)
 # Grokking Ideas
 - Start out with out augmentation 
     - Helps with overfitting
