@@ -61,13 +61,10 @@
 - [x] Forking does not change the weight decay. Need to fix that!
 - [x] Prediction is dependent on input size. Need to fix that. Provide a variable mask. Modify input batching.
 - [x] Also randomize the input order for each epoch. Introduce noise in length
-
 - [x] Check that output doesn't change by modifying the input size.
-
 - [x] Fix the downstream metrics, etc in ArcTrainer.py calculations to account for above dataset collate_fn changes
-
-- [ ] Allow for bigger batch size by periodically clearing the cache
-- [ ] Remove IDENT_CID tranformation in favour of `original` version
+- [x] Allow for bigger batch size by periodically clearing the cache
+- [x] Remove IDENT_CID tranformation in favour of `original` version
 
 - [ ] Investigate REARC dataset and generation process (possibly use embeddings to selectively generate)
 - [ ] Write Evaluation + Visualisation Script
