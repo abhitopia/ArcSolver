@@ -370,7 +370,7 @@ class ArcTasksLoader:
                            train=task_json['train'],
                            test=task_json['test'],
                            dataset=self.name,
-                           version='original')
+                           version='IDENT_CPID')  # This is the identity transformation
             tasks.append(task)
 
         if self.max_tasks is not None:
