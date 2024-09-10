@@ -88,6 +88,7 @@ def train(
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
         device: Optional[str] = typer.Option(None, help="Device to run the training on. If None, then it is automatically selected"),
         eval_int: Optional[int] = typer.Option(None, help="Number of steps between evaluations. None means evaluation at the end of each epoch"),
+        clear_cache_interval: Optional[int] = typer.Option(50, help="Clear cache before training"),
         debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved"),
 
         # Checkpoint Config
@@ -145,7 +146,8 @@ def train(
         "wd_model": mwd,
         "wd_prog": pwd,
         
-        "max_examples": 5000 if _DEV_MODE else -1 # Yes, this is optimizer config
+        "max_examples": 5000 if _DEV_MODE else -1, # Yes, this is optimizer config
+        "clear_cache_interval": clear_cache_interval
     }
 
     hparams.add_params(prefix="data", **data_config)
