@@ -323,7 +323,7 @@ class ArcTrainer(TrainerBase):
 
         def log_dataset_stats(dl, stats):
             for _, batch in enumerate(dl):
-                (p, _, _), _ = batch
+                (p, _, _), (_, _)= batch
                 program_indices = p[:, 0].detach().cpu().numpy()
                 stats.update_totals(program_indices)
 
@@ -385,25 +385,24 @@ class ArcTrainer(TrainerBase):
         self.eval_stats.log_accuracy(self.step)
 
 
-    def _output_target_metrics(self, program_indices: torch.Tensor, logits: torch.Tensor, y: torch.Tensor, l: int, is_train):
-        logits = logits[:, l:, :]
-        y = y[:, l:]
+    def _output_target_metrics(self, program_indices: torch.Tensor, logits: torch.Tensor, y: torch.Tensor, is_train):
+        output_mask = y != self.model.grid_tokenizer.PAD_IDX
 
         _, predicted_tokens = torch.max(logits, dim=2)
         correct_token_predictions = (predicted_tokens == y)
-        total_correct_tokens = correct_token_predictions.sum()
-        total_tokens = y.numel()
+        mask_correct_tokens = correct_token_predictions & output_mask
+        total_correct_tokens = mask_correct_tokens.sum()
+        total_tokens = output_mask.sum()
 
         # Sample-level accuracy
         # Check if all tokens in a sequence are correct for each sample
-        correct_samples = correct_token_predictions.all(dim=1)
+        correct_program_mask = output_mask.sum(axis=1) == mask_correct_tokens.sum(axis=1)
 
-        correct_program_mask = correct_samples.to(dtype=torch.bool)
         correct_program_indices = program_indices[correct_program_mask, 0].cpu().numpy()
 
         stats = self.train_stats if is_train else self.eval_stats
         stats.update_corrects(correct_program_indices)
-        total_correct_samples = correct_samples.sum()
+        total_correct_samples = correct_program_mask.sum()
         total_samples = y.shape[0]
 
         return {
@@ -413,9 +412,9 @@ class ArcTrainer(TrainerBase):
             'total_samples': total_samples
         }
     
-    def _add_step_metrics(self, loss, program_indices, logits, y, l, is_train, max_loops, convergence_mse):
+    def _add_step_metrics(self, loss, program_indices, logits, y, is_train, max_loops, convergence_mse):
         metrics_obj = self.train_metrics if is_train else self.eval_metrics
-        batch_metrics = self._output_target_metrics(program_indices, logits, y, l, is_train)
+        batch_metrics = self._output_target_metrics(program_indices, logits, y, is_train)
         metrics_obj.add_metric('Loss', loss.item())
         metrics_obj.add_metric('SampleAcc(%)',
                             batch_metrics['total_correct_samples']*100,
@@ -440,7 +439,7 @@ class ArcTrainer(TrainerBase):
         self.__eval_batch_time_start = time.time()
     
     def train_step(self, batch):
-        (p, i, l), t = batch
+        (p, i, pi_l), (y, _) = batch
 
         max_loops = self.loop_curriculum.update(self.step)
         min_loops = self.hparams.optim.min_loops
@@ -448,25 +447,26 @@ class ArcTrainer(TrainerBase):
         if random.random() < self.hparams.optim.max_loops_prob:
             max_loops = random.randint(min_loops, max_loops)
     
-        logits, convergence_mse = self.model(p, i, l, max_loops)
-        loss = self.model.loss_fn(logits, t, l)
+        logits, convergence_mse = self.model(p, i, pi_l, max_loops)
+        loss = self.model.loss_fn(logits, y)
 
         # if not self.disable_checkpointing_and_logging:
-        self._add_step_metrics(loss, p, logits, t, l, is_train=True, max_loops=max_loops, convergence_mse=convergence_mse)
+        self._add_step_metrics(loss, p, logits, y, is_train=True, max_loops=max_loops, convergence_mse=convergence_mse)
         return loss
     
     def eval_step(self, batch):
-        (p, i, l), t = batch
+        (p, i, pi_l), (y, _) = batch
         max_loops = self.loop_curriculum.update(self.step)
 
-        logits, convergence_mse = self.model(p, i, l, max_loops)
-        loss = self.model.loss_fn(logits, t, l)    
+        logits, convergence_mse = self.model(p, i, pi_l, max_loops)
+        loss = self.model.loss_fn(logits, y)    
         # if not self.disable_checkpointing_and_logging:
-        self._add_step_metrics(loss, p, logits, t, l, is_train=False, max_loops=max_loops, convergence_mse=convergence_mse)
+        self._add_step_metrics(loss, p, logits, y, is_train=False, max_loops=max_loops, convergence_mse=convergence_mse)
         return loss
     
     def post_train_step(self, batch):
-        (_, _, _), t = batch
+        (_, _, _), (t, _) = batch
+
         num_tokens = t.numel()
         train_batch_time = (time.time() - self.__train_batch_time_start)*1000
         self.train_metrics.add_metric('ΔT(ms)', train_batch_time)
@@ -478,8 +478,9 @@ class ArcTrainer(TrainerBase):
         #     torch.mps.synchronize() # wait for the MPS to finish work
         #     torch.mps.empty_cache() # clear the MPS cache
 
-    def post_eval_step(self, batch):
-        (_, _, _), t = batch
+    def post_eval_step(self, batch):        
+        (_, _, _), (t, _) = batch
+
         num_tokens = t.numel()
         eval_batch_time = (time.time() - self.__eval_batch_time_start)*1000
         self.eval_metrics.add_metric('ΔT(ms)', eval_batch_time)

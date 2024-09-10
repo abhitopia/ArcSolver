@@ -345,19 +345,20 @@ class Interpreter(nn.Module):
 
 
     @staticmethod
-    def get_attn_mask(batch_seq_len, non_causal_prefix_len, device=None):
+    def get_attn_mask(batch_seq_len, non_causal_prefix_len):
         batch_size = non_causal_prefix_len.size(0)
-
+        device = non_causal_prefix_len.device
         # CREATE ATTENTION MASK
-        causal_mask = torch.ones(batch_size, batch_seq_len, batch_seq_len, dtype=torch.bool).tril(diagonal=0)
+        causal_mask = torch.ones(batch_size, batch_seq_len, batch_seq_len, dtype=torch.bool, device=device).tril(diagonal=0)
 
         # Create a range tensor for comparison
-        idx = torch.arange(batch_seq_len).unsqueeze(0).unsqueeze(0)  # Shape: [1, 1, output_len]
+        idx = torch.arange(batch_seq_len, device=device).unsqueeze(0).unsqueeze(0)  # Shape: [1, 1, output_len]
 
         # Expand inp_lens to match the dimensions for broadcasting
         expanded_inp_lens = non_causal_prefix_len.unsqueeze(1).unsqueeze(2)  # Shape: [bs, 1, 1]
 
         # Create the full mask by using broadcasting
+
         non_causal_mask = (idx < expanded_inp_lens).expand(-1, batch_seq_len, -1)
 
         # Combine the lower triangular mask with the full mask
@@ -383,7 +384,7 @@ class Interpreter(nn.Module):
 
         grad_loop_start = n_loops - max_grad_loops
 
-        attn_mask = self.get_attn_mask(batch_seq_len, inp_len, device=inp_idx.device)
+        attn_mask = self.get_attn_mask(batch_seq_len, inp_len)
 
         # forward the token and posisition embeddings
         prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_dim)
