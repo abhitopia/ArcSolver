@@ -343,13 +343,37 @@ class Interpreter(nn.Module):
         # init params
         # self.apply(self._init_weights)
 
+
+    @staticmethod
+    def get_attn_mask(batch_seq_len, non_causal_prefix_len, device=None):
+        batch_size = non_causal_prefix_len.size(0)
+
+        # CREATE ATTENTION MASK
+        causal_mask = torch.ones(batch_size, batch_seq_len, batch_seq_len, dtype=torch.bool).tril(diagonal=0)
+
+        # Create a range tensor for comparison
+        idx = torch.arange(batch_seq_len).unsqueeze(0).unsqueeze(0)  # Shape: [1, 1, output_len]
+
+        # Expand inp_lens to match the dimensions for broadcasting
+        expanded_inp_lens = non_causal_prefix_len.unsqueeze(1).unsqueeze(2)  # Shape: [bs, 1, 1]
+
+        # Create the full mask by using broadcasting
+        non_causal_mask = (idx < expanded_inp_lens).expand(-1, batch_seq_len, -1)
+
+        # Combine the lower triangular mask with the full mask
+        attn_mask = causal_mask | non_causal_mask
+
+        attn_mask = attn_mask.to(device) if device is not None else attn_mask
+
+        return attn_mask.unsqueeze(1)  # Shape: [bs, 1, output_len, output_len]
+
  
     def forward(self, prog_idx, inp_idx, inp_len, n_loops, max_grad_loops=None):
         # idx is of shape (B, T)
         B1, T1 = prog_idx.size()
         B2, T2 = inp_idx.size()
-        output_len = T1 + T2
-        assert output_len <= self.config.max_seq_len, f"Cannot forward sequence of length {T2}, max_seq_len is only {self.config.max_seq_len}"
+        batch_seq_len = T1 + T2
+        assert batch_seq_len <= self.config.max_seq_len, f"Cannot forward sequence of length {T2}, max_seq_len is only {self.config.max_seq_len}"
         assert B1 == B2, "Batch size of program and input must match"
         assert T1 == 1, "Program input must be a single token"
         assert n_loops > 0, "Number of loops must be greater than 0"
@@ -358,9 +382,8 @@ class Interpreter(nn.Module):
         assert 0 < max_grad_loops <= n_loops, "max_grad_loops must be less than or equal to n_loops and greater than 0"  
 
         grad_loop_start = n_loops - max_grad_loops
-        attn_mask = torch.ones(output_len, output_len, dtype=torch.bool).tril(diagonal=0)
-        attn_mask[:inp_len+1, :inp_len+1] = True
-        attn_mask = attn_mask.to(prog_idx.device)
+
+        attn_mask = self.get_attn_mask(batch_seq_len, inp_len, device=inp_idx.device)
 
         # forward the token and posisition embeddings
         prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_dim)
@@ -391,31 +414,10 @@ class Interpreter(nn.Module):
         logits = self.lm_head(output) # (B, T, vocab_size)
         return logits, convergence_mse
     
-
-    # def infer(self, prog_emb, inp_idx):
-        
-    #     inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_dim)
-    #     B2, T2 = inp_idx.size()
-
-    #     x = prog_emb[..., None] * inp_emb[:, :, None, :]
-    #     x = x.reshape(B2, T2, -1)
-
-    #     for _ in range(self.config.n_rec_layer):
-    #         for block in self.blocks:
-    #             for _ in range(self.config.n_rec_block):
-    #                 x = block(x)
-
-    #     # forward the final layernorm and the classifier
-    #     x = self.ln_f(x)
-    #     logits = self.lm_head(x) # (B, T, vocab_size)
-    #     return logits
-    
-
-    @staticmethod
-    def loss_fn(logits, targets, l):
-        logits_outs = logits[:, l:, :]
-        targets_outs = targets[:, l:]
-        loss =  F.cross_entropy(logits_outs.reshape(-1, logits_outs.size(-1)), targets_outs.reshape(-1))
+    def loss_fn(self, logits, targets):
+        loss =  F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), reduction='none').view_as(targets)   # This will be a float tensor
+        mask = targets != self.grid_tokenizer.PAD_IDX
+        loss = (loss * mask).sum() / mask.sum()
         return loss
     
     def get_optimizer(

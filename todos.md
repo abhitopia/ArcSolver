@@ -58,6 +58,18 @@
 - [x] Forking does not change the LR initial learning rate, this needs to be fixed!
     - https://discuss.pytorch.org/t/optimizer-lr-changing-after-loading-state-dict/86285
 
+- [x] Forking does not change the weight decay. Need to fix that!
+- [x] Prediction is dependent on input size. Need to fix that. Provide a variable mask. Modify input batching.
+- [x] Also randomize the input order for each epoch. Introduce noise in length
+
+- [ ] Check that output doesn't change by modifying the input size.
+
+- [ ] Fix the downstream metrics, etc in ArcTrainer.py calculations to account for above dataset collate_fn changes
+
+- [ ] Allow for bigger batch size by periodically clearing the cache
+- [ ] Remove IDENT_CID tranformation in favour of `original` version
+
+- [ ] Investigate REARC dataset and generation process (possibly use embeddings to selectively generate)
 - [ ] Write Evaluation + Visualisation Script
 
 - [ ] Make curriculum resume easier?
