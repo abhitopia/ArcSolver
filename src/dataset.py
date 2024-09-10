@@ -131,12 +131,13 @@ class TaskToExamples:
         return get_examples(task.train), get_examples(task.test)
 
 
-
 class TargetTokenCountBatchSampler(BatchSampler):
-    def __init__(self, dataset: Dataset, target_token_count: int, shuffle: bool = True):
+    def __init__(self, dataset: Dataset, target_token_count: int, noise_pct: float = 0.1, max_len_pctl: int = 90, shuffle: bool = True):
         self.dataset = dataset
         self.target_token_count = target_token_count
         self.shuffle = shuffle
+        self.noise_pct = noise_pct
+        self.max_len_pctl = max_len_pctl
         self.batches = self.create_batches()
 
     def shuffle_batches(self):
@@ -147,50 +148,49 @@ class TargetTokenCountBatchSampler(BatchSampler):
         random.shuffle(self.batches)
 
     @staticmethod
-    def compute_example_len(example):
+    def example_len(example):
         (p, i), o = example
 
-        inp_len = len(i) + len(p)
+        inp_len = len(p) + len(i) 
         out_len = len(o)
-        return inp_len, out_len
-    
-    @staticmethod
-    def example_sort_metric(example):
-        (p, i), o = example
-        inp_len = len(i) + len(p)
-        out_len = len(o)
-        return (inp_len, out_len)
+        return inp_len + 1 + out_len # +1 for the separator
 
 
     def create_batches(self):
+        example_lens = [self.example_len(self.dataset[i]) for i in range(len(self.dataset))]
+        max_len = np.percentile(example_lens, self.max_len_pctl)
+
+        # Adding noise so every different batches are created
+        noisy_lens = []
+        for l in example_lens:
+            if l < max_len and random.random() < self.noise_pct:
+                noisy_lens.append(l + random.randint(l, max_len))
+            else:
+                noisy_lens.append(l)
+
         # reverse = True so if a last_drop = True, then it will be the smallest batch
-        sorted_indices = sorted(range(len(self.dataset)), key=lambda i: self.example_sort_metric(self.dataset[i]), reverse=True)
+        sorted_indices = sorted(range(len(self.dataset)), key=lambda i: noisy_lens[i], reverse=True)
         batches = [] 
         batch = []
         max_batch_len = 0
-        max_inp_len = 0
-        max_out_len = 0
         target_token_count = self.target_token_count
 
         for idx in sorted_indices:
-            example_inp_len, example_out_len = self.compute_example_len(self.dataset[idx])
+            example_len = self.example_len(self.dataset[idx])
 
-            include_token_count = (max(example_inp_len, max_inp_len) +  max(example_out_len, max_out_len))* (len(batch) + 1)
+            include_token_count = max(example_len, max_batch_len) * (len(batch) + 1)
             exclude_token_count = max_batch_len * len(batch)
 
             if idx == len(sorted_indices) - 1:
                 batch.append(idx)
                 batches.append(batch)
             elif abs(include_token_count - target_token_count) > abs(exclude_token_count - target_token_count):
-            # elif include_token_count > target_token_count:
                 batches.append(batch)
                 batch = [idx]
-                max_inp_len = example_inp_len
-                max_out_len = example_out_len
+                max_batch_len = example_len
             else:
                 batch.append(idx)
-                max_inp_len = max(max_inp_len, example_inp_len)
-                max_out_len = max(max_out_len, example_out_len)
+                max_batch_len = max(example_len, max_batch_len)
 
         if len(batch) > 0:
             batches.append(batch)
@@ -206,7 +206,11 @@ class TargetTokenCountBatchSampler(BatchSampler):
         for batch in self.batches:
             yield batch
 
+        # Create new batches after each epoch        
+        self.batches = self.create_batches()
+
     def __len__(self):
+        # Experimentally this is only called when len(dataloader) is called
         return len(self.batches)
 
 
@@ -243,29 +247,35 @@ class ArcExamplesDataset(Dataset):
     @staticmethod
     def collate_fn(batch, pad_idx, seq_length: Optional[int] = None, device=torch.device('cpu')):
         programs_inputs, outputs  = zip(*batch)
-
         programs, inputs = zip(*programs_inputs)
-        programs = torch.from_numpy(np.array(programs, dtype=np.int64)).to(device, non_blocking=True)
-        prog_len = programs.shape[1]
 
-        max_inp_len = max([len(i) for i in inputs]) + prog_len
-        max_out_len = max([len(o) for o in outputs])
+        inp_lens = [len(p) + len(i) for p, i in programs_inputs]
+        out_lens = [len(o) for o in outputs]
+
+        len_program = len(programs[0])
+        assert len_program == 1
+        example_inputs = [inputs[i] + [pad_idx] + outputs[i] for i in range(len(batch))]
+
+        max_inp_len = max([len(i) for i in example_inputs])
 
         if seq_length is not None:
-            rem_len = seq_length - (max_inp_len + 1)  # +1 for the padding token
-            assert max_out_len <= rem_len, "The output sequence length is greater than the remaining sequence length"
-            max_out_len = rem_len
+            assert max_inp_len + len_program <= seq_length, "The output sequence length is greater than the specified batch sequence length"
+            max_inp_len = seq_length - len_program
 
-        inputs = [[pad_idx] * (max_inp_len - len(i) - prog_len) + i  for i in inputs]
-        outputs = [o + [pad_idx] * (max_out_len - len(o))  for o in outputs]
+        # Added plus 1 to extract causal input and outputs
+        examples_padded = [i + [pad_idx] * (max_inp_len + 1 - len(i)) for i in example_inputs]
+        examples_padded = torch.from_numpy(np.array(examples_padded, dtype=np.int64)).to(device,  non_blocking=True)
 
-        inputs = [i + [pad_idx] + o for i, o in zip(inputs, outputs)]
-        outputs  = [[pad_idx]*max_inp_len + o + [pad_idx] for o in outputs]
+        p = torch.tensor(programs, dtype=torch.long).to(device, non_blocking=True)
+        x = examples_padded[:, :max_inp_len]
+        y = examples_padded[:, 1:]
+        pad_column = torch.full((y.size(0), len_program), pad_idx, dtype=torch.long, device=device)
+        y = torch.cat((pad_column, y), dim=1)
+        inp_lens = torch.tensor(inp_lens, dtype=torch.long).to(device, non_blocking=True)
+        out_lens = torch.tensor(out_lens, dtype=torch.long).to(device, non_blocking=True)
 
-        inputs_padded = torch.from_numpy(np.array(inputs, dtype=np.int64)).to(device,  non_blocking=True)
-        outputs_padded = torch.from_numpy(np.array(outputs, dtype=np.int64)).to(device,  non_blocking=True)
+        return (p, x, inp_lens), (y, out_lens)
 
-        return (programs, inputs_padded, max_inp_len), outputs_padded
     
     def get_dataloader(self, batch_size: int, seq_len: Optional[int] = None, batch_by_token_count: bool = False, device=torch.device('cpu'), pin_memory=False, shuffle=True) -> DataLoader:
         """
