@@ -17,10 +17,8 @@ class Curriculum:
     def value(self):
         return self._val
 
-    def update(self, step):
-        if self.step_count < step:
-            self.step_count = step
-            
+    def update(self):
+        self.step_count += 1
         if self.step_count % self.interval == 0 and self.step_count > 1:
             self._val += self.inc
 

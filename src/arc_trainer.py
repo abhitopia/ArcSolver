@@ -438,7 +438,7 @@ class ArcTrainer(TrainerBase):
     def train_step(self, batch):
         (p, i, pi_l), (y, _) = batch
 
-        max_loops = self.loop_curriculum.update(self.step)
+        max_loops = self.loop_curriculum.update()
         min_loops = self.hparams.optim.min_loops
         max_grad_loops = self.hparams.optim.max_grad_loops
 
@@ -454,7 +454,7 @@ class ArcTrainer(TrainerBase):
     
     def eval_step(self, batch):
         (p, i, pi_l), (y, _) = batch
-        max_loops = self.loop_curriculum.update(self.step)
+        max_loops = self.loop_curriculum.value
 
         logits, convergence_mse = self.model(p, i, pi_l, max_loops)
         loss = self.model.loss_fn(logits, y)    
