@@ -147,6 +147,11 @@ class Hparams:
     @classmethod
     def from_dict(cls, hparams_dict):
         args = {k: v for k, v in hparams_dict.items() if not isinstance(v, dict)} 
+
+        # TODO: Remove this ugly code.
+        if 'called_once' in args:
+            del args['called_once']
+
         hparams = cls(**args)
         for k, v in hparams_dict.items():
             if isinstance(v, dict):
