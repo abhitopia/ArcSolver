@@ -442,7 +442,7 @@ class ArcTrainer(TrainerBase):
         min_loops = self.hparams.optim.min_loops
         max_grad_loops = self.hparams.optim.max_grad_loops
 
-        if random.random() < self.hparams.optim.max_loops_prob:
+        if self.hparams.optim.max_loops_prob < random.random():
             max_loops = random.randint(min_loops, max_loops)
     
         logits, convergence_mse = self.model(p, i, pi_l, max_loops, max_grad_loops=max_grad_loops)
