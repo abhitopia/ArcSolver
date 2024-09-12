@@ -83,7 +83,7 @@ def train(
         use_aux: bool = typer.Option(True, help="Use auxiliary data for training"),
 
         # Misc Config
-        n_steps: Optional[int] = typer.Option(None, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
+        n_steps: Optional[int] = typer.Option(1000000, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
         seed: int = typer.Option(42, min=0, help="Random seed for the data and experiment"),
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
         device: Optional[str] = typer.Option(None, help="Device to run the training on. If None, then it is automatically selected"),
