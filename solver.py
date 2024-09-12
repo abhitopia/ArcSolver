@@ -194,6 +194,7 @@ def fork(
         int_loops: int = typer.Option(100, min=1, help="Interval for increasing number of loops"),
         min_loops: int = typer.Option(2, min=0, help="Minimum number of loops"),
         max_loops_prob: float = typer.Option(0.5, min=0.0, max=1.0, help="Probability of choosing max loops during training"),
+        max_grad_loops: Optional[int] = typer.Option(None, min=8, help="Maximum number of loops to backprop for"),
 
         # Batch Config
         bs: Optional[int] = typer.Option(None, min=1, help="Batch Size"),
@@ -270,6 +271,7 @@ def fork(
         "int_loops": int_loops,
         "max_loops_prob": max_loops_prob,
         "start_loops": start_loops if start_loops is not None else min_loops,
+        "max_grad_loops": max_grad_loops,
 
         # Learning Rate
         "lr_model": mlr if not lr_find else 1,
