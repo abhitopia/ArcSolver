@@ -440,11 +440,12 @@ class ArcTrainer(TrainerBase):
 
         max_loops = self.loop_curriculum.update(self.step)
         min_loops = self.hparams.optim.min_loops
+        max_grad_loops = self.hparams.optim.max_grad_loops
 
         if random.random() < self.hparams.optim.max_loops_prob:
             max_loops = random.randint(min_loops, max_loops)
     
-        logits, convergence_mse = self.model(p, i, pi_l, max_loops)
+        logits, convergence_mse = self.model(p, i, pi_l, max_loops, max_grad_loops=max_grad_loops)
         loss = self.model.loss_fn(logits, y)
 
         # if not self.disable_checkpointing_and_logging:
