@@ -670,7 +670,6 @@ class TrainerBase:
             if max_steps is None:
                 max_steps = float('inf')
                 
-            eval_interval = self.eval_interval if self.eval_interval is not None else len(self.train_dl)
             self.info(f'Total training steps: {max_steps}')
                 
             # Run Evaluation before training starts if step > 0 (probably due to resuming from checkpoint)
@@ -692,6 +691,8 @@ class TrainerBase:
 
                     self.step = step  # Set the step instead of incrementing it. This ensures that self._epoch_end as 
 
+                    # In case train_dl has different number of batches per epoch
+                    eval_interval = self.eval_interval if self.eval_interval is not None else len(self.train_dl)
                     if run_eval_at_start or (self.step > 0 and self.step % eval_interval == 0):
                         self._eval_loop(save_checkpoint=False if run_eval_at_start else True)
                         run_eval_at_start = False
