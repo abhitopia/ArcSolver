@@ -193,7 +193,6 @@ class SelfAttention(nn.Module):
     def forward(self, x, attn_mask=None, past_key_value=None):
         # x: (B, T, C)
         B, T, C = x.size()
-        # print(f"SelfAttention.forward: x shape: {x.shape}")
 
         # qkv: (B, T, 3 * C)
         qkv = self.c_attn(x)
@@ -207,7 +206,6 @@ class SelfAttention(nn.Module):
         # If past_key_value is present, concatenate past keys and values BEFORE applying RoPE
         if past_key_value is not None:
             past_k, past_v = past_key_value  # Both are (B, n_head, T_past, head_dim)
-            # print(f"SelfAttention.forward: past_key_value shapes: {past_k.shape}, {past_v.shape}")
             k = torch.cat([past_k, k], dim=1)  # Concatenate along sequence length dimension
             v = torch.cat([past_v, v], dim=2)
 
@@ -232,8 +230,6 @@ class SelfAttention(nn.Module):
         q = q.transpose(1, 2)  # (B, n_head, T, head_dim)
         k = k.transpose(1, 2)  # (B, n_head, total_seq_len, head_dim)
 
-        # print(f"SelfAttention.forward: q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")
-
         # Compute attention
         attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=self.config.dropout)
 
@@ -244,38 +240,8 @@ class SelfAttention(nn.Module):
         # Output projection
         y = self.c_proj(attn_output)
 
-        # print(f"SelfAttention.forward: present_key_value shapes: {present_key_value[0].shape}, {present_key_value[1].shape}")
-
         return y, present_key_value
 
-
-    # def forward(self, x, attn_mask):
-    #     B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_dim)
-    #     # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-    #     # nh is "number of heads", hs is "head size", and C (number of channels) = nh * hs
-    #     # e.g. in GPT-2 (124M), n_head=12, hs=64, so nh*hs=C=768 channels in the Transformer
-    #     qkv = self.c_attn(x)
-    #     q, k, v = qkv.split(self.n_dim, dim=2)
-
-
-    #     # k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-    #     # q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-    #     v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-
-    #     # For Rope
-    #     k = k.view(B, T, self.n_head, C // self.n_head)
-    #     q = q.view(B, T, self.n_head, C // self.n_head)
-    #     k = self.rope(k).transpose(1, 2)
-    #     q = self.rope(q).transpose(1, 2)
-
-    #     ## attention (materializes the large (T,T) matrix for all the queries and keys)
-    #     y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=self.config.dropout) # flash attention
-    #     # y = F.scaled_dot_product_attention(q, k, v, is_causal=True, dropout_p=self.config.dropout) # flash attention
-
-    #     y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
-    #     # output projection
-    #     y = self.c_proj(y)
-    #     return y
 
 
 class SwiGLU(nn.Module):
@@ -364,12 +330,6 @@ class TransformerBlock(nn.Module):
                             RMSNorm(config.n_dim),
                             SwiGLUFFN(config.n_dim, 4 * config.n_dim))
 
-
-    # def forward(self, x, attn_mask):
-    #     x = x + self.dropout(self.attn(self.rmsnorm(x), attn_mask))
-    #     x = x + self.dropout(self.normed_mlp(x))
-    #     return x    
-
     def forward(self, x, attn_mask=None, past_key_value=None):
         attn_output, present_key_value = self.attn(self.rmsnorm(x), attn_mask=attn_mask, past_key_value=past_key_value)
         x = x + self.dropout(attn_output)
@@ -432,64 +392,6 @@ class Interpreter(nn.Module):
 
         return attn_mask.unsqueeze(1)  # Shape: [bs, 1, output_len, output_len]
 
-
-    # def forward(self, prog_idx, inp_idx, inp_len, n_loops, next_input_idx=None, max_grad_loops=None, past_key_values=None):
-    #     # idx is of shape (B, T)
-    #     B1, T1 = prog_idx.size()
-    #     B2, T2 = inp_idx.size()
-    #     batch_seq_len = T1 + T2
-    #     if next_input_idx is not None:
-    #         B3, T3 = next_input_idx.size()
-    #         batch_seq_len += T3
-    #         assert B1 == B3, "Batch size of program and output must match"
-    #     assert batch_seq_len <= self.config.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.config.max_seq_len}"
-    #     assert B1 == B2, "Batch size of program and input must match"
-    #     assert T1 == 1, "Program input must be a single token"
-    #     assert n_loops > 0, "Number of loops must be greater than 0"
-    #     if max_grad_loops is None or max_grad_loops > n_loops: 
-    #         max_grad_loops = n_loops
-    #     assert 0 < max_grad_loops <= n_loops, "max_grad_loops must be less than or equal to n_loops and greater than 0"  
-
-    #     grad_loop_start = n_loops - max_grad_loops
-
-    #     # forward the token and position embeddings
-    #     prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_dim)
-    #     inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_dim)
-    #     if next_input_idx is not None:
-    #         out_emb = self.wte(next_input_idx)  # output embeddings of shape (B, T3, n_dim)
-    #         x = torch.cat((prog_emb, inp_emb, out_emb), dim=1)
-    #     else:
-    #         x = torch.cat((prog_emb, inp_emb), dim=1)
-    #     output = torch.zeros_like(x)
-    #     convergence_mse = []
-
-    #     # Initialize past_key_values if not provided
-    #     if past_key_values is None:
-    #         past_key_values = [None] * len(self.blocks)
-
-    #     present_key_values = []
-
-    #     print(f"Interpreter.forward: x shape: {x.shape}, output shape: {output.shape}")
-
-    #     for loop_id in range(n_loops):
-    #         prev_output = output
-    #         with torch.set_grad_enabled(loop_id >= grad_loop_start and self.training):
-    #             layer_inp = torch.cat((x, output), dim=-1) # (B, T, 2*n_dim)
-    #             output = self.inp_inject(layer_inp)  # (B, T, n_dim)
-    #             new_past_key_values = []
-    #             for i, block in enumerate(self.blocks):
-    #                 output, present_key_value = block(output, past_key_value=past_key_values[i])
-    #                 print(f"Loop {loop_id}, Block {i}: output shape: {output.shape}")
-    #                 new_past_key_values.append(present_key_value)
-    #             past_key_values = new_past_key_values
-
-    #         output_mse = F.mse_loss(output, prev_output)
-    #         convergence_mse.append(output_mse.item())
-
-    #     # forward the final layernorm and the classifier
-    #     output = self.ln_f(output)
-    #     logits = self.lm_head(output) # (B, T, vocab_size)
-    #     return logits, convergence_mse, past_key_values
     
     def forward(self, prog_idx, inp_idx, inp_len, n_loops, next_input_idx=None, max_grad_loops=None, past_key_values=None):
         # idx is of shape (B, T)
@@ -509,6 +411,8 @@ class Interpreter(nn.Module):
         assert 0 < max_grad_loops <= n_loops, "max_grad_loops must be less than or equal to n_loops and greater than 0"  
 
         grad_loop_start = n_loops - max_grad_loops
+
+        attn_mask = self.get_attn_mask(batch_seq_len, inp_len)
 
         # forward the token and position embeddings
         prog_emb = self.pte(prog_idx)  # (B, T1, n_dim)
@@ -544,7 +448,7 @@ class Interpreter(nn.Module):
                 # new_past_key_values = []
                 for i, block in enumerate(self.blocks):
                     # Pass the past_key_values from the specific loop_id
-                    output, present_key_value = block(output, past_key_value=past_key_values[loop_id][i])
+                    output, present_key_value = block(output, attn_mask=attn_mask, past_key_value=past_key_values[loop_id][i])
                     # print("Type is", type(present_key_value), len(present_key_value), )
                     # print(f"Loop {loop_id}, Block {i}: output shape: {output.shape}")
 
@@ -564,54 +468,6 @@ class Interpreter(nn.Module):
         logits = self.lm_head(output)  # (B, T, vocab_size)
 
         return logits, convergence_mse, updated_past_key_values
-
-    # def forward(self, prog_idx, inp_idx, inp_len, n_loops, next_input_idx=None, max_grad_loops=None):
-    #     # idx is of shape (B, T)
-    #     B1, T1 = prog_idx.size()
-    #     B2, T2 = inp_idx.size()
-    #     batch_seq_len = T1 + T2
-    #     if next_input_idx is not None:
-    #         B3, T3 = next_input_idx.size()
-    #         batch_seq_len += T3
-    #         assert B1 == B3, "Batch size of program and output must match"
-    #     assert batch_seq_len <= self.config.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.config.max_seq_len}"
-    #     assert B1 == B2, "Batch size of program and input must match"
-    #     assert T1 == 1, "Program input must be a single token"
-    #     assert n_loops > 0, "Number of loops must be greater than 0"
-    #     if max_grad_loops is None or max_grad_loops > n_loops: 
-    #         max_grad_loops = n_loops
-    #     assert 0 < max_grad_loops <= n_loops, "max_grad_loops must be less than or equal to n_loops and greater than 0"  
-
-    #     grad_loop_start = n_loops - max_grad_loops
-
-    #     attn_mask = self.get_attn_mask(batch_seq_len, inp_len)
-
-    #     # forward the token and position embeddings
-    #     prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_dim)
-    #     inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_dim)
-    #     if next_input_idx is not None:
-    #         out_emb = self.wte(next_input_idx)  # output embeddings of shape (B, T3, n_dim)
-    #         x = torch.cat((prog_emb, inp_emb, out_emb), dim=1)
-    #     else:
-    #         x = torch.cat((prog_emb, inp_emb), dim=1)
-    #     output = torch.zeros_like(x)
-    #     convergence_mse = []
-
-    #     for loop_id in range(n_loops):
-    #         prev_output = output
-    #         with torch.set_grad_enabled(loop_id >= grad_loop_start and self.training):
-    #             layer_inp = torch.cat((x, output), dim=-1) # (B, T, 2*n_dim)
-    #             output = self.inp_inject(layer_inp)  # (B, T, n_dim)
-    #             for block in self.blocks:
-    #                 output = block(output, attn_mask)
-
-    #         output_mse = F.mse_loss(output, prev_output)
-    #         convergence_mse.append(output_mse.item())
-
-    #     # forward the final layernorm and the classifier
-    #     output = self.ln_f(output)
-    #     logits = self.lm_head(output) # (B, T, vocab_size)
-    #     return logits, convergence_mse
 
 
     def greedy_search(self, prog_idx, inp_idx, inp_len, n_loops, max_length, eos_token_id):
