@@ -65,7 +65,15 @@
 - [x] Fix the downstream metrics, etc in ArcTrainer.py calculations to account for above dataset collate_fn changes
 - [x] Allow for bigger batch size by periodically clearing the cache
 - [x] Remove IDENT_CID tranformation in favour of `original` version
+- [x] Check if the results of the new model match for greedy evaluation
+- [x] Add Beam Search (inefficient implementation)
+- [ ] Test the beam search implementation speed on GPU
+- [ ] Write analysis code topk vs beam width vs accuracy vs iters
 
+
+## Future Work
+- [ ] Implement faster kv-cached version of the model
+- [ ] Use Simon's https://github.com/neoneye/simon-arc-lab/tree/main/simon_arc_dataset_run  to generate more data
 - [ ] Investigate REARC dataset and generation process (possibly use embeddings to selectively generate)
 - [ ] Write Evaluation + Visualisation Script
 
@@ -106,6 +114,9 @@
 - Start out with out augmentation 
     - Helps with overfitting
 
+- [ ] [The AdEMAMix Optimizer](https://arxiv.org/abs/2409.03137)
+- [ ] Improving Transformer Models by Reordering their Sublayers
+- [ ] https://arxiv.org/pdf/2409.04777
 
 # V2 Later  
 - [ ] The plan is to see if there is natural clustering of the program embeddings.

@@ -368,13 +368,17 @@ class Interpreter(nn.Module):
 
         return attn_mask.unsqueeze(1)  # Shape: [bs, 1, output_len, output_len]
 
- 
-    def forward(self, prog_idx, inp_idx, inp_len, n_loops, max_grad_loops=None):
+
+    def forward(self, prog_idx, inp_idx, inp_len, n_loops, next_input_idx=None, max_grad_loops=None):
         # idx is of shape (B, T)
         B1, T1 = prog_idx.size()
         B2, T2 = inp_idx.size()
         batch_seq_len = T1 + T2
-        assert batch_seq_len <= self.config.max_seq_len, f"Cannot forward sequence of length {T2}, max_seq_len is only {self.config.max_seq_len}"
+        if next_input_idx is not None:
+            B3, T3 = next_input_idx.size()
+            batch_seq_len += T3
+            assert B1 == B3, "Batch size of program and output must match"
+        assert batch_seq_len <= self.config.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.config.max_seq_len}"
         assert B1 == B2, "Batch size of program and input must match"
         assert T1 == 1, "Program input must be a single token"
         assert n_loops > 0, "Number of loops must be greater than 0"
@@ -386,20 +390,18 @@ class Interpreter(nn.Module):
 
         attn_mask = self.get_attn_mask(batch_seq_len, inp_len)
 
-        # forward the token and posisition embeddings
+        # forward the token and position embeddings
         prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_dim)
         inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_dim)
-
-        # x = prog_emb[..., None] * inp_emb[:, :, None, :]
-        # x = x.reshape(B1, T2, -1)
-
-        x = torch.cat((prog_emb, inp_emb), dim=1)
+        if next_input_idx is not None:
+            out_emb = self.wte(next_input_idx)  # output embeddings of shape (B, T3, n_dim)
+            x = torch.cat((prog_emb, inp_emb, out_emb), dim=1)
+        else:
+            x = torch.cat((prog_emb, inp_emb), dim=1)
         output = torch.zeros_like(x)
         convergence_mse = []
 
         for loop_id in range(n_loops):
-            # Only inject input 
-
             prev_output = output
             with torch.set_grad_enabled(loop_id >= grad_loop_start and self.training):
                 layer_inp = torch.cat((x, output), dim=-1) # (B, T, 2*n_dim)
@@ -415,6 +417,63 @@ class Interpreter(nn.Module):
         logits = self.lm_head(output) # (B, T, vocab_size)
         return logits, convergence_mse
     
+
+    # Beam Search Function
+    def beam_search(self, prog_idx, inp_idx, inp_len, n_loops, beam_width, max_length, eos_token_id):
+        device = prog_idx.device
+        B = prog_idx.size(0)
+        # Initialize the beam with empty sequences and zero scores
+        beam = [[(torch.tensor([], dtype=torch.long, device=device), 0.0)] for _ in range(B)]
+        completed_sequences = [[] for _ in range(B)]
+
+        for t in range(max_length):
+            all_candidates = [[] for _ in range(B)]
+            for b in range(B):
+                candidates = beam[b]
+                for seq, score in candidates:
+                    if len(seq) > 0 and seq[-1].item() == eos_token_id:
+                        # Sequence is already completed
+                        completed_sequences[b].append((seq, score))
+                        continue
+                    # Prepare the output_idx
+                    if len(seq) > 0:
+                        output_idx = seq.unsqueeze(0)  # (1, seq_len)
+                    else:
+                        output_idx = None
+                    # Run the model forward
+                    logits, _ = self.forward(
+                        prog_idx[b].unsqueeze(0),
+                        inp_idx[b].unsqueeze(0),
+                        inp_len,
+                        n_loops,
+                        next_input_idx=output_idx
+                    )
+                    # Get the logits for the next token
+                    next_logits = logits[:, -1, :]  # (1, vocab_size)
+                    next_log_probs = F.log_softmax(next_logits, dim=-1)  # (1, vocab_size)
+                    # Get the top beam_width tokens
+                    topk_log_probs, topk_tokens = torch.topk(next_log_probs, beam_width)
+                    # For each possible next token
+                    for i in range(beam_width):
+                        token = topk_tokens[0, i]
+                        token_log_prob = topk_log_probs[0, i]
+                        new_seq = torch.cat([seq, token.unsqueeze(0)])
+                        new_score = score + token_log_prob.item()
+                        all_candidates[b].append((new_seq, new_score))
+            # Reorder and select the top beam_width sequences for each batch element
+            for b in range(B):
+                candidates = all_candidates[b]
+                ordered = sorted(candidates, key=lambda tup: tup[1], reverse=True)
+                beam[b] = ordered[:beam_width]
+        # Collect the best sequences
+        final_sequences = []
+        for b in range(B):
+            sequences = completed_sequences[b] if completed_sequences[b] else beam[b]
+            best_seq = max(sequences, key=lambda tup: tup[1])[0]
+            final_sequences.append(best_seq)
+        return final_sequences
+ 
+
     def loss_fn(self, logits, targets):
         loss =  F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), reduction='none').view_as(targets)   # This will be a float tensor
         mask = targets != self.grid_tokenizer.PAD_IDX
