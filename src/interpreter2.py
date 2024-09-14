@@ -223,7 +223,7 @@ class SelfAttention(nn.Module):
         q = self.rope(q, input_pos=q_positions)
 
         # For k, we use positions for the entire sequence (past + current)
-        # k_positions = position_ids  # Shape: (B, 1, total_seq_len)
+        k_positions = position_ids  # Shape: (B, 1, total_seq_len)
         k = self.rope(k, input_pos=k_positions)
 
         # Now transpose q and k for attention computation
@@ -499,59 +499,63 @@ class Interpreter(nn.Module):
         return logits, convergence_mse, updated_past_key_values
 
 
-    def greedy_search(self, prog_idx, inp_idx, inp_len, n_loops, max_length, eos_token_id):
-        device = prog_idx.device
-        B = prog_idx.size(0)
+    def greedy_search(self, prog_idx, inp_idx, n_loops, max_length, eos_token_id=12):
+        # Assume prog_idx and inp_idx are lists of integers
+        # Batch size is 1
 
-        # Initialize with the program index and input index
-        output_sequences = [torch.tensor([], dtype=torch.long, device=device) for _ in range(B)]
+        device = next(self.parameters()).device  # Get the device (CPU or GPU) from the model parameters
+
+        # Compute inp_len as len(prog_idx) + len(inp_idx)
+        inp_len = torch.tensor([len(prog_idx) + len(inp_idx)], dtype=torch.long, device=device)  # Shape: (1,)
+
+        # Convert prog_idx and inp_idx to tensors and add batch dimension
+        prog_idx = torch.tensor([prog_idx], dtype=torch.long, device=device)  # Shape: (1, len(prog_idx))
+
+        # Add EOS token to the end of the input sequence
+        pad_token_id = self.grid_tokenizer.PAD_IDX
+        inp_idx = torch.tensor([inp_idx + [pad_token_id]], dtype=torch.long, device=device)    # Shape: (1, len(inp_idx))
+
+        # Compute inp_len
+        # Initialize the output sequence and past_key_values
+        output_sequence = torch.tensor([], dtype=torch.long, device=device)  # Shape: (seq_len,)
         past_key_values = None
 
-
         for t in range(max_length):
-            for b in range(B):
-                # Prepare the next input (i.e., the last generated token in the sequence)
-                if output_sequences[b].size(0) > 0:
-                    next_input_idx = output_sequences[b][-1:].unsqueeze(0)  # (1, seq_len)
-                    last_token = next_input_idx[0, -1].item()
-                    if last_token == eos_token_id:
-                        break
-                else:
-                    next_input_idx = None
-
-                # Run the model forward using the past_key_values from this specific beam
-                logits, _, new_past_key_values = self.forward(
-                    prog_idx[b].unsqueeze(0) if next_input_idx is None else None,
-                    inp_idx[b].unsqueeze(0) if next_input_idx is None else None,
-                    inp_len[b].unsqueeze(0),
-                    n_loops,
-                    next_input_idx=next_input_idx,
-                    past_key_values=past_key_values
-                )
-
-                # Get the logits for the next token
-                next_logits = logits[:, -1, :]  # (1, vocab_size)
-                next_log_probs = F.log_softmax(next_logits, dim=-1)  # (1, vocab_size)
-
-                # Select the token with the highest probability (greedy)
-                _, top_token = next_log_probs.max(dim=-1)  # (1,)
-
-                # Append the new token to the output sequence
-                output_sequences[b] = torch.cat([output_sequences[b], top_token])
-
-                # If EOS token is found, stop generating for this batch
-                if top_token.item() == eos_token_id:
+            # Prepare the next input (the last generated token)
+            if output_sequence.size(0) > 0:
+                last_token = output_sequence[-1].item()
+                # If EOS token is generated, stop
+                if last_token == eos_token_id:
                     break
+                next_input_idx = torch.tensor([[last_token]], dtype=torch.long, device=device)  # Shape: (1, 1)
+            else:
+                next_input_idx = None  # At the first time step
 
-                # Update past_key_values for the next iteration
-                past_key_values = new_past_key_values
+            # Run the model forward
+            logits, _, past_key_values = self.forward(
+                prog_idx if next_input_idx is None else None,
+                inp_idx if next_input_idx is None else None,
+                inp_len,
+                n_loops,
+                next_input_idx=next_input_idx,
+                past_key_values=past_key_values
+            )
 
-            # Early stop if all sequences in the batch have ended with EOS
-            if all(seq[-1].item() == eos_token_id for seq in output_sequences if len(seq) > 0):
+            # Get the logits for the last token
+            next_logits = logits[:, -1, :]  # Shape: (1, vocab_size)
+
+            # Select the token with the highest probability
+            top_token = torch.argmax(next_logits, dim=-1)  # Shape: (1,)
+
+            # Append the new token to the output sequence
+            output_sequence = torch.cat([output_sequence, top_token])
+
+            # If EOS token is generated, stop
+            if top_token.item() == eos_token_id:
                 break
 
-        return [o.tolist() for o in output_sequences]
-    
+        return output_sequence.tolist()
+
     def beam_search(self, prog_idx, inp_idx, inp_len, n_loops, beam_width, max_length, eos_token_id):
         device = prog_idx.device
         B = prog_idx.size(0)
