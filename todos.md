@@ -67,6 +67,9 @@
 - [x] Remove IDENT_CID tranformation in favour of `original` version
 - [x] Check if the results of the new model match for greedy evaluation
 - [x] Add Beam Search (inefficient implementation)
+- [ ] Test KV cache implementation
+- [ ] Implement Gredy search with and without KV cache and verify the results match
+- [ ] Fix the beam search implementation
 - [ ] Test the beam search implementation speed on GPU
 - [ ] Write analysis code topk vs beam width vs accuracy vs iters
 
