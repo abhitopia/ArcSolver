@@ -205,7 +205,7 @@ class SelfAttention(nn.Module):
 
         # If past_key_value is present, concatenate past keys and values BEFORE applying RoPE
         if past_key_value is not None:
-            past_k, past_v = past_key_value  # Both are (B, n_head, T_past, head_dim)
+            past_k, past_v = past_key_value  # K: (B, T_past, n_head, head_dim), V: (B, n_head, T_past, head_dim)
             k = torch.cat([past_k, k], dim=1)  # Concatenate along sequence length dimension
             v = torch.cat([past_v, v], dim=2)
 
@@ -223,13 +223,13 @@ class SelfAttention(nn.Module):
         q = self.rope(q, input_pos=q_positions)
 
         # For k, we use positions for the entire sequence (past + current)
-        k_positions = position_ids  # Shape: (B, 1, total_seq_len)
+        # k_positions = position_ids  # Shape: (B, 1, total_seq_len)
         k = self.rope(k, input_pos=k_positions)
 
         # Now transpose q and k for attention computation
         q = q.transpose(1, 2)  # (B, n_head, T, head_dim)
         k = k.transpose(1, 2)  # (B, n_head, total_seq_len, head_dim)
-
+        
         # Compute attention
         attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=self.config.dropout)
 
@@ -367,61 +367,92 @@ class Interpreter(nn.Module):
         # init params
         # self.apply(self._init_weights)
 
-
     @staticmethod
-    def get_attn_mask(batch_seq_len, non_causal_prefix_len):
+    def get_attn_mask(src_len, trg_len, non_causal_prefix_len):
+        # Note: One may be prompted to default non_causal_prefix_len to None
+        # but if you think further, you will realise that in case src_len < any(non_causal_prefix_len)
+        # then the default value of None will not work. Hence, it is better to always pass the
+        # non_causal_prefix_len explicitly
+
         batch_size = non_causal_prefix_len.size(0)
         device = non_causal_prefix_len.device
-        # CREATE ATTENTION MASK
-        causal_mask = torch.ones(batch_size, batch_seq_len, batch_seq_len, dtype=torch.bool, device=device).tril(diagonal=0)
+
+        # CREATE ATTENTION MASK Shape [bs, trg_len, src_len]
+        offset = src_len - trg_len
+
+        # print(f"Offset: {offset}")
+        causal_mask = torch.ones(batch_size, trg_len, src_len, dtype=torch.bool, device=device).tril(diagonal=offset)
 
         # Create a range tensor for comparison
-        idx = torch.arange(batch_seq_len, device=device).unsqueeze(0).unsqueeze(0)  # Shape: [1, 1, output_len]
+        idx = torch.arange(src_len, device=device).unsqueeze(0).unsqueeze(0)  # Shape: [1, 1, src_len]
 
         # Expand inp_lens to match the dimensions for broadcasting
         expanded_inp_lens = non_causal_prefix_len.unsqueeze(1).unsqueeze(2)  # Shape: [bs, 1, 1]
 
         # Create the full mask by using broadcasting
+        non_causal_mask = (idx < expanded_inp_lens).expand(-1, trg_len, -1)  # Shape: [bs, trg_len, src_len]
 
-        non_causal_mask = (idx < expanded_inp_lens).expand(-1, batch_seq_len, -1)
-
-        # Combine the lower triangular mask with the full mask
+        # # Combine the lower triangular mask with the full mask
         attn_mask = causal_mask | non_causal_mask
 
         attn_mask = attn_mask.to(device) if device is not None else attn_mask
 
-        return attn_mask.unsqueeze(1)  # Shape: [bs, 1, output_len, output_len]
+        # print("Sum of attn_mask", attn_mask.sum())
+        return attn_mask.unsqueeze(1)  # Shape: [bs, 1, trg_len, src_len]
+
 
     
     def forward(self, prog_idx, inp_idx, inp_len, n_loops, next_input_idx=None, max_grad_loops=None, past_key_values=None):
         # idx is of shape (B, T)
-        B1, T1 = prog_idx.size()
-        B2, T2 = inp_idx.size()
-        batch_seq_len = T1 + T2
-        if next_input_idx is not None:
-            B3, T3 = next_input_idx.size()
-            batch_seq_len += T3
-            assert B1 == B3, "Batch size of program and output must match"
+
+        if prog_idx is None or inp_idx is None:
+            assert prog_idx is None and inp_idx is None, "Both program and input must be None"
+            assert next_input_idx is not None, "next_input_idx must be provided if program and input are None"
+            assert past_key_values is not None, "past_key_values must be provided if program and input are None"
+            assert len(past_key_values) == n_loops, "Number of past_key_values count must match number of loops"
+            assert len(past_key_values[0]) == self.config.n_layer, "Number of past_key_values blocks must match number of layers"
+            past_key = past_key_values[0][0][0]
+            T_past = past_key.size(1)
+            T_future = next_input_idx.size(1)
+            batch_seq_len = T_past + T_future
+            B1 = past_key.size(0)
+            B2 = next_input_idx.size(0)
+            assert B1 == B2, "Batch size of past_key_values and next_input_idx must match"
+            assert max_grad_loops is None, "max_grad_loops must be None if program and input are None"
+
+        else:
+            assert next_input_idx is None, "next_input_idx must be None if program and input are provided"
+            assert past_key_values is None, "past_key_values must be None if program and input are provided"
+
+            B1, T1 = prog_idx.size()
+            B2, T2 = inp_idx.size()
+            batch_seq_len = T1 + T2
+            assert B1 == B2, "Batch size of program and input must match"
+            assert T1 == 1, "Program input must be a single token"
+
+
         assert batch_seq_len <= self.config.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.config.max_seq_len}"
-        assert B1 == B2, "Batch size of program and input must match"
-        assert T1 == 1, "Program input must be a single token"
+
         assert n_loops > 0, "Number of loops must be greater than 0"
         if max_grad_loops is None or max_grad_loops > n_loops: 
             max_grad_loops = n_loops
+
         assert 0 < max_grad_loops <= n_loops, "max_grad_loops must be less than or equal to n_loops and greater than 0"  
 
         grad_loop_start = n_loops - max_grad_loops
 
-        attn_mask = self.get_attn_mask(batch_seq_len, inp_len)
 
-        # forward the token and position embeddings
-        prog_emb = self.pte(prog_idx)  # (B, T1, n_dim)
-        inp_emb = self.wte(inp_idx)    # (B, T2, n_dim)
-        if next_input_idx is not None:
-            out_emb = self.wte(next_input_idx)  # (B, T3, n_dim)
-            x = torch.cat((prog_emb, inp_emb, out_emb), dim=1)
-        else:
+
+        if next_input_idx is None:
+            # forward the token and position embeddings
+            prog_emb = self.pte(prog_idx)  # (B, T1, n_dim)
+            inp_emb = self.wte(inp_idx)    # (B, T2, n_dim)
             x = torch.cat((prog_emb, inp_emb), dim=1)
+        else:
+            x = self.wte(next_input_idx)  # (B, T3, n_dim)
+
+        attn_mask = self.get_attn_mask(src_len=batch_seq_len,  trg_len=x.size(1), non_causal_prefix_len=inp_len)
+
         output = torch.zeros_like(x)
         convergence_mse = []
 
@@ -449,8 +480,6 @@ class Interpreter(nn.Module):
                 for i, block in enumerate(self.blocks):
                     # Pass the past_key_values from the specific loop_id
                     output, present_key_value = block(output, attn_mask=attn_mask, past_key_value=past_key_values[loop_id][i])
-                    # print("Type is", type(present_key_value), len(present_key_value), )
-                    # print(f"Loop {loop_id}, Block {i}: output shape: {output.shape}")
 
                     # Store the updated kv-cache for the current block in the current loop
                     loop_past_key_values.append(present_key_value)
@@ -476,20 +505,24 @@ class Interpreter(nn.Module):
 
         # Initialize with the program index and input index
         output_sequences = [torch.tensor([], dtype=torch.long, device=device) for _ in range(B)]
-        past_key_values = [[None]*len(self.blocks) for _ in range(n_loops)]  # Init key-value cache
+        past_key_values = None
+
 
         for t in range(max_length):
             for b in range(B):
                 # Prepare the next input (i.e., the last generated token in the sequence)
                 if output_sequences[b].size(0) > 0:
-                    next_input_idx = output_sequences[b].unsqueeze(0)  # (1, seq_len)
+                    next_input_idx = output_sequences[b][-1:].unsqueeze(0)  # (1, seq_len)
+                    last_token = next_input_idx[0, -1].item()
+                    if last_token == eos_token_id:
+                        break
                 else:
                     next_input_idx = None
 
                 # Run the model forward using the past_key_values from this specific beam
                 logits, _, new_past_key_values = self.forward(
-                    prog_idx[b].unsqueeze(0),
-                    inp_idx[b].unsqueeze(0),
+                    prog_idx[b].unsqueeze(0) if next_input_idx is None else None,
+                    inp_idx[b].unsqueeze(0) if next_input_idx is None else None,
                     inp_len[b].unsqueeze(0),
                     n_loops,
                     next_input_idx=next_input_idx,
@@ -504,7 +537,7 @@ class Interpreter(nn.Module):
                 _, top_token = next_log_probs.max(dim=-1)  # (1,)
 
                 # Append the new token to the output sequence
-                output_sequences[b] = torch.cat([output_sequences[b], top_token.squeeze(0)])
+                output_sequences[b] = torch.cat([output_sequences[b], top_token])
 
                 # If EOS token is found, stop generating for this batch
                 if top_token.item() == eos_token_id:
@@ -517,7 +550,7 @@ class Interpreter(nn.Module):
             if all(seq[-1].item() == eos_token_id for seq in output_sequences if len(seq) > 0):
                 break
 
-        return output_sequences
+        return [o.tolist() for o in output_sequences]
     
     def beam_search(self, prog_idx, inp_idx, inp_len, n_loops, beam_width, max_length, eos_token_id):
         device = prog_idx.device
