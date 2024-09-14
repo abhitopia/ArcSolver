@@ -190,7 +190,7 @@ class SelfAttention(nn.Module):
         self.n_dim = config.n_dim
 
 
-    def forward(self, x, attn_mask=None, past_key_value=None):
+    def forward(self, x, attn_mask=None, kv_cache=None, return_kv_cache=False):
         # x: (B, T, C)
         B, T, C = x.size()
 
@@ -203,14 +203,14 @@ class SelfAttention(nn.Module):
         k = k.view(B, T, self.n_head, C // self.n_head)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, n_head, T, head_dim)
 
-        # If past_key_value is present, concatenate past keys and values BEFORE applying RoPE
-        if past_key_value is not None:
-            past_k, past_v = past_key_value  # K: (B, T_past, n_head, head_dim), V: (B, n_head, T_past, head_dim)
+        # If kv_cache is present, concatenate past keys and values BEFORE applying RoPE
+        if kv_cache is not None:
+            past_k, past_v = kv_cache  # K: (B, T_past, n_head, head_dim), V: (B, n_head, T_past, head_dim)
             k = torch.cat([past_k, k], dim=1)  # Concatenate along sequence length dimension
             v = torch.cat([past_v, v], dim=2)
 
-        # Update present_key_value
-        present_key_value = (k, v)
+        # Update new_kv_cache
+        new_kv_cache = (k, v) if return_kv_cache else None
 
         # Generate position indices for the concatenated sequence
         total_seq_len = k.size(1)  # k now contains both past and current
@@ -240,7 +240,7 @@ class SelfAttention(nn.Module):
         # Output projection
         y = self.c_proj(attn_output)
 
-        return y, present_key_value
+        return y, new_kv_cache
 
 
 
@@ -330,11 +330,11 @@ class TransformerBlock(nn.Module):
                             RMSNorm(config.n_dim),
                             SwiGLUFFN(config.n_dim, 4 * config.n_dim))
 
-    def forward(self, x, attn_mask=None, past_key_value=None):
-        attn_output, present_key_value = self.attn(self.rmsnorm(x), attn_mask=attn_mask, past_key_value=past_key_value)
+    def forward(self, x, attn_mask=None, kv_cache=None, return_kv_cache=False):
+        attn_output, new_kv_cache = self.attn(self.rmsnorm(x), attn_mask=attn_mask, kv_cache=kv_cache, return_kv_cache=return_kv_cache)
         x = x + self.dropout(attn_output)
         x = x + self.dropout(self.normed_mlp(x))
-        return x, present_key_value
+        return x, new_kv_cache
 
 
 class Interpreter(nn.Module):
@@ -368,20 +368,13 @@ class Interpreter(nn.Module):
         # self.apply(self._init_weights)
 
     @staticmethod
-    def get_attn_mask(src_len, trg_len, non_causal_prefix_len):
-        # Note: One may be prompted to default non_causal_prefix_len to None
-        # but if you think further, you will realise that in case src_len < any(non_causal_prefix_len)
-        # then the default value of None will not work. Hence, it is better to always pass the
-        # non_causal_prefix_len explicitly
-
-        batch_size = non_causal_prefix_len.size(0)
-        device = non_causal_prefix_len.device
-
+    def get_attn_mask(batch_size, src_len, trg_len, device, non_causal_prefix_len):
         # CREATE ATTENTION MASK Shape [bs, trg_len, src_len]
         offset = src_len - trg_len
-
-        # print(f"Offset: {offset}")
         causal_mask = torch.ones(batch_size, trg_len, src_len, dtype=torch.bool, device=device).tril(diagonal=offset)
+
+        if non_causal_prefix_len is None:
+            return causal_mask.unsqueeze(1).to(device)
 
         # Create a range tensor for comparison
         idx = torch.arange(src_len, device=device).unsqueeze(0).unsqueeze(0)  # Shape: [1, 1, src_len]
@@ -395,41 +388,17 @@ class Interpreter(nn.Module):
         # # Combine the lower triangular mask with the full mask
         attn_mask = causal_mask | non_causal_mask
 
-        attn_mask = attn_mask.to(device) if device is not None else attn_mask
-
-        # print("Sum of attn_mask", attn_mask.sum())
-        return attn_mask.unsqueeze(1)  # Shape: [bs, 1, trg_len, src_len]
+        return attn_mask.unsqueeze(1).to(device)  # Shape: [bs, 1, trg_len, src_len]
 
 
-    
-    def forward(self, prog_idx, inp_idx, inp_len, n_loops, next_input_idx=None, max_grad_loops=None, past_key_values=None):
+    def forward(self, prog_idx, inp_idx, inp_len, n_loops, max_grad_loops=None, return_convergence_mse=False, return_kv_caches=False):
         # idx is of shape (B, T)
 
-        if prog_idx is None or inp_idx is None:
-            assert prog_idx is None and inp_idx is None, "Both program and input must be None"
-            assert next_input_idx is not None, "next_input_idx must be provided if program and input are None"
-            assert past_key_values is not None, "past_key_values must be provided if program and input are None"
-            assert len(past_key_values) == n_loops, "Number of past_key_values count must match number of loops"
-            assert len(past_key_values[0]) == self.config.n_layer, "Number of past_key_values blocks must match number of layers"
-            past_key = past_key_values[0][0][0]
-            T_past = past_key.size(1)
-            T_future = next_input_idx.size(1)
-            batch_seq_len = T_past + T_future
-            B1 = past_key.size(0)
-            B2 = next_input_idx.size(0)
-            assert B1 == B2, "Batch size of past_key_values and next_input_idx must match"
-            assert max_grad_loops is None, "max_grad_loops must be None if program and input are None"
-
-        else:
-            assert next_input_idx is None, "next_input_idx must be None if program and input are provided"
-            assert past_key_values is None, "past_key_values must be None if program and input are provided"
-
-            B1, T1 = prog_idx.size()
-            B2, T2 = inp_idx.size()
-            batch_seq_len = T1 + T2
-            assert B1 == B2, "Batch size of program and input must match"
-            assert T1 == 1, "Program input must be a single token"
-
+        B1, T1 = prog_idx.size()
+        B2, T2 = inp_idx.size()
+        batch_seq_len = T1 + T2
+        assert B1 == B2, "Batch size of program and input must match"
+        assert T1 == 1, "Program input must be a single token"
 
         assert batch_seq_len <= self.config.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.config.max_seq_len}"
 
@@ -442,61 +411,116 @@ class Interpreter(nn.Module):
         grad_loop_start = n_loops - max_grad_loops
 
 
+        # forward the token and position embeddings
+        prog_emb = self.pte(prog_idx)  # (B, T1, n_dim)
+        inp_emb = self.wte(inp_idx)    # (B, T2, n_dim)
+        x = torch.cat((prog_emb, inp_emb), dim=1)
 
-        if next_input_idx is None:
-            # forward the token and position embeddings
-            prog_emb = self.pte(prog_idx)  # (B, T1, n_dim)
-            inp_emb = self.wte(inp_idx)    # (B, T2, n_dim)
-            x = torch.cat((prog_emb, inp_emb), dim=1)
-        else:
-            x = self.wte(next_input_idx)  # (B, T3, n_dim)
-
-        attn_mask = self.get_attn_mask(src_len=batch_seq_len,  trg_len=x.size(1), non_causal_prefix_len=inp_len)
+        attn_mask = self.get_attn_mask(
+                        batch_size=x.size(0),
+                        src_len=batch_seq_len,
+                        trg_len=x.size(1),
+                        device=x.device,
+                        non_causal_prefix_len=inp_len)
 
         output = torch.zeros_like(x)
         convergence_mse = []
-
-        # Initialize past_key_values if not provided, with one set of kv-cache for each block and each loop
-        if past_key_values is None:
-            past_key_values = [[None] * len(self.blocks) for _ in range(n_loops)]
-
-        # List to store the updated kv-cache for each loop
-        updated_past_key_values = []
-
-        # print(f"Interpreter.forward: x shape: {x.shape}, output shape: {output.shape}")
+        updated_kv_caches = []
 
         for loop_id in range(n_loops):
             prev_output = output
 
-            # Create a new list of past_key_values for the current loop
-            loop_past_key_values = []
+            loop_kv_caches = []
 
             with torch.set_grad_enabled(loop_id >= grad_loop_start and self.training):
                 # Inject input and output from previous loop iteration
                 layer_inp = torch.cat((x, output), dim=-1)  # (B, T, 2 * n_dim)
                 output = self.inp_inject(layer_inp)         # (B, T, n_dim)
 
-                # new_past_key_values = []
                 for i, block in enumerate(self.blocks):
-                    # Pass the past_key_values from the specific loop_id
-                    output, present_key_value = block(output, attn_mask=attn_mask, past_key_value=past_key_values[loop_id][i])
+                    # Pass the kv_caches from the specific loop_id
+                    output, new_kv_cache = block(output, attn_mask=attn_mask, return_kv_cache=return_kv_caches)
 
                     # Store the updated kv-cache for the current block in the current loop
-                    loop_past_key_values.append(present_key_value)
-
-
-            # Update MSE to track convergence between loops
-            output_mse = F.mse_loss(output, prev_output)
-            convergence_mse.append(output_mse.item())
+                    loop_kv_caches.append(new_kv_cache)
 
             # Store the updated kv-cache for this loop iteration
-            updated_past_key_values.append(loop_past_key_values)
+            updated_kv_caches.append(loop_kv_caches)
+
+            if return_convergence_mse:
+                # Update MSE to track convergence between loops
+                output_mse = F.mse_loss(output, prev_output)
+                convergence_mse.append(output_mse.item())
 
         # Forward the final layernorm and the classifier
         output = self.ln_f(output)
         logits = self.lm_head(output)  # (B, T, vocab_size)
 
-        return logits, convergence_mse, updated_past_key_values
+        final_output = [logits]
+
+        if return_convergence_mse:
+            final_output.append(convergence_mse)
+
+        if return_kv_caches:
+            final_output.append(updated_kv_caches)
+
+        return tuple(final_output) if len(final_output) > 1 else final_output[0]
+
+
+    def forward_inc(self, next_input_idx, kv_caches, n_loops, non_causal_prefix_len=None):
+        assert len(kv_caches) == n_loops, "Number of kv_caches count must match number of loops"
+        assert len(kv_caches[0]) == self.config.n_layer, "Number of kv_caches blocks must match number of layers"
+        past_key = kv_caches[0][0][0]
+        T_past = past_key.size(1)
+        T_future = next_input_idx.size(1)
+        batch_seq_len = T_past + T_future
+        B1 = past_key.size(0)
+        B2 = next_input_idx.size(0)
+        assert B1 == B2, "Batch size of kv_caches and next_input_idx must match"
+
+        assert batch_seq_len <= self.config.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.config.max_seq_len}"
+        assert n_loops > 0, "Number of loops must be greater than 0"
+
+        x = self.wte(next_input_idx)  # (B, T3, n_dim)
+
+        attn_mask = self.get_attn_mask(
+                        batch_size=x.size(0),
+                        src_len=batch_seq_len,
+                        trg_len=x.size(1),
+                        device=x.device, 
+                        non_causal_prefix_len=non_causal_prefix_len)
+
+        output = torch.zeros_like(x)
+
+        # List to store the updated kv-cache for each loop
+        updated_kv_caches = []
+
+        for loop_id in range(n_loops):
+            prev_output = output
+
+            # Create a new list of kv_caches for the current loop
+            loop_kv_caches = []
+
+            # Inject input and output from previous loop iteration
+            layer_inp = torch.cat((x, output), dim=-1)  # (B, T, 2 * n_dim)
+            output = self.inp_inject(layer_inp)         # (B, T, n_dim)
+
+            # new_kv_caches = []
+            for i, block in enumerate(self.blocks):
+                # Pass the kv_caches from the specific loop_id
+                output, new_kv_cache = block(output, attn_mask=attn_mask, kv_cache=kv_caches[loop_id][i], return_kv_cache=True)
+
+                # Store the updated kv-cache for the current block in the current loop
+                loop_kv_caches.append(new_kv_cache)
+
+            # Store the updated kv-cache for this loop iteration
+            updated_kv_caches.append(loop_kv_caches)
+
+        # Forward the final layernorm and the classifier
+        output = self.ln_f(output)
+        logits = self.lm_head(output)  # (B, T, vocab_size)
+
+        return logits, updated_kv_caches
 
 
     def greedy_search(self, prog_idx, inp_idx, n_loops, max_length, eos_token_id=12):
@@ -512,33 +536,35 @@ class Interpreter(nn.Module):
         prog_idx = torch.tensor([prog_idx], dtype=torch.long, device=device)  # Shape: (1, len(prog_idx))
 
         # Add EOS token to the end of the input sequence
-        pad_token_id = self.grid_tokenizer.PAD_IDX
-        inp_idx = torch.tensor([inp_idx + [pad_token_id]], dtype=torch.long, device=device)    # Shape: (1, len(inp_idx))
+        inp_idx = torch.tensor([inp_idx], dtype=torch.long, device=device)    # Shape: (1, len(inp_idx))
+
+        logits, kv_caches = self.forward(
+                prog_idx,
+                inp_idx,
+                inp_len,
+                n_loops,
+                return_kv_caches=True
+            )
 
         # Compute inp_len
-        # Initialize the output sequence and past_key_values
+        # Initialize the output sequence and kv_caches
+        pad_token_id = self.grid_tokenizer.PAD_IDX
+        last_token = pad_token_id
+
         output_sequence = torch.tensor([], dtype=torch.long, device=device)  # Shape: (seq_len,)
-        past_key_values = None
 
         for t in range(max_length):
             # Prepare the next input (the last generated token)
             if output_sequence.size(0) > 0:
                 last_token = output_sequence[-1].item()
-                # If EOS token is generated, stop
-                if last_token == eos_token_id:
-                    break
-                next_input_idx = torch.tensor([[last_token]], dtype=torch.long, device=device)  # Shape: (1, 1)
-            else:
-                next_input_idx = None  # At the first time step
+
+            next_input_idx = torch.tensor([[last_token]], dtype=torch.long, device=device)  # Shape: (1, 1)
 
             # Run the model forward
-            logits, _, past_key_values = self.forward(
-                prog_idx if next_input_idx is None else None,
-                inp_idx if next_input_idx is None else None,
-                inp_len,
-                n_loops,
+            logits, kv_caches = self.forward_inc(
                 next_input_idx=next_input_idx,
-                past_key_values=past_key_values
+                kv_caches=kv_caches,
+                n_loops=n_loops
             )
 
             # Get the logits for the last token
@@ -572,13 +598,13 @@ class Interpreter(nn.Module):
                 print(f"Batch {b}: {len(candidates)} candidates")
 
                 # Expand each candidate in the beam
-                for seq, score, past_key_values, is_completed in candidates:
+                for seq, score, kv_caches, is_completed in candidates:
                     print(f"Sequence: {seq.tolist()}, Score: {score}")
 
                     # If the sequence is completed, move it to the completed list but keep it in the beam
                     if is_completed:
                         completed_sequences[b].append((seq, score))
-                        all_candidates[b].append((seq, score, past_key_values, True))  # Keep in beam but mark completed
+                        all_candidates[b].append((seq, score, kv_caches, True))  # Keep in beam but mark completed
                         continue  # Don't expand this sequence further
 
                     # Prepare the next input (i.e., the last generated token in the sequence)
@@ -587,14 +613,14 @@ class Interpreter(nn.Module):
                     else:
                         output_idx = None
 
-                    # Run the forward pass using the past_key_values from this specific beam
-                    logits, _, new_past_key_values = self.forward(
+                    # Run the forward pass using the kv_caches from this specific beam
+                    logits, _, new_kv_caches = self.forward(
                         prog_idx[b].unsqueeze(0),
                         inp_idx[b].unsqueeze(0),
                         inp_len[b].unsqueeze(0),
                         n_loops,
                         next_input_idx=output_idx,
-                        past_key_values=past_key_values
+                        kv_caches=kv_caches
                     )
 
                     # Get the logits for the next token
@@ -611,14 +637,14 @@ class Interpreter(nn.Module):
                         new_seq = torch.cat([seq, token.unsqueeze(0)])
                         new_score = score + token_log_prob.item()
 
-                        # Clone the past_key_values for the new candidate (so they don't share references)
-                        cloned_past_key_values = [[(k.clone(), v.clone()) if k is not None else None for (k, v, *_) in loop_kv] for loop_kv in new_past_key_values]
+                        # Clone the kv_caches for the new candidate (so they don't share references)
+                        cloned_kv_caches = [[(k.clone(), v.clone()) if k is not None else None for (k, v, *_) in loop_kv] for loop_kv in new_kv_caches]
 
                         # Check if the sequence is completed (EOS token found)
                         is_completed = token.item() == eos_token_id
 
                         # Add the new sequence, score, kv-cache, and completion status to the candidate list for batch b
-                        all_candidates[b].append((new_seq, new_score, cloned_past_key_values, is_completed))
+                        all_candidates[b].append((new_seq, new_score, cloned_kv_caches, is_completed))
 
             # Reorder and select the top beam_width sequences for each batch element
             for b in range(B):
@@ -655,7 +681,7 @@ class Interpreter(nn.Module):
     #             # print(f"Batch {b}: {len(candidates)} candidates")
 
     #             # Expand each candidate in the beam
-    #             for seq, score, past_key_values in candidates:
+    #             for seq, score, kv_caches in candidates:
     #                 # print(f"Sequence: {seq.tolist()}, Score: {score}")
 
     #                 # If the sequence is complete (EOS token found), add it to completed sequences
@@ -669,14 +695,14 @@ class Interpreter(nn.Module):
     #                 else:
     #                     output_idx = None
 
-    #                 # Run the forward pass using the past_key_values from this specific beam
-    #                 logits, _, new_past_key_values = self.forward(
+    #                 # Run the forward pass using the kv_caches from this specific beam
+    #                 logits, _, new_kv_caches = self.forward(
     #                     prog_idx[b].unsqueeze(0),
     #                     inp_idx[b].unsqueeze(0),
     #                     inp_len[b].unsqueeze(0),
     #                     n_loops,
     #                     next_input_idx=output_idx,
-    #                     past_key_values=past_key_values
+    #                     kv_caches=kv_caches
     #                 )
 
     #                 # Get the logits for the next token
@@ -694,11 +720,11 @@ class Interpreter(nn.Module):
     #                     new_score = score + token_log_prob.item()
 
 
-    #                     # Clone the past_key_values for the new candidate (so they don't share references)
-    #                     cloned_past_key_values = [[(k.clone(), v.clone()) if k is not None else None for k, v in loop_kv] for loop_kv in new_past_key_values]
+    #                     # Clone the kv_caches for the new candidate (so they don't share references)
+    #                     cloned_kv_caches = [[(k.clone(), v.clone()) if k is not None else None for k, v in loop_kv] for loop_kv in new_kv_caches]
 
     #                     # Add the new sequence, score, and kv-cache to the candidate list for batch b
-    #                     all_candidates[b].append((new_seq, new_score, cloned_past_key_values))
+    #                     all_candidates[b].append((new_seq, new_score, cloned_kv_caches))
 
     #         # Reorder and select the top beam_width sequences for each batch element
     #         for b in range(B):
