@@ -171,5 +171,4 @@ lambda/
 wandb/
 
 runs_v1/
-
-data/analysis
+*.json
