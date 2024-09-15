@@ -191,7 +191,7 @@ class InferenceManager:
             # results = pool.map(process_task_in_worker, tasks)
 
             # Use imap_unordered to get results as soon as each task completes
-            results = pool.imap_unordered(process_task_in_worker, tasks)
+            results = pool.imap_unordered(process_task_in_worker, remaining_tasks)
 
 
             print(f"Started processing {len(tasks)} tasks in parallel")
