@@ -360,6 +360,9 @@ class Interpreter(nn.Module):
                 grid_tokenizer: GridTokenizer = None):
         super().__init__()
         self.config = config
+        self.n_layer = config.n_layer
+        self.max_seq_len = config.max_seq_len
+
         self.prog_tokenizer = prog_tokenizer
         self.grid_tokenizer = grid_tokenizer
 
@@ -375,7 +378,6 @@ class Interpreter(nn.Module):
 
         self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
         
-        self.max_seq_len = config.max_seq_len
         
         # weight sharing scheme. Transformer++ (Llama architecture does not tie weights)
         # Reference: https://youtu.be/pRM_P6UfdIc?t=1500
@@ -497,9 +499,14 @@ class Interpreter(nn.Module):
         return logits, updated_kv_caches, convergence_mse
 
 
-    def forward_inc(self, next_input_idx, kv_caches, n_loops, non_causal_prefix_len=None):
+    @torch.jit.export
+    def forward_inc(self, 
+                next_input_idx: Tensor, 
+                kv_caches: List[List[Tuple[Tensor, Tensor]]], 
+                n_loops: int, 
+                non_causal_prefix_len: Optional[Tensor] = None) -> Tuple[Tensor, List[List[Tuple[Tensor, Tensor]]]]:
         assert len(kv_caches) == n_loops, "Number of kv_caches count must match number of loops"
-        assert len(kv_caches[0]) == self.config.n_layer, "Number of kv_caches blocks must match number of layers"
+        assert len(kv_caches[0]) == self.n_layer, "Number of kv_caches blocks must match number of layers"
         past_key = kv_caches[0][0][0]
         T_past = past_key.size(1)
         T_future = next_input_idx.size(1)
@@ -508,7 +515,7 @@ class Interpreter(nn.Module):
         B2 = next_input_idx.size(0)
         assert B1 == B2, "Batch size of kv_caches and next_input_idx must match"
 
-        assert batch_seq_len <= self.config.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.config.max_seq_len}"
+        assert batch_seq_len <= self.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.max_seq_len}"
         assert n_loops > 0, "Number of loops must be greater than 0"
 
         x = self.wte(next_input_idx)  # (B, T3, n_dim)
@@ -523,13 +530,13 @@ class Interpreter(nn.Module):
         output = torch.zeros_like(x)
 
         # List to store the updated kv-cache for each loop
-        updated_kv_caches = []
+        updated_kv_caches: List[List[Tuple[Tensor, Tensor]]] = []
+
 
         for loop_id in range(n_loops):
-            prev_output = output
-
             # Create a new list of kv_caches for the current loop
-            loop_kv_caches = []
+            loop_kv_caches: List[Tuple[Tensor, Tensor]] = []
+
 
             # Inject input and output from previous loop iteration
             layer_inp = torch.cat((x, output), dim=-1)  # (B, T, 2 * n_dim)
@@ -541,7 +548,8 @@ class Interpreter(nn.Module):
                 output, new_kv_cache = block(output, attn_mask=attn_mask, kv_cache=kv_caches[loop_id][i], return_kv_cache=True)
 
                 # Store the updated kv-cache for the current block in the current loop
-                loop_kv_caches.append(new_kv_cache)
+                if new_kv_cache is not None:  # For torch script. It should always be True
+                    loop_kv_caches.append(new_kv_cache)
 
             # Store the updated kv-cache for this loop iteration
             updated_kv_caches.append(loop_kv_caches)
