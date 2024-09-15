@@ -701,7 +701,7 @@ class Interpreter(nn.Module):
 
             # reconstruct kv_caches based on the original indices
             kv_caches = _select_kv_caches(kv_caches, original_indices)
-            mask_ends_eos = output_sequence[:, -1] == 12
+            mask_ends_eos = output_sequence[:, -1] == eos_token_id
 
             # Separate the sequences that end with EOS token
             completed_sequences = output_sequence[mask_ends_eos]
