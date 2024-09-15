@@ -1,4 +1,6 @@
 #%%
+import json
+from pathlib import Path
 import torch.multiprocessing as mp
 import torch
 from tqdm import tqdm
@@ -81,33 +83,7 @@ class InferenceWorker:
 
 
         return result
-#%%
-
-# class InferenceWorker:
-#     def __init__(self, checkpoint_path, device):
-#         """
-#         Initialize the worker with a given model checkpoint and device.
-#         This will load the model on the specified device.
-#         """
-#         self.checkpoint_path = checkpoint_path
-#         self.device = device
-#         self.model = self.initialize_model()
-
-#     def initialize_model(self):
-#         """
-#         Initialize the model only once and reuse it for all tasks in this worker.
-#         """
-#         print(f"Initializing model on {self.device} with checkpoint {self.checkpoint_path}")
-#         model = InferenceEngine(self.checkpoint_path, device=self.device)
-#         return model
-
-#     def process_task(self, task, iters=4):
-#         """
-#         Process a single task with the loaded model.
-#         """
-#         self.model(task, iters=iters)
-#         return f"Processed task {task}"
-
+    
 # Global worker for each process
 _global_worker = None
 
@@ -140,17 +116,40 @@ class InferenceManager:
         self.num_workers = num_workers
         self.device = device
 
-    def run_in_parallel(self, tasks, iters):
+    def save_results(self, output, output_path):
+        """
+        Save the output to a file.
+        """
+        with open(output_path, 'w') as f:
+            f.write(json.dumps(output, indent=4))
+
+    def run_in_parallel(self, tasks, iters, output_path, save_interval=10):
         """
         Run tasks in parallel using a pool of workers.
         Each worker initializes the model once and processes multiple tasks.
         """
+
+        # Resume from the file if it exists
+        output_path = Path(output_path)
 
         output = {
             "checkpoint_path": self.checkpoint_path,
             "iters": iters,
             "tasks": []
         }
+
+        if output_path.exists():
+            output = json.load(output_path.open('r'))
+            
+        
+        # Remove already processed tasks
+        processed_task_ids = set(task["task_id"] for task in output["tasks"])
+        remaining_tasks = [task for task in tasks if task.id not in processed_task_ids]
+
+        print(f"Processing {len(remaining_tasks)} out of {len(tasks)} tasks")
+   
+        progress_bar = tqdm(total=len(tasks))
+        progress_bar.update(len(processed_task_ids))
 
         if self.num_workers == 1:
             # If only one worker, process tasks sequentially
@@ -159,10 +158,15 @@ class InferenceManager:
             init_worker(self.checkpoint_path, self.device, iters)
             print(f"Started processing {len(tasks)} tasks sequentially")
 
-            for idx, task in tqdm(enumerate(tasks)):
-                print(f"Processing task {idx}")
+
+            for idx, task in enumerate(remaining_tasks):
                 result = process_task_in_worker(task)
                 output["tasks"].append(result)
+                progress_bar.update(1)
+
+                if idx % save_interval == 0 and idx > 0:
+                    self.save_results(output, output_path)
+
 
             print(f"Finished processing {len(tasks)} tasks in sequentially")
 
@@ -179,19 +183,19 @@ class InferenceManager:
             results = pool.imap_unordered(process_task_in_worker, tasks)
 
 
-            
             print(f"Started processing {len(tasks)} tasks in parallel")
 
+
             # Progress bar to track task completion
-            for result in tqdm(results, total=len(tasks)):
-                # Do something with each result
+            for idx, result in enumerate(results):
                 output["tasks"].append(result)
+                progress_bar.update(1)
+
+                if idx % save_interval == 0 and idx > 0:
+                    self.save_results(output, output_path)
 
                 
 
         print(f"Finished processing {len(tasks)} tasks in parallel")
         return output
 
-
-# Example usage:
-# if __name__ == "__main__":
