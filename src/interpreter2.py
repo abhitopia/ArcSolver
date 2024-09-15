@@ -365,6 +365,7 @@ class Interpreter(nn.Module):
 
         self.prog_tokenizer = prog_tokenizer
         self.grid_tokenizer = grid_tokenizer
+        self.PAD_IDX = self.grid_tokenizer.PAD_IDX if self.grid_tokenizer is not None else 13
 
         self.pte = nn.Embedding(config.prog_vocab_size, config.n_dim)
         self.wte = nn.Embedding(config.grid_vocab_size, config.n_dim)
@@ -560,13 +561,17 @@ class Interpreter(nn.Module):
 
         return logits, updated_kv_caches
 
-
-    @torch.no_grad()
-    def greedy_search(self, prog_idx, inp_idx, n_loops, max_length, eos_token_id=12):
+    @torch.jit.export
+    def greedy_search(self, 
+            prog_idx: List[int],
+            inp_idx: List[int], 
+            n_loops: int, 
+            max_length: int, 
+            eos_token_id: int = 12)-> Tuple[List[int], float]:
         # Assume prog_idx and inp_idx are lists of integers
         # Batch size is 1
-
-        device = next(self.parameters()).device  # Get the device (CPU or GPU) from the model parameters
+        torch.set_grad_enabled(False)
+        device = self.wte.weight.device  # Get the device from the embedding layer (assuming it's available)
 
         # Compute inp_len as len(prog_idx) + len(inp_idx)
         inp_len = torch.tensor([len(prog_idx) + len(inp_idx)], dtype=torch.long, device=device)  # Shape: (1,)
@@ -582,12 +587,18 @@ class Interpreter(nn.Module):
                 inp_idx,
                 inp_len,
                 n_loops,
-                return_kv_caches=True
-            )
+                max_grad_loops=None,
+                return_kv_caches=True,
+                return_convergence_mse=False
+        )
+
+        # kv_caches is never None, this is just for TorchScript
+        if kv_caches is None:
+            kv_caches = []  # Ensure kv_caches is a List[List[Tuple[Tensor, Tensor]]]
 
         # Compute inp_len
         # Initialize the output sequence and kv_caches
-        pad_token_id = self.grid_tokenizer.PAD_IDX
+        pad_token_id = self.PAD_IDX
         last_token = pad_token_id
 
         output_sequence = torch.tensor([], dtype=torch.long, device=device)  # Shape: (seq_len,)
@@ -604,8 +615,8 @@ class Interpreter(nn.Module):
             logits, kv_caches = self.forward_inc(
                 next_input_idx=next_input_idx,
                 kv_caches=kv_caches,
-                n_loops=n_loops
-            )
+                n_loops=n_loops,
+                non_causal_prefix_len=None)
 
             # Get the logits for the last token
             next_logits = logits[:, -1, :]  # Shape: (1, vocab_size)
@@ -613,7 +624,7 @@ class Interpreter(nn.Module):
 
             # Select the token with the highest probability
             top_token = torch.argmax(next_logits, dim=-1)  # Shape: (1,)
-            top_log_prob = next_log_probs[0, top_token.item()].item()
+            top_log_prob = next_log_probs[0, top_token].item()
             output_log_prob += top_log_prob
 
             # Append the new token to the output sequence
@@ -623,15 +634,16 @@ class Interpreter(nn.Module):
             if top_token.item() == eos_token_id:
                 break
 
-        return output_sequence.tolist(), output_log_prob
-
+        output_list: List[int] = output_sequence.tolist()  # Use .tolist() now since it's supported in TorchScript
+        torch.set_grad_enabled(True)
+        return output_list, output_log_prob
 
     @torch.no_grad()
     def beam_search(self, prog_idx, inp_idx, n_loops, max_length, top_k=5, eos_token_id=12):
         # Assume prog_idx and inp_idx are lists of integers
         # Batch size is 1
 
-        device = next(self.parameters()).device  # Get the device (CPU or GPU) from the model parameters
+        device = self.wte.weight.device  # Get the device from the embedding layer (assuming it's available)
 
         def _select_kv_caches(kv_caches, mask_or_indices):
             # Selects the kv_caches for a specific beam index
