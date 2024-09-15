@@ -38,9 +38,19 @@ class InferenceWorker:
         inp = self.grid_tokenizer.encode(inp)
         out = self.grid_tokenizer.encode(out)
         return (p, inp), out
+
+    
+    def clear_gpu_cache(self):
+        if torch.cuda.is_available():
+            torch.cuda.synchronize() # wait for the GPU to finish work
+            torch.cuda.empty_cache()
+        elif self.device.type == 'mps':
+            torch.mps.synchronize() # wait for the MPS to finish work
+            torch.mps.empty_cache() # clear the MPS cache
+
     
     def process_example(self, example, iters=None, top_k=5, max_length=1024, beam_search=True, greedy_search=False):
-
+        self.clear_gpu_cache()
         # (p, inp), out = example
         (p, inp), out = self.tokenize(example)
 
@@ -170,7 +180,7 @@ class InferenceManager:
 
 
             print(f"Finished processing {len(tasks)} tasks in sequentially")
-
+            self.save_results(output, output_path)
             return output
 
         # Create the multiprocessing pool
@@ -196,7 +206,7 @@ class InferenceManager:
                     self.save_results(output, output_path)
 
                 
-
+        self.save_results(output, output_path)
         print(f"Finished processing {len(tasks)} tasks in parallel")
         return output
 
