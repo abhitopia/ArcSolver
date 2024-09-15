@@ -67,19 +67,21 @@
 - [x] Remove IDENT_CID tranformation in favour of `original` version
 - [x] Check if the results of the new model match for greedy evaluation
 - [x] Add Beam Search (inefficient implementation)
-- [ ] Test KV cache implementation
-- [ ] Implement Gredy search with and without KV cache and verify the results match
-- [ ] Fix the beam search implementation
-- [ ] Test the beam search implementation speed on GPU
+- [x] Test KV cache implementation
+- [x] Implement Gredy search with and without KV cache and verify the results match
+- [x] Fix the beam search implementation
+- [x] Test the beam search implementation speed on GPU
+- [ ] Implement parallel model executor
 - [ ] Write analysis code topk vs beam width vs accuracy vs iters
 
 
 ## Future Work
 - [ ] Implement faster kv-cached version of the model
+- [ ] https://github.com/neoneye/arc-dataset-tama/tree/main
 - [ ] Use Simon's https://github.com/neoneye/simon-arc-lab/tree/main/simon_arc_dataset_run  to generate more data
 - [ ] Investigate REARC dataset and generation process (possibly use embeddings to selectively generate)
 - [ ] Write Evaluation + Visualisation Script
-
+- [ ] Symbolic generator https://github.com/richemslie/McARGA
 - [ ] Make curriculum resume easier?
 - [ ] Start using Gumbel Softmax (Make it switchable hyperparameter)
 - [ ] Start using MetaLearning
