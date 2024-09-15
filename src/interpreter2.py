@@ -5,7 +5,8 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from .utils import is_power_of_two, get_logger
+import torch.types
+from .utils import is_power_of_two, get_logger, gather_along_zero_dim
 from .dataset import ProgramTokenizer, GridTokenizer
 from torch import Tensor
 from torch.cuda.amp import autocast
@@ -523,6 +524,7 @@ class Interpreter(nn.Module):
         return logits, updated_kv_caches
 
 
+    @torch.no_grad()
     def greedy_search(self, prog_idx, inp_idx, n_loops, max_length, eos_token_id=12):
         # Assume prog_idx and inp_idx are lists of integers
         # Batch size is 1
@@ -582,229 +584,141 @@ class Interpreter(nn.Module):
 
         return output_sequence.tolist()
 
-    def beam_search(self, prog_idx, inp_idx, inp_len, n_loops, beam_width, max_length, eos_token_id):
-        device = prog_idx.device
-        B = prog_idx.size(0)
 
-        # Initialize the beam with empty sequences, zero scores, and kv-cache for each loop/block
-        beam = [[(torch.tensor([], dtype=torch.long, device=device), 0.0, [[None]*len(self.blocks) for _ in range(n_loops)], False)] for _ in range(B)]  # Added False to track completion
-        completed_sequences = [[] for _ in range(B)]  # Store completed sequences separately
+    @torch.no_grad()
+    def beam_search(self, prog_idx, inp_idx, n_loops, max_length, top_k=5, eos_token_id=12):
+        # Assume prog_idx and inp_idx are lists of integers
+        # Batch size is 1
+
+        def _select_kv_caches(kv_caches, mask_or_indices):
+            # Selects the kv_caches for a specific beam index
+            selected_kv_caches = []
+            for loop_kv in kv_caches:
+                selected_loop_kv = []
+                for k, v in loop_kv:
+                    if isinstance(mask_or_indices, torch.BoolTensor):
+                        k = k[mask_or_indices]
+                        v = v[mask_or_indices]
+                    elif isinstance(mask_or_indices, torch.LongTensor):
+                        k = gather_along_zero_dim(k, mask_or_indices)
+                        v = gather_along_zero_dim(v, mask_or_indices)
+                    else:
+                        raise ValueError("mask_or_indices must be a tensor of type bool or long")
+                    selected_loop_kv.append((k, v))
+                selected_kv_caches.append(selected_loop_kv)
+            return selected_kv_caches
+
+        device = next(self.parameters()).device  # Get the device (CPU or GPU) from the model parameters
+
+        # Compute inp_len as len(prog_idx) + len(inp_idx)
+        inp_len = torch.tensor([len(prog_idx) + len(inp_idx)], dtype=torch.long, device=device)  # Shape: (1,)
+
+        # Convert prog_idx and inp_idx to tensors and add batch dimension
+        prog_idx = torch.tensor([prog_idx], dtype=torch.long, device=device)  # Shape: (1, len(prog_idx))
+
+        # Add EOS token to the end of the input sequence
+        inp_idx = torch.tensor([inp_idx], dtype=torch.long, device=device)    # Shape: (1, len(inp_idx))
+
+        logits, kv_caches = self.forward(
+                prog_idx,
+                inp_idx,
+                inp_len,
+                n_loops,
+                return_kv_caches=True
+            )
+
+        # Compute inp_len
+        # Initialize the output sequence and kv_caches
+        pad_token_id = self.grid_tokenizer.PAD_IDX
+        last_token = pad_token_id
+
+        next_input_idx = torch.tensor([[last_token]], dtype=torch.long, device=device) # Shape: (1, 1)
+
+        output_sequence = torch.zeros(1, 0, dtype=torch.long, device=device)  # Shape: (1,)
+        output_log_probs = torch.zeros(1, 0, dtype=torch.float, device=device)  # Shape: (1,)
+
+        output_candidates = []
 
         for t in range(max_length):
-            all_candidates = [[] for _ in range(B)]  # Store all candidates for each batch element
+            # Prepare the next input (the last generated token)
+            if output_sequence.size(1) > 0:
+                # last_token = output_sequence[-1].item()
+                next_input_idx = output_sequence[:, -1].unsqueeze(1)
+            
+            # Run the model forward
+            logits, kv_caches = self.forward_inc(
+                next_input_idx=next_input_idx,
+                kv_caches=kv_caches,
+                n_loops=n_loops)
 
-            for b in range(B):
-                candidates = beam[b]
-                print(f"Batch {b}: {len(candidates)} candidates")
+            seq_len = output_sequence.size(1)
+            bs = output_sequence.size(0)
+            # Get the logits for the last token
+            next_logits = logits[:, -1, :]  # Shape: (1, vocab_size)
+            log_probs = F.log_softmax(next_logits, dim=-1)  # Shape: (1, vocab_size)
 
-                # Expand each candidate in the beam
-                for seq, score, kv_caches, is_completed in candidates:
-                    print(f"Sequence: {seq.tolist()}, Score: {score}")
+            # Convert log probabilities to probabilities for sampling
+            probs = torch.exp(log_probs)
 
-                    # If the sequence is completed, move it to the completed list but keep it in the beam
-                    if is_completed:
-                        completed_sequences[b].append((seq, score))
-                        all_candidates[b].append((seq, score, kv_caches, True))  # Keep in beam but mark completed
-                        continue  # Don't expand this sequence further
+            sample_k_tokens = torch.multinomial(probs, top_k, replacement=False)
+            # Gather the log probabilities of the sampled tokens for each sequence
+            batch_indices = torch.arange(log_probs.size(0)).unsqueeze(-1).expand(-1, top_k)
+            sample_log_probs = log_probs[batch_indices, sample_k_tokens]
 
-                    # Prepare the next input (i.e., the last generated token in the sequence)
-                    if len(seq) > 0:
-                        output_idx = seq.unsqueeze(0)  # (1, seq_len)
-                    else:
-                        output_idx = None
+            # Get top top_k tokens and their log probabilities
+            # topk_log_probs, topk_tokens = log_probs.topk(top_k, dim=-1)  # Each is (1, beam_width)
 
-                    # Run the forward pass using the kv_caches from this specific beam
-                    logits, _, new_kv_caches = self.forward(
-                        prog_idx[b].unsqueeze(0),
-                        inp_idx[b].unsqueeze(0),
-                        inp_len[b].unsqueeze(0),
-                        n_loops,
-                        next_input_idx=output_idx,
-                        kv_caches=kv_caches
-                    )
+            topk_log_probs, topk_tokens = sample_log_probs, sample_k_tokens
 
-                    # Get the logits for the next token
-                    next_logits = logits[:, -1, :]  # (1, vocab_size)
-                    next_log_probs = F.log_softmax(next_logits, dim=-1)  # (1, vocab_size)
+            # Expand the sequences and log_probs
+            output_sequence = output_sequence.unsqueeze(1).expand(bs, top_k, seq_len)  # Shape: (bs,  top_k, seq_len)
+            output_log_probs = output_log_probs.unsqueeze(1).expand(bs, top_k, seq_len)  # Shape: (bs, top_k, seq_len)
 
-                    # Get the top beam_width tokens
-                    topk_log_probs, topk_tokens = torch.topk(next_log_probs, beam_width)
+            # Combine the expanded sequences with the new tokens
+            output_sequence = torch.cat([output_sequence, topk_tokens.unsqueeze(-1)], dim=-1)  # Shape: (top_k, seq_len+1, top_k)
+            output_log_probs = torch.cat([output_log_probs, topk_log_probs.unsqueeze(-1)], dim=-1)  # Shape: (top_k, seq_len+1, top_k)
+ 
+            # reshape the output sequence and log_probs
+            output_sequence = output_sequence.reshape(bs * top_k, -1)  # Shape: (top_k*bs, seq_len+1)
+            output_log_probs = output_log_probs.reshape(bs * top_k, -1)  # Shape: (top_k*bs, seq_len+1)
 
-                    # For each possible next token
-                    for i in range(beam_width):
-                        token = topk_tokens[0, i]
-                        token_log_prob = topk_log_probs[0, i]
-                        new_seq = torch.cat([seq, token.unsqueeze(0)])
-                        new_score = score + token_log_prob.item()
+            _, sorted_indices = output_log_probs.sum(dim=-1).sort(descending=True)  # Shape: (top_k^2,)
 
-                        # Clone the kv_caches for the new candidate (so they don't share references)
-                        cloned_kv_caches = [[(k.clone(), v.clone()) if k is not None else None for (k, v, *_) in loop_kv] for loop_kv in new_kv_caches]
+            # Select the top top_k sequences
+            topk_indices = sorted_indices[:top_k]  # Shape: (top_k,)
 
-                        # Check if the sequence is completed (EOS token found)
-                        is_completed = token.item() == eos_token_id
+            original_indices = topk_indices // top_k  # Shape: (top_k,)
 
-                        # Add the new sequence, score, kv-cache, and completion status to the candidate list for batch b
-                        all_candidates[b].append((new_seq, new_score, cloned_kv_caches, is_completed))
+            # Update the output sequence and log_probs
+            output_sequence = output_sequence[topk_indices]
+            output_log_probs = output_log_probs[topk_indices]
 
-            # Reorder and select the top beam_width sequences for each batch element
-            for b in range(B):
-                candidates = all_candidates[b]
-                ordered = sorted(candidates, key=lambda tup: tup[1], reverse=True)  # Sort by score (descending)
-                
-                # Keep only top beam_width candidates, including both completed and non-completed sequences
-                beam[b] = ordered[:beam_width]
+            # reconstruct kv_caches based on the original indices
+            kv_caches = _select_kv_caches(kv_caches, original_indices)
+            mask_ends_eos = output_sequence[:, -1] == 12
 
-            # Early stopping if all sequences are completed
-            if all(len(completed_sequences[b]) >= beam_width for b in range(B)):
+            # Separate the sequences that end with EOS token
+            completed_sequences = output_sequence[mask_ends_eos]
+            completed_log_probs = output_log_probs[mask_ends_eos].sum(dim=-1)
+
+            for seq, log_prob in zip(completed_sequences, completed_log_probs):
+                output_candidates.append((seq.tolist(), log_prob.item()))
+
+            output_sequence = output_sequence[~mask_ends_eos]
+            output_log_probs = output_log_probs[~mask_ends_eos]
+
+            kv_caches = _select_kv_caches(kv_caches, ~mask_ends_eos)
+            
+            # If all sequences are completed, stop
+            if output_sequence.size(0) == 0:
                 break
 
-        # After the loop ends, gather all completed sequences along with remaining beam candidates
-        final_sequences = []
-        for b in range(B):
-            # Return all completed sequences and, if there are no completed sequences, return the top beam candidates
-            final_sequences.append(completed_sequences[b] if completed_sequences[b] else beam[b])
+        # Sort the output candidates by their log probabilities
+        output_candidates = sorted(output_candidates, key=lambda x: x[1], reverse=True)
 
-        return final_sequences
+        # print("Output candidates:", output_candidates)
+        return output_candidates
 
-    # def beam_search(self, prog_idx, inp_idx, inp_len, n_loops, beam_width, max_length, eos_token_id):
-    #     device = prog_idx.device
-    #     B = prog_idx.size(0)
-
-    #     # Initialize the beam with empty sequences, zero scores, and kv-cache for each loop/block
-    #     beam = [[(torch.tensor([], dtype=torch.long, device=device), 0.0, [[None]*len(self.blocks) for _ in range(n_loops)])] for _ in range(B)]
-    #     completed_sequences = [[] for _ in range(B)]
-
-    #     for t in range(max_length):
-    #         all_candidates = [[] for _ in range(B)]  # Store all candidates for each batch element
-    #         for b in range(B):
-    #             candidates = beam[b]
-    #             # print(f"Batch {b}: {len(candidates)} candidates")
-
-    #             # Expand each candidate in the beam
-    #             for seq, score, kv_caches in candidates:
-    #                 # print(f"Sequence: {seq.tolist()}, Score: {score}")
-
-    #                 # If the sequence is complete (EOS token found), add it to completed sequences
-    #                 if len(seq) > 0 and seq[-1].item() == eos_token_id:
-    #                     completed_sequences[b].append((seq, score))
-    #                     continue
-
-    #                 # Prepare the next input (i.e., the last generated token in the sequence)
-    #                 if len(seq) > 0:
-    #                     output_idx = seq.unsqueeze(0)  # (1, seq_len)
-    #                 else:
-    #                     output_idx = None
-
-    #                 # Run the forward pass using the kv_caches from this specific beam
-    #                 logits, _, new_kv_caches = self.forward(
-    #                     prog_idx[b].unsqueeze(0),
-    #                     inp_idx[b].unsqueeze(0),
-    #                     inp_len[b].unsqueeze(0),
-    #                     n_loops,
-    #                     next_input_idx=output_idx,
-    #                     kv_caches=kv_caches
-    #                 )
-
-    #                 # Get the logits for the next token
-    #                 next_logits = logits[:, -1, :]  # (1, vocab_size)
-    #                 next_log_probs = F.log_softmax(next_logits, dim=-1)  # (1, vocab_size)
-
-    #                 # Get the top beam_width tokens
-    #                 topk_log_probs, topk_tokens = torch.topk(next_log_probs, beam_width)
-
-    #                 # For each possible next token
-    #                 for i in range(beam_width):
-    #                     token = topk_tokens[0, i]
-    #                     token_log_prob = topk_log_probs[0, i]
-    #                     new_seq = torch.cat([seq, token.unsqueeze(0)])
-    #                     new_score = score + token_log_prob.item()
-
-
-    #                     # Clone the kv_caches for the new candidate (so they don't share references)
-    #                     cloned_kv_caches = [[(k.clone(), v.clone()) if k is not None else None for k, v in loop_kv] for loop_kv in new_kv_caches]
-
-    #                     # Add the new sequence, score, and kv-cache to the candidate list for batch b
-    #                     all_candidates[b].append((new_seq, new_score, cloned_kv_caches))
-
-    #         # Reorder and select the top beam_width sequences for each batch element
-    #         for b in range(B):
-    #             candidates = all_candidates[b]
-    #             ordered = sorted(candidates, key=lambda tup: tup[1], reverse=True)  # Sort by score (descending)
-    #             beam[b] = ordered[:beam_width]  # Keep only top beam_width candidates
-
-    #         # Early stopping if all sequences are completed
-    #         if all(len(completed_sequences[b]) >= beam_width for b in range(B)):
-    #             break
-
-    #     # Collect all completed sequences, and if there are no completed sequences, use partial ones
-    #     final_sequences = []
-    #     for b in range(B):
-    #         # If there are completed sequences, return them all
-    #         if completed_sequences[b]:
-    #             final_sequences.append(completed_sequences[b])
-    #         # Otherwise, return the top beam candidates (even if incomplete)
-    #         else:
-    #             final_sequences.append(beam[b])
-
-    #     return final_sequences
-
-
-
-    # # Beam Search Function
-    # def beam_search(self, prog_idx, inp_idx, inp_len, n_loops, beam_width, max_length, eos_token_id):
-    #     device = prog_idx.device
-    #     B = prog_idx.size(0)
-    #     # Initialize the beam with empty sequences and zero scores
-    #     beam = [[(torch.tensor([], dtype=torch.long, device=device), 0.0)] for _ in range(B)]
-    #     completed_sequences = [[] for _ in range(B)]
-
-    #     for t in range(max_length):
-    #         all_candidates = [[] for _ in range(B)]
-    #         for b in range(B):
-    #             candidates = beam[b]
-    #             for seq, score in candidates:
-    #                 if len(seq) > 0 and seq[-1].item() == eos_token_id:
-    #                     # Sequence is already completed
-    #                     completed_sequences[b].append((seq, score))
-    #                     continue
-    #                 # Prepare the output_idx
-    #                 if len(seq) > 0:
-    #                     output_idx = seq.unsqueeze(0)  # (1, seq_len)
-    #                 else:
-    #                     output_idx = None
-    #                 # Run the model forward
-    #                 logits, _ = self.forward(
-    #                     prog_idx[b].unsqueeze(0),
-    #                     inp_idx[b].unsqueeze(0),
-    #                     inp_len,
-    #                     n_loops,
-    #                     next_input_idx=output_idx
-    #                 )
-    #                 # Get the logits for the next token
-    #                 next_logits = logits[:, -1, :]  # (1, vocab_size)
-    #                 next_log_probs = F.log_softmax(next_logits, dim=-1)  # (1, vocab_size)
-    #                 # Get the top beam_width tokens
-    #                 topk_log_probs, topk_tokens = torch.topk(next_log_probs, beam_width)
-    #                 # For each possible next token
-    #                 for i in range(beam_width):
-    #                     token = topk_tokens[0, i]
-    #                     token_log_prob = topk_log_probs[0, i]
-    #                     new_seq = torch.cat([seq, token.unsqueeze(0)])
-    #                     new_score = score + token_log_prob.item()
-    #                     all_candidates[b].append((new_seq, new_score))
-    #         # Reorder and select the top beam_width sequences for each batch element
-    #         for b in range(B):
-    #             candidates = all_candidates[b]
-    #             ordered = sorted(candidates, key=lambda tup: tup[1], reverse=True)
-    #             beam[b] = ordered[:beam_width]
-    #     # Collect the best sequences
-    #     final_sequences = []
-    #     for b in range(B):
-    #         sequences = completed_sequences[b] if completed_sequences[b] else beam[b]
-    #         best_seq = max(sequences, key=lambda tup: tup[1])[0]
-    #         final_sequences.append(best_seq)
-    #     return final_sequences
- 
 
     def loss_fn(self, logits, targets):
         loss =  F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), reduction='none').view_as(targets)   # This will be a float tensor
