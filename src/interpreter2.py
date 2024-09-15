@@ -554,6 +554,7 @@ class Interpreter(nn.Module):
         last_token = pad_token_id
 
         output_sequence = torch.tensor([], dtype=torch.long, device=device)  # Shape: (seq_len,)
+        output_log_prob = 0.0
 
         for t in range(max_length):
             # Prepare the next input (the last generated token)
@@ -571,9 +572,12 @@ class Interpreter(nn.Module):
 
             # Get the logits for the last token
             next_logits = logits[:, -1, :]  # Shape: (1, vocab_size)
+            next_log_probs = F.log_softmax(next_logits, dim=-1)
 
             # Select the token with the highest probability
             top_token = torch.argmax(next_logits, dim=-1)  # Shape: (1,)
+            top_log_prob = next_log_probs[0, top_token.item()].item()
+            output_log_prob += top_log_prob
 
             # Append the new token to the output sequence
             output_sequence = torch.cat([output_sequence, top_token])
@@ -582,7 +586,7 @@ class Interpreter(nn.Module):
             if top_token.item() == eos_token_id:
                 break
 
-        return output_sequence.tolist()
+        return output_sequence.tolist(), output_log_prob
 
 
     @torch.no_grad()
@@ -716,7 +720,6 @@ class Interpreter(nn.Module):
         # Sort the output candidates by their log probabilities
         output_candidates = sorted(output_candidates, key=lambda x: x[1], reverse=True)
 
-        # print("Output candidates:", output_candidates)
         return output_candidates
 
 
