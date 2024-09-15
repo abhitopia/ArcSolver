@@ -594,25 +594,27 @@ class Interpreter(nn.Module):
         # Assume prog_idx and inp_idx are lists of integers
         # Batch size is 1
 
+        device = next(self.parameters()).device  # Get the device (CPU or GPU) from the model parameters
+
         def _select_kv_caches(kv_caches, mask_or_indices):
             # Selects the kv_caches for a specific beam index
             selected_kv_caches = []
             for loop_kv in kv_caches:
                 selected_loop_kv = []
                 for k, v in loop_kv:
-                    if isinstance(mask_or_indices, torch.BoolTensor):
+                    if isinstance(mask_or_indices, torch.Tensor) and mask_or_indices.dtype == torch.bool:
                         k = k[mask_or_indices]
                         v = v[mask_or_indices]
-                    elif isinstance(mask_or_indices, torch.LongTensor):
+                    elif isinstance(mask_or_indices, torch.Tensor) and mask_or_indices.dtype == torch.long:
                         k = gather_along_zero_dim(k, mask_or_indices)
                         v = gather_along_zero_dim(v, mask_or_indices)
+                        assert v.size(0) == mask_or_indices.size(0), "Gathering didn't work!"
                     else:
-                        raise ValueError("mask_or_indices must be a tensor of type bool or long")
+                        raise ValueError(f"mask_or_indices must be a tensor of type bool or long. Got {type(mask_or_indices)}: {mask_or_indices} ")
                     selected_loop_kv.append((k, v))
                 selected_kv_caches.append(selected_loop_kv)
             return selected_kv_caches
 
-        device = next(self.parameters()).device  # Get the device (CPU or GPU) from the model parameters
 
         # Compute inp_len as len(prog_idx) + len(inp_idx)
         inp_len = torch.tensor([len(prog_idx) + len(inp_idx)], dtype=torch.long, device=device)  # Shape: (1,)
@@ -880,4 +882,3 @@ class Interpreter(nn.Module):
 #%%
 
 
-# %%
