@@ -15,7 +15,7 @@ class InferenceWorker:
         self.device = device
         self.model = self.load_checkpoint(checkpoint_path)
         self.model.to(self.device)
-        self.model.share_memory()
+        # self.model.share_memory()
         self.prog_tokenizer = self.model.prog_tokenizer
         self.grid_tokenizer = self.model.grid_tokenizer
         self.iters = iters
