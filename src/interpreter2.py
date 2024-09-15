@@ -1,7 +1,7 @@
 #%%
 from dataclasses import dataclass
 import inspect
-from typing import Optional
+from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -117,7 +117,7 @@ class RotaryPositionalEmbeddings(nn.Module):
         self.register_buffer("cache", cache, persistent=False)
 
     @autocast(enabled = False)
-    def forward(self, x: Tensor, *, input_pos: Optional[Tensor] = None) -> Tensor:
+    def forward(self, x: Tensor, input_pos: Optional[Tensor] = None) -> Tensor:
         """
         Args:
             x (Tensor): input tensor with shape
@@ -141,7 +141,9 @@ class RotaryPositionalEmbeddings(nn.Module):
         for inference.
         """
         # input tensor has shape [b, s, n_h, h_d]
-        seq_len = x.size(1)
+        # seq_len = x.size(1)
+        batch_size, seq_len, n_heads, head_dim = x.shape
+
 
         # extract the values based on whether input_pos is set or not
         rope_cache = (
@@ -151,7 +153,8 @@ class RotaryPositionalEmbeddings(nn.Module):
         # reshape input; the last dimension is used for computing the output.
         # Cast to float to match the reference implementation
         # tensor has shape [b, s, n_h, h_d // 2, 2]
-        xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
+        # xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
+        xshaped = x.float().reshape(batch_size, seq_len, n_heads, -1, 2)
 
         # reshape the cache for broadcasting
         # tensor has shape [b, s, 1, h_d // 2, 2] if packed samples,
@@ -189,9 +192,15 @@ class SelfAttention(nn.Module):
         # regularization
         self.n_head = config.n_head
         self.n_dim = config.n_dim
+        self.dropout = config.dropout
 
 
-    def forward(self, x, attn_mask=None, kv_cache=None, return_kv_cache=False):
+    # def forward(self, x, attn_mask=None, kv_cache=None, return_kv_cache=False):
+
+    def forward(self, x: Tensor, 
+            attn_mask: Optional[Tensor] = None, 
+            kv_cache: Optional[Tuple[Tensor, Tensor]] = None, 
+            return_kv_cache: bool = False) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
         # x: (B, T, C)
         B, T, C = x.size()
 
@@ -205,13 +214,14 @@ class SelfAttention(nn.Module):
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, n_head, T, head_dim)
 
         # If kv_cache is present, concatenate past keys and values BEFORE applying RoPE
-        if kv_cache is not None:
+        if kv_cache is not None and torch.jit.isinstance(kv_cache, Tuple[Tensor, Tensor]):
             past_k, past_v = kv_cache  # K: (B, T_past, n_head, head_dim), V: (B, n_head, T_past, head_dim)
             k = torch.cat([past_k, k], dim=1)  # Concatenate along sequence length dimension
             v = torch.cat([past_v, v], dim=2)
 
         # Update new_kv_cache
-        new_kv_cache = (k, v) if return_kv_cache else None
+        new_kv_cache: Optional[Tuple[Tensor, Tensor]] = (k, v) if return_kv_cache else None
+
 
         # Generate position indices for the concatenated sequence
         total_seq_len = k.size(1)  # k now contains both past and current
@@ -232,7 +242,8 @@ class SelfAttention(nn.Module):
         k = k.transpose(1, 2)  # (B, n_head, total_seq_len, head_dim)
         
         # Compute attention
-        attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=self.config.dropout)
+        dropout_p = self.dropout if self.training else 0.0
+        attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p)
 
         # attn_output: (B, n_head, T, head_dim)
         # Reshape back to (B, T, C)
@@ -331,7 +342,11 @@ class TransformerBlock(nn.Module):
                             RMSNorm(config.n_dim),
                             SwiGLUFFN(config.n_dim, 4 * config.n_dim))
 
-    def forward(self, x, attn_mask=None, kv_cache=None, return_kv_cache=False):
+    def forward(self, x: Tensor, 
+            attn_mask: Optional[Tensor] = None, 
+            kv_cache: Optional[Tuple[Tensor, Tensor]] = None, 
+            return_kv_cache: bool = False) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
+
         attn_output, new_kv_cache = self.attn(self.rmsnorm(x), attn_mask=attn_mask, kv_cache=kv_cache, return_kv_cache=return_kv_cache)
         x = x + self.dropout(attn_output)
         x = x + self.dropout(self.normed_mlp(x))
@@ -360,6 +375,7 @@ class Interpreter(nn.Module):
 
         self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
         
+        self.max_seq_len = config.max_seq_len
         
         # weight sharing scheme. Transformer++ (Llama architecture does not tie weights)
         # Reference: https://youtu.be/pRM_P6UfdIc?t=1500
@@ -369,7 +385,8 @@ class Interpreter(nn.Module):
         # self.apply(self._init_weights)
 
     @staticmethod
-    def get_attn_mask(batch_size, src_len, trg_len, device, non_causal_prefix_len):
+    def get_attn_mask(batch_size: int, src_len: int, trg_len: int, device: torch.device, non_causal_prefix_len: Optional[Tensor]) -> Tensor:
+
         # CREATE ATTENTION MASK Shape [bs, trg_len, src_len]
         offset = src_len - trg_len
         causal_mask = torch.ones(batch_size, trg_len, src_len, dtype=torch.bool, device=device).tril(diagonal=offset)
@@ -392,7 +409,32 @@ class Interpreter(nn.Module):
         return attn_mask.unsqueeze(1).to(device)  # Shape: [bs, 1, trg_len, src_len]
 
 
-    def forward(self, prog_idx, inp_idx, inp_len, n_loops, max_grad_loops=None, return_convergence_mse=False, return_kv_caches=False):
+    def forward_loop(self, x: Tensor, output: Tensor, attn_mask: Optional[Tensor] = None, return_kv_caches: bool = False) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]:
+        loop_kv_caches: List[Tuple[Tensor, Tensor]] = []
+
+        # Inject input and output from previous loop iteration
+        layer_inp = torch.cat((x, output), dim=-1)  # (B, T, 2 * n_dim)
+        output = self.inp_inject(layer_inp)         # (B, T, n_dim)
+
+        for block in self.blocks:
+            # Pass the kv_caches from the specific loop_id
+            output, new_kv_cache = block(output, attn_mask=attn_mask, return_kv_cache=return_kv_caches)
+
+            # Ensure new_kv_cache is not None before appending
+            if return_kv_caches and new_kv_cache is not None:
+                loop_kv_caches.append(new_kv_cache)
+
+        return output, loop_kv_caches
+
+
+    def forward(self, prog_idx: Tensor, 
+            inp_idx: Tensor, 
+            inp_len: Tensor, 
+            n_loops: int,  
+            max_grad_loops: Optional[int] = None,  
+            return_kv_caches: bool = False,
+            return_convergence_mse: bool = False, 
+        ) -> Tuple[Tensor, Optional[List[List[Tuple[Tensor, Tensor]]]], Optional[List[float]]]:
         # idx is of shape (B, T)
 
         B1, T1 = prog_idx.size()
@@ -401,7 +443,7 @@ class Interpreter(nn.Module):
         assert B1 == B2, "Batch size of program and input must match"
         assert T1 == 1, "Program input must be a single token"
 
-        assert batch_seq_len <= self.config.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.config.max_seq_len}"
+        assert batch_seq_len <= self.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.max_seq_len}"
 
         assert n_loops > 0, "Number of loops must be greater than 0"
         if max_grad_loops is None or max_grad_loops > n_loops: 
@@ -425,30 +467,25 @@ class Interpreter(nn.Module):
                         non_causal_prefix_len=inp_len)
 
         output = torch.zeros_like(x)
-        convergence_mse = []
-        updated_kv_caches = []
+
+        convergence_mse: Optional[List[float]] = [] if return_convergence_mse else None
+        updated_kv_caches: Optional[List[List[Tuple[Tensor, Tensor]]]] = [] if return_kv_caches else None
 
         for loop_id in range(n_loops):
             prev_output = output
 
-            loop_kv_caches = []
+            # Disable torch.set_grad_enabled for TorchScript since with context manager is not supported
+            if not torch.jit.is_scripting():
+                with torch.set_grad_enabled(loop_id >= grad_loop_start and self.training):
+                    output, loop_kv_caches = self.forward_loop(x, output, attn_mask=attn_mask, return_kv_caches=return_kv_caches)
+            else:
+                output, loop_kv_caches = self.forward_loop(x, output, attn_mask=attn_mask, return_kv_caches=return_kv_caches)
 
-            with torch.set_grad_enabled(loop_id >= grad_loop_start and self.training):
-                # Inject input and output from previous loop iteration
-                layer_inp = torch.cat((x, output), dim=-1)  # (B, T, 2 * n_dim)
-                output = self.inp_inject(layer_inp)         # (B, T, n_dim)
+            if updated_kv_caches is not None:
+                # Store the updated kv-cache for this loop iteration
+                updated_kv_caches.append(loop_kv_caches)
 
-                for i, block in enumerate(self.blocks):
-                    # Pass the kv_caches from the specific loop_id
-                    output, new_kv_cache = block(output, attn_mask=attn_mask, return_kv_cache=return_kv_caches)
-
-                    # Store the updated kv-cache for the current block in the current loop
-                    loop_kv_caches.append(new_kv_cache)
-
-            # Store the updated kv-cache for this loop iteration
-            updated_kv_caches.append(loop_kv_caches)
-
-            if return_convergence_mse:
+            if convergence_mse is not None:
                 # Update MSE to track convergence between loops
                 output_mse = F.mse_loss(output, prev_output)
                 convergence_mse.append(output_mse.item())
@@ -457,15 +494,7 @@ class Interpreter(nn.Module):
         output = self.ln_f(output)
         logits = self.lm_head(output)  # (B, T, vocab_size)
 
-        final_output = [logits]
-
-        if return_convergence_mse:
-            final_output.append(convergence_mse)
-
-        if return_kv_caches:
-            final_output.append(updated_kv_caches)
-
-        return tuple(final_output) if len(final_output) > 1 else final_output[0]
+        return logits, updated_kv_caches, convergence_mse
 
 
     def forward_inc(self, next_input_idx, kv_caches, n_loops, non_causal_prefix_len=None):
@@ -540,7 +569,7 @@ class Interpreter(nn.Module):
         # Add EOS token to the end of the input sequence
         inp_idx = torch.tensor([inp_idx], dtype=torch.long, device=device)    # Shape: (1, len(inp_idx))
 
-        logits, kv_caches = self.forward(
+        logits, kv_caches, _ = self.forward(
                 prog_idx,
                 inp_idx,
                 inp_len,
@@ -625,7 +654,7 @@ class Interpreter(nn.Module):
         # Add EOS token to the end of the input sequence
         inp_idx = torch.tensor([inp_idx], dtype=torch.long, device=device)    # Shape: (1, len(inp_idx))
 
-        logits, kv_caches = self.forward(
+        logits, kv_caches, _ = self.forward(
                 prog_idx,
                 inp_idx,
                 inp_len,
