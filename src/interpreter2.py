@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import torch.types
-from .utils import is_power_of_two, get_logger, gather_along_zero_dim
+from .utils import is_power_of_two, get_logger, gather_4d_tensor_along_zero_dim
 from .dataset import ProgramTokenizer, GridTokenizer
 from torch import Tensor
 from torch.cuda.amp import autocast
@@ -637,32 +637,42 @@ class Interpreter(nn.Module):
         output_list: List[int] = output_sequence.tolist()  # Use .tolist() now since it's supported in TorchScript
         torch.set_grad_enabled(True)
         return output_list, output_log_prob
+    
+    @staticmethod
+    def _select_kv_caches(kv_caches: List[List[Tuple[torch.Tensor, torch.Tensor]]], mask_or_indices: torch.Tensor) -> List[List[Tuple[torch.Tensor, torch.Tensor]]]:
+        # Selects the kv_caches for a specific beam index
+        selected_kv_caches: List[List[Tuple[torch.Tensor, torch.Tensor]]] = []
+        for loop_kv in kv_caches:
+            selected_loop_kv: List[Tuple[torch.Tensor, torch.Tensor]] = []
+            for k, v in loop_kv:
+                if isinstance(mask_or_indices, torch.Tensor) and mask_or_indices.dtype == torch.bool:
+                    k = k[mask_or_indices]
+                    v = v[mask_or_indices]
+                elif isinstance(mask_or_indices, torch.Tensor) and mask_or_indices.dtype == torch.long:
+                    k = gather_4d_tensor_along_zero_dim(k, mask_or_indices)
+                    v = gather_4d_tensor_along_zero_dim(v, mask_or_indices)
+                    assert v.size(0) == mask_or_indices.size(0), "Gathering didn't work!"
+                else:
+                    raise ValueError(f"mask_or_indices must be a tensor of type bool or long. Got {mask_or_indices} ")
+                selected_loop_kv.append((k, v))
+            selected_kv_caches.append(selected_loop_kv)
+        return selected_kv_caches
+    
 
-    @torch.no_grad()
-    def beam_search(self, prog_idx, inp_idx, n_loops, max_length, top_k=5, eos_token_id=12):
+    @torch.jit.export
+    def beam_search(self, 
+            prog_idx: List[int],
+            inp_idx: List[int], 
+            n_loops: int, 
+            max_length: int, 
+            top_k: int = 5,
+            eos_token_id: int = 12)-> List[Tuple[List[int], float]]:
+        
         # Assume prog_idx and inp_idx are lists of integers
         # Batch size is 1
+        torch.set_grad_enabled(False)
 
         device = self.wte.weight.device  # Get the device from the embedding layer (assuming it's available)
-
-        def _select_kv_caches(kv_caches, mask_or_indices):
-            # Selects the kv_caches for a specific beam index
-            selected_kv_caches = []
-            for loop_kv in kv_caches:
-                selected_loop_kv = []
-                for k, v in loop_kv:
-                    if isinstance(mask_or_indices, torch.Tensor) and mask_or_indices.dtype == torch.bool:
-                        k = k[mask_or_indices]
-                        v = v[mask_or_indices]
-                    elif isinstance(mask_or_indices, torch.Tensor) and mask_or_indices.dtype == torch.long:
-                        k = gather_along_zero_dim(k, mask_or_indices)
-                        v = gather_along_zero_dim(v, mask_or_indices)
-                        assert v.size(0) == mask_or_indices.size(0), "Gathering didn't work!"
-                    else:
-                        raise ValueError(f"mask_or_indices must be a tensor of type bool or long. Got {type(mask_or_indices)}: {mask_or_indices} ")
-                    selected_loop_kv.append((k, v))
-                selected_kv_caches.append(selected_loop_kv)
-            return selected_kv_caches
 
 
         # Compute inp_len as len(prog_idx) + len(inp_idx)
@@ -679,12 +689,19 @@ class Interpreter(nn.Module):
                 inp_idx,
                 inp_len,
                 n_loops,
-                return_kv_caches=True
+                max_grad_loops=None,
+                return_kv_caches=True,
+                return_convergence_mse=False
             )
+        
+        # kv_caches is never None, this is just for TorchScript
+        if kv_caches is None:
+            kv_caches = []  # Ensure kv_caches is a List[List[Tuple[Tensor, Tensor]]]
+
 
         # Compute inp_len
         # Initialize the output sequence and kv_caches
-        pad_token_id = self.grid_tokenizer.PAD_IDX
+        pad_token_id = self.PAD_IDX
         last_token = pad_token_id
 
         next_input_idx = torch.tensor([[last_token]], dtype=torch.long, device=device) # Shape: (1, 1)
@@ -692,7 +709,7 @@ class Interpreter(nn.Module):
         output_sequence = torch.zeros(1, 0, dtype=torch.long, device=device)  # Shape: (1,)
         output_log_probs = torch.zeros(1, 0, dtype=torch.float, device=device)  # Shape: (1,)
 
-        output_candidates = []
+        output_candidates: List[Tuple[float, List[int]]] = []
 
         for t in range(max_length):
             # Prepare the next input (the last generated token)
@@ -704,7 +721,8 @@ class Interpreter(nn.Module):
             logits, kv_caches = self.forward_inc(
                 next_input_idx=next_input_idx,
                 kv_caches=kv_caches,
-                n_loops=n_loops)
+                n_loops=n_loops,
+                non_causal_prefix_len=None)
 
             seq_len = output_sequence.size(1)
             bs = output_sequence.size(0)
@@ -737,7 +755,7 @@ class Interpreter(nn.Module):
             output_sequence = output_sequence.reshape(bs * top_k, -1)  # Shape: (top_k*bs, seq_len+1)
             output_log_probs = output_log_probs.reshape(bs * top_k, -1)  # Shape: (top_k*bs, seq_len+1)
 
-            _, sorted_indices = output_log_probs.sum(dim=-1).sort(descending=True)  # Shape: (top_k^2,)
+            sorted_log_probs, sorted_indices = output_log_probs.sum(dim=-1).sort(descending=True)  # Shape: (top_k^2,)
 
             # Select the top top_k sequences
             topk_indices = sorted_indices[:top_k]  # Shape: (top_k,)
@@ -749,7 +767,7 @@ class Interpreter(nn.Module):
             output_log_probs = output_log_probs[topk_indices]
 
             # reconstruct kv_caches based on the original indices
-            kv_caches = _select_kv_caches(kv_caches, original_indices)
+            kv_caches = self._select_kv_caches(kv_caches, original_indices)
             mask_ends_eos = output_sequence[:, -1] == eos_token_id
 
             # Separate the sequences that end with EOS token
@@ -757,26 +775,32 @@ class Interpreter(nn.Module):
             completed_log_probs = output_log_probs[mask_ends_eos].sum(dim=-1)
 
             for seq, log_prob in zip(completed_sequences, completed_log_probs):
-                output_candidates.append((seq.tolist(), log_prob.item()))
+                seq_list: List[int] = seq.tolist()
+                log_prob: float = float(log_prob.item())
+                output_candidates.append((log_prob, seq_list))
 
             output_sequence = output_sequence[~mask_ends_eos]
             output_log_probs = output_log_probs[~mask_ends_eos]
 
-            kv_caches = _select_kv_caches(kv_caches, ~mask_ends_eos)
+            kv_caches = self._select_kv_caches(kv_caches, ~mask_ends_eos)
             
             # If all sequences are completed, stop
             if output_sequence.size(0) == 0:
                 break
 
         # Sort the output candidates by their log probabilities
-        output_candidates = sorted(output_candidates, key=lambda x: x[1], reverse=True)
+        # This particular way is used for TorchScript compatibility
+        # TorchScript doesn't support reverse=True in sort
+        output_candidates = sorted(output_candidates)
+        output_candidates = [(seq, log_prob) for log_prob, seq in output_candidates[::-1]]
 
+        torch.set_grad_enabled(True)
         return output_candidates
 
 
     def loss_fn(self, logits, targets):
         loss =  F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), reduction='none').view_as(targets)   # This will be a float tensor
-        mask = targets != self.grid_tokenizer.PAD_IDX
+        mask = targets != self.PAD_IDX
         loss = (loss * mask).sum() / mask.sum()
         return loss
     
