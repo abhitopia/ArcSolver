@@ -601,7 +601,8 @@ class Interpreter(nn.Module):
         pad_token_id = self.PAD_IDX
         last_token = pad_token_id
 
-        output_sequence = torch.tensor([], dtype=torch.long, device=device)  # Shape: (seq_len,)
+        # Annotate the empty tensor for TorchScript
+        output_sequence = torch.empty(0, dtype=torch.long, device=device)  # Shape: (seq_len,)
         output_log_prob = 0.0
 
         for t in range(max_length):
@@ -709,7 +710,9 @@ class Interpreter(nn.Module):
         output_sequence = torch.zeros(1, 0, dtype=torch.long, device=device)  # Shape: (1,)
         output_log_probs = torch.zeros(1, 0, dtype=torch.float, device=device)  # Shape: (1,)
 
-        output_candidates: List[Tuple[float, List[int]]] = []
+        candidate_sequences: List[List[int]] = []  # Separate list for sequences
+        candidate_log_probs: List[float] = []  # Separate list for log probabilities
+
 
         for t in range(max_length):
             # Prepare the next input (the last generated token)
@@ -777,7 +780,8 @@ class Interpreter(nn.Module):
             for seq, log_prob in zip(completed_sequences, completed_log_probs):
                 seq_list: List[int] = seq.tolist()
                 log_prob: float = float(log_prob.item())
-                output_candidates.append((log_prob, seq_list))
+                candidate_sequences.append(seq_list)
+                candidate_log_probs.append(log_prob)
 
             output_sequence = output_sequence[~mask_ends_eos]
             output_log_probs = output_log_probs[~mask_ends_eos]
@@ -788,11 +792,14 @@ class Interpreter(nn.Module):
             if output_sequence.size(0) == 0:
                 break
 
-        # Sort the output candidates by their log probabilities
         # This particular way is used for TorchScript compatibility
-        # TorchScript doesn't support reverse=True in sort
-        output_candidates = sorted(output_candidates)
-        output_candidates = [(seq, log_prob) for log_prob, seq in output_candidates[::-1]]
+        # Sort the candidate_log_probs and reorder candidate_sequences based on the sorted candidate_log_probs
+        sorted_indices: List[int] = torch.tensor(candidate_log_probs).argsort(descending=True).tolist()  # Sort indices based on log_probs
+        sorted_log_probs = [candidate_log_probs[i] for i in sorted_indices]
+        sorted_sequences = [candidate_sequences[i] for i in sorted_indices]
+
+        # Combine sorted log_probs and sequences into the final output
+        output_candidates = [(seq, log_prob) for log_prob, seq in zip(sorted_log_probs, sorted_sequences)]
 
         torch.set_grad_enabled(True)
         return output_candidates
