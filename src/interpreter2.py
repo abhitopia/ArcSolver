@@ -365,7 +365,7 @@ class Interpreter(nn.Module):
 
         self.prog_tokenizer = prog_tokenizer
         self.grid_tokenizer = grid_tokenizer
-        self.PAD_IDX = self.grid_tokenizer.PAD_IDX if self.grid_tokenizer is not None else 13
+        self.PAD_IDX = self.grid_tokenizer.PAD_IDX if self.grid_tokenizer is not None else GridTokenizer().PAD_IDX
 
         self.pte = nn.Embedding(config.prog_vocab_size, config.n_dim)
         self.wte = nn.Embedding(config.grid_vocab_size, config.n_dim)
