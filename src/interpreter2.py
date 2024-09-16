@@ -797,7 +797,7 @@ class Interpreter(nn.Module):
         torch.set_grad_enabled(True)
         return output_candidates
 
-
+    @torch.jit.export
     def loss_fn(self, logits, targets):
         loss =  F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), reduction='none').view_as(targets)   # This will be a float tensor
         mask = targets != self.PAD_IDX
