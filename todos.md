@@ -71,12 +71,18 @@
 - [x] Implement Gredy search with and without KV cache and verify the results match
 - [x] Fix the beam search implementation
 - [x] Test the beam search implementation speed on GPU
-- [ ] Implement parallel model executor
+- [x] Implement parallel model executor
 - [ ] Write analysis code topk vs beam width vs accuracy vs iters
+- [x] Make all of the interpreter torch scripting compatible
+- [ ] [Block expansion paper](https://arxiv.org/abs/2401.02415)
 
+- [ ] Add weighting param to each Task Loader based on their importance. 
+    - Check how Tamas dataset performs when not trained on it
+- [ ] Use torchscript to create a ArcSolver model
+- [ ] Change batch size for eval?
 
 ## Future Work
-- [ ] Implement faster kv-cached version of the model
+- [x] Implement faster kv-cached version of the model
 - [ ] https://github.com/neoneye/arc-dataset-tama/tree/main
 - [ ] Use Simon's https://github.com/neoneye/simon-arc-lab/tree/main/simon_arc_dataset_run  to generate more data
 - [ ] Investigate REARC dataset and generation process (possibly use embeddings to selectively generate)
@@ -90,7 +96,6 @@
 - [ ] Should switch to graph NN? 
 - [ ] Can we measure grokking in the hidden phase
 - [ ] Once it works, may be introduce neural stack (transducers)
-- [ ] Change batch size for eval?
 
 ## Evaluation
 
