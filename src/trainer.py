@@ -38,6 +38,14 @@ def gradfilter_ema(
     return grads
 
 
+def clip_dense_grad_norm_(parameters, max_norm, norm_type=2):
+    """
+    Clip the norm of the gradients for all dense parameters
+    """
+    dense_params = [p for p in parameters if not p.grad.is_sparse]
+    return torch.nn.utils.clip_grad_norm_(dense_params, max_norm, norm_type)
+
+
 class MetricLogger:
     def __init__(self):
         self.reset()
@@ -298,7 +306,8 @@ class TrainerBase:
     @staticmethod
     def _init_device(_device):
         if _device is None:
-            return torch.device("mps") if torch.backends.mps.is_available() else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            # return torch.device("mps") if torch.backends.mps.is_available() else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
         elif isinstance(_device, str):
             return torch.device(_device)
         elif isinstance(_device, torch.device):
@@ -489,7 +498,7 @@ class TrainerBase:
             self._ema_grads = gradfilter_ema(self.model, grads=self._ema_grads, alpha=self.hparams.grok_alpha, lamb=self.hparams.grok_lambda)
 
         if self.clip_grad_norm is not None:
-            norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+            norm = clip_dense_grad_norm_(self.model.parameters(), 1.0)
             self.train_metrics.add_metric('GradientNorm', norm.item())
 
         self.optimizer.step()

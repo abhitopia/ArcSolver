@@ -10,7 +10,7 @@ from .utils import is_power_of_two, get_logger, gather_4d_tensor_along_zero_dim
 from .dataset import ProgramTokenizer, GridTokenizer
 from torch import Tensor
 from torch.cuda.amp import autocast
-
+from .lazy_adamw import LazyAdamW
 
 logger = get_logger()
 
@@ -367,7 +367,7 @@ class Interpreter(nn.Module):
         self.grid_tokenizer = grid_tokenizer
         self.PAD_IDX = self.grid_tokenizer.PAD_IDX if self.grid_tokenizer is not None else GridTokenizer().PAD_IDX
 
-        self.pte = nn.Embedding(config.prog_vocab_size, config.n_dim)
+        self.pte = nn.Embedding(config.prog_vocab_size, config.n_dim, sparse=True)
         self.wte = nn.Embedding(config.grid_vocab_size, config.n_dim)
         
         rope = RotaryPositionalEmbeddings(config.n_dim // config.n_head, config.max_seq_len)
@@ -853,8 +853,8 @@ class Interpreter(nn.Module):
             fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
             use_fused = fused_available
             print(f"Using fused AdamW: {use_fused}")
-            
-        optimizer = torch.optim.AdamW(optim_groups, lr=model_lr, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
+
+        optimizer = LazyAdamW(optim_groups, lr=model_lr, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
         return optimizer
 
 
