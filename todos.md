@@ -72,13 +72,22 @@
 - [x] Fix the beam search implementation
 - [x] Test the beam search implementation speed on GPU
 - [x] Implement parallel model executor
+- [ ] Set sparse=True for embedding. Should improve memory + speed (check this) (And use https://github.com/davda54/lazy-adam/blob/master/lazy_adam.py) (check if fused can be used!)
+- [ ] Implement embedding norm setting to 1.0
+- [ ] Implement L1 regularisation
+- [ ] Create a task learner/solver
+- [ ] Analyse trained model L2 norms
+- [ ] Verify that it learns for ARC_TRAIN
+- [ ] Test performance of the model ARC_EVAL
+
+
+
 - [ ] Write analysis code topk vs beam width vs accuracy vs iters
 - [x] Make all of the interpreter torch scripting compatible
 - [ ] [Block expansion paper](https://arxiv.org/abs/2401.02415)
 
 - [ ] Add weighting param to each Task Loader based on their importance. 
     - Check how Tamas dataset performs when not trained on it
-- [ ] Use torchscript to create a ArcSolver model
 - [ ] Change batch size for eval?
 
 ## Future Work
