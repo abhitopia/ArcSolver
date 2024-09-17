@@ -164,7 +164,7 @@ class LazyAdamW(Optimizer):
 
                 # Apply weight decay (L2 regularization) to sparse embeddings
                 if weight_decay != 0:
-
+                    print("Weight decay applied to sparse embeddings")
                     # p.data.add_(p.data, alpha=-group['lr'] * weight_decay)
 
                     p.grad = p.grad.coalesce()  # Ensure the sparse gradient is in coalesced form
@@ -271,6 +271,7 @@ class LazyAdamW(Optimizer):
             if l1_coeff == 0:
                 continue
 
+            print("L1 regularization applied")
             for p in group['params']:
                 if p.grad.is_sparse:
                     p.grad = p.grad.coalesce()  # Ensure the sparse gradient is coalesced
