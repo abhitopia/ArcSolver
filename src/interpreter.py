@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from .utils import is_power_of_two, get_logger
+from .lazy_adamw import LazyAdamW
 from .dataset import ProgramTokenizer, GridTokenizer
 from torch import Tensor
 from torch.cuda.amp import autocast
@@ -323,7 +324,7 @@ class Interpreter(nn.Module):
         self.prog_tokenizer = prog_tokenizer
         self.grid_tokenizer = grid_tokenizer
 
-        self.pte = nn.Embedding(config.prog_vocab_size, config.n_dim)
+        self.pte = nn.Embedding(config.prog_vocab_size, config.n_dim, sparse=True)
         self.wte = nn.Embedding(config.grid_vocab_size, config.n_dim)
         
         rope = RotaryPositionalEmbeddings(config.n_dim // config.n_head, config.max_seq_len)
@@ -523,7 +524,7 @@ class Interpreter(nn.Module):
             use_fused = fused_available
             print(f"Using fused AdamW: {use_fused}")
             
-        optimizer = torch.optim.AdamW(optim_groups, lr=model_lr, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
+        optimizer = LazyAdamW(optim_groups, lr=model_lr, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
         return optimizer
 
 
