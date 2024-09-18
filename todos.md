@@ -77,6 +77,7 @@
 - [x] Add l1_coeff param to the solver
 - [x] Migrate solver to interpreter2
 - [x] Implement embedding norm setting to 1.0
+- [x] Log embedding sparsity to wandb
 
 - [ ] Add idenity block expansion
 - [ ] Add train only identity block facility in solver
