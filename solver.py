@@ -51,6 +51,7 @@ def train(
         n_dim: int = typer.Option(16, min=4, max=512, help="Dimension of the model"),
         heads: int = typer.Option(4, min=1, max=64, help="Number of heads within each self-attention block"),
         blocks: int = typer.Option(1, min=1, max=20, help="Number of mixing blocks within each recurrent layer"),
+        pnorm: Optional[float] = typer.Option(None, min=0.0, help="Program Norm. If not None, then it is pinned to this value. If None, no constraint is placed"),
         dropout: float = typer.Option(0.0, min=0.0, max=1.0, help="Dropout probability"),
 
         # Loop Config
@@ -74,7 +75,6 @@ def train(
         mwd: float = typer.Option(0.01, min=0.0, help="Weight Decay"),
         pwd: float = typer.Option(0.0, min=0.0, help="Program Weight Decay"),
         pl1: Optional[float] = typer.Option(0.0, min=0.0, help="Program L1 Regularization"),
-
 
         # Grok Config
         grok_alpha: float = typer.Option(0.0, min=0.0, help="Grok Alpha"),
@@ -120,7 +120,8 @@ def train(
         "n_dim": n_dim,
         "n_heads": heads,
         "n_layers": blocks,
-        "dropout": dropout
+        "pnorm": pnorm,
+        "dropout": dropout,
     }
 
     optimizer_config = {
@@ -157,6 +158,10 @@ def train(
         "max_examples": 5000 if _DEV_MODE else -1, # Yes, this is optimizer config
         "clear_cache_interval": clear_cache_interval
     }
+
+    if pnorm is not None:
+        assert pwd == 0.0, "Program Weight Decay must be 0.0 when pnorm is not None"
+
 
     hparams.add_params(prefix="data", **data_config)
     hparams.add_params(prefix="model", **model_config)
@@ -308,6 +313,8 @@ def fork(
     override_hparams(hparams.model, model_config)
     override_hparams(hparams.optim, optimizer_config)
 
+    if pwd > 0:
+        assert hparams.model.pnorm is None, "Program Norm must be None when Program Weight Decay is greater than 0"
 
     if debug:
         hparams.run = f"debug_{hparams.run}"

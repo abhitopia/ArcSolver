@@ -482,6 +482,9 @@ class TrainerBase:
     
     def post_train_step(self, batch):
         pass
+
+    def post_optimizer_step(self):
+        pass
     
     def _train_step(self, batch):
         # move the batch to the device
@@ -491,11 +494,15 @@ class TrainerBase:
         self.optimizer.zero_grad()
         with torch.autocast(device_type= 'cpu' if self.device.type == 'mps' else self.device.type, dtype=torch.bfloat16):
             loss = self.train_step(batch)
+
         self.post_train_step(batch)
 
         loss.backward()
+
+        # This is super important to disable when alpha/lambda == 0, because otherwise it keeps accumulating the gradients for all program embeddings
         if self.hparams.grok_alpha is not None:
-            self._ema_grads = gradfilter_ema(self.model, grads=self._ema_grads, alpha=self.hparams.grok_alpha, lamb=self.hparams.grok_lambda)
+            if self.hparams.grok_lambda is not None and self.hparams.grok_lambda > 0:
+                self._ema_grads = gradfilter_ema(self.model, grads=self._ema_grads, alpha=self.hparams.grok_alpha, lamb=self.hparams.grok_lambda)
 
         if self.clip_grad_norm is not None:
             norm = clip_dense_grad_norm_(self.model.parameters(), 1.0)
@@ -503,6 +510,8 @@ class TrainerBase:
 
         self.optimizer.step()
         self.scheduler.step()
+
+        self.post_optimizer_step()
         
         for idx, last_lr in enumerate(self.scheduler.get_last_lr()):
             self.train_metrics.add_metric(f'LR/ParamGroup_{idx}', last_lr)

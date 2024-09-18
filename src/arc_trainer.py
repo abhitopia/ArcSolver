@@ -129,7 +129,9 @@ class ArcHparams(Hparams):
             grid_vocab_size = self.state['grid_vocab_size'],
             n_dim = self.model.n_dim, # dimension of the model embedding
             n_head = self.model.n_heads, # number of heads within each self-attention block
-            n_layer = self.model.n_layers # number of self-attention blocks
+            n_layer = self.model.n_layers, # number of self-attention blocks
+            pnorm=self.model.pnorm,
+            dropout=self.model.dropout
         )
         model = Interpreter(config,
                             prog_tokenizer=self.state['prog_tokenizer'],
@@ -382,6 +384,7 @@ class ArcTrainer(TrainerBase):
         self.eval_stats.log_accuracy(self.step)
 
 
+    @torch.no_grad()
     def _output_target_metrics(self, program_indices: torch.Tensor, logits: torch.Tensor, y: torch.Tensor, is_train):
         output_mask = y != self.model.grid_tokenizer.PAD_IDX
 
@@ -409,6 +412,7 @@ class ArcTrainer(TrainerBase):
             'total_samples': total_samples
         }
     
+    @torch.no_grad()
     def _add_step_metrics(self, loss, program_indices, logits, y, is_train, max_loops, convergence_mse):
         metrics_obj = self.train_metrics if is_train else self.eval_metrics
         batch_metrics = self._output_target_metrics(program_indices, logits, y, is_train)
@@ -431,6 +435,22 @@ class ArcTrainer(TrainerBase):
 
     def pre_train_step(self, batch):
         self.__train_batch_time_start = time.time()
+
+    def post_optimizer_step(self):
+        if self.model.config.pnorm is not None:
+            target_norm = self.model.config.pnorm
+            with torch.no_grad():
+                prog_embedding = self.model.pte
+                if prog_embedding.weight.grad is not None and prog_embedding.weight.grad.is_sparse:
+                    grad = prog_embedding.weight.grad.coalesce()  # Convert sparse gradient to coalesced form
+                    indices = grad.indices().squeeze()  # Get the indices of the embeddings that were updated
+                    weights = prog_embedding.weight[indices]  # Get the updated embedding vectors
+
+                    # Normalize the L2 norm of each updated embedding vector
+                    norm = weights.norm(p=2, dim=1, keepdim=True)
+                    scaling_factor = target_norm / norm
+                    prog_embedding.weight.data[indices] = weights * scaling_factor  # Correctly rescale the weights
+
 
     def pre_eval_step(self, batch):
         self.__eval_batch_time_start = time.time()

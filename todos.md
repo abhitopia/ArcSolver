@@ -76,8 +76,14 @@
 - [x] Set sparse=True for embedding and migrate to LazwAdamW
 - [x] Add l1_coeff param to the solver
 - [x] Migrate solver to interpreter2
+- [x] Implement embedding norm setting to 1.0
 
-- [ ] Implement embedding norm setting to 1.0
+- [ ] Add idenity block expansion
+- [ ] Add train only identity block facility in solver
+
+- [ ] Add the augmentation scale to different datasets
+- [ ] Add Tama dataset
+
 - [ ] Create a task learner/solver
 - [ ] Analyse trained model L2 norms
 - [ ] Verify that it learns for ARC_TRAIN

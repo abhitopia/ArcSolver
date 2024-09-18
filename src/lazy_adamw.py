@@ -169,6 +169,8 @@ class LazyAdamW(Optimizer):
                     p.grad = p.grad.coalesce()  # Ensure the sparse gradient is in coalesced form
                     grad_indices = p.grad.indices()
 
+                    # print(f"LazyAdamW: Updated {grad_indices.size(1)} embeddings")
+
                     # For each accessed index, apply weight decay
                     for i in range(grad_indices.size(1)):
                         index = grad_indices[0, i]
