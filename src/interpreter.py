@@ -944,6 +944,7 @@ class Interpreter(nn.Module):
         trg_prog_token2idx = self.prog_tokenizer.token2idx
         src_prog_token2idx = src_model.prog_tokenizer.token2idx
 
+        @torch.no_grad()
         def copy_(prefix, idx_mapping=None, src_prefix=None):
             for name, t in trg_sd.items():
                 if name.startswith(prefix):
@@ -955,10 +956,14 @@ class Interpreter(nn.Module):
                         t.data.copy_(s)
                     else:
                         for trg_idx, src_idx in idx_mapping.items():
-                            trg_sd[name].data[trg_idx].copy_(s.data[src_idx])
+                            t.data[trg_idx].copy_(s.data[src_idx])
+
+
+
                     trg_ptr_after = t.data_ptr()
                     assert trg_ptr_b4 == trg_ptr_after, f"Data pointer changed for {prefix}"
 
+        @torch.no_grad()
         def copy_embedding_weights(key, trg_token2idx, src_token2idx):
             common_tokens = set(trg_token2idx.keys()).intersection(set(src_token2idx.keys()))
 
@@ -969,6 +974,7 @@ class Interpreter(nn.Module):
             copy_(key, token_idx_mapping)
 
 
+        # copy grid embeddings
         copy_embedding_weights('wte.', trg_grid_token2idx, src_grid_token2idx)
 
         # copy program embeddings
