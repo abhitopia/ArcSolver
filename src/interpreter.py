@@ -386,6 +386,7 @@ class Interpreter(nn.Module):
 
         self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
         
+        self._untrained_block_ids = []
         
         # weight sharing scheme. Transformer++ (Llama architecture does not tie weights)
         # Reference: https://youtu.be/pRM_P6UfdIc?t=1500
@@ -838,6 +839,7 @@ class Interpreter(nn.Module):
                 prog_wd=0.0,
                 prog_l1=0.0,
                 device_type=None,
+                untrained_only=False
             ):
 
         # Freeze model params if model_lr is 0, needed for finetuning
@@ -848,6 +850,20 @@ class Interpreter(nn.Module):
             for n, p in self.named_parameters():
                 if 'pte' not in n:
                     p.requires_grad = False
+
+        if untrained_only:
+            assert len(self._untrained_block_ids) > 0, "No untrained blocks found. Cannot fine-tune only untrained blocks"
+            logger.info(f"Fine-tuning only untrained blocks: {self._untrained_block_ids}")
+
+            # Freeze all parameters
+            for p in self.parameters():
+                p.requires_grad = False
+
+            # Unfreeze the untrained blocks
+            for block_id in self._untrained_block_ids:
+                for p in self.blocks[block_id].parameters():
+                    p.requires_grad = True
+            
 
         # Separate the embedding parameters
         program_params = [p for n, p in self.named_parameters() if 'pte' in n and p.requires_grad]
@@ -979,6 +995,7 @@ class Interpreter(nn.Module):
             copy_(f'{trg_block_key}.', src_prefix=f'{src_block_key}.')
 
             if block_idx >= config_src.n_layer:
+                self._untrained_block_ids.append(block_idx)
                 logger.warning(f"WARNING: Initialising block idx: {block_idx} to an identity block")
                 with torch.no_grad():
                     # Set the SwiGLUFFN output multiplication close to zero

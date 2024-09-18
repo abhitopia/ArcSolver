@@ -93,6 +93,7 @@ def train(
         device: Optional[str] = typer.Option(None, help="Device to run the training on. If None, then it is automatically selected"),
         eval_int: Optional[int] = typer.Option(None, help="Number of steps between evaluations. None means evaluation at the end of each epoch"),
         clear_cache_interval: Optional[int] = typer.Option(50, help="Clear cache before training"),
+        untrained_only: bool = typer.Option(False, help="Finetune only the previously untrained model blocks. Checkpoint path must be provided."),
         debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved"),
 
         # Checkpoint Config
@@ -155,6 +156,9 @@ def train(
         # L1 Regularization for Program
         "l1_prog": pl1,
         
+        # Finetune only the untrained model blocks
+        "untrained_only": untrained_only,
+
         "max_examples": 5000 if _DEV_MODE else -1, # Yes, this is optimizer config
         "clear_cache_interval": clear_cache_interval
     }
@@ -177,6 +181,11 @@ def train(
                         num_checkpoints_to_keep=4 if hparams.run == run else 3,
                         disable_checkpointing_and_logging=True if (lr_find or debug) else False)
     
+    if untrained_only:
+        assert checkpoint is not None, "Checkpoint path must be provided for finetuning only the untrained model blocks"
+        assert Path(checkpoint).exists(), f"Checkpoint {checkpoint} does not exist"
+        trainer.info(f"Finetuning only the untrained model blocks from {checkpoint}")
+
     if checkpoint is not None:
         existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
         assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
