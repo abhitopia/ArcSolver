@@ -372,6 +372,11 @@ class ArcTrainer(TrainerBase):
             wandb.log({'dataset_embedding': df},
                 commit=False)
 
+        # Log Sparsity of the Program Embeddings
+        threshold = 1e-5 
+        sparsity = (self.model.pte.weight.abs() < threshold).float().mean().item()
+        wandb.log({'Program Sparsity': sparsity}, step =self.step, commit=False)
+
 
     def at_eval_start(self):
         self.eval_stats.epoch_reset()
