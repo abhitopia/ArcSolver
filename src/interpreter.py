@@ -1,16 +1,16 @@
 #%%
 from dataclasses import dataclass
 import inspect
-from typing import Optional
+from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from .utils import is_power_of_two, get_logger
-from .lazy_adamw import LazyAdamW
+import torch.types
+from .utils import is_power_of_two, get_logger, gather_4d_tensor_along_zero_dim
 from .dataset import ProgramTokenizer, GridTokenizer
 from torch import Tensor
 from torch.cuda.amp import autocast
-
+from .lazy_adamw import LazyAdamW
 
 logger = get_logger()
 
@@ -117,7 +117,7 @@ class RotaryPositionalEmbeddings(nn.Module):
         self.register_buffer("cache", cache, persistent=False)
 
     @autocast(enabled = False)
-    def forward(self, x: Tensor, *, input_pos: Optional[Tensor] = None) -> Tensor:
+    def forward(self, x: Tensor, input_pos: Optional[Tensor] = None) -> Tensor:
         """
         Args:
             x (Tensor): input tensor with shape
@@ -141,7 +141,9 @@ class RotaryPositionalEmbeddings(nn.Module):
         for inference.
         """
         # input tensor has shape [b, s, n_h, h_d]
-        seq_len = x.size(1)
+        # seq_len = x.size(1)
+        batch_size, seq_len, n_heads, head_dim = x.shape
+
 
         # extract the values based on whether input_pos is set or not
         rope_cache = (
@@ -151,7 +153,8 @@ class RotaryPositionalEmbeddings(nn.Module):
         # reshape input; the last dimension is used for computing the output.
         # Cast to float to match the reference implementation
         # tensor has shape [b, s, n_h, h_d // 2, 2]
-        xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
+        # xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
+        xshaped = x.float().reshape(batch_size, seq_len, n_heads, -1, 2)
 
         # reshape the cache for broadcasting
         # tensor has shape [b, s, 1, h_d // 2, 2] if packed samples,
@@ -189,35 +192,68 @@ class SelfAttention(nn.Module):
         # regularization
         self.n_head = config.n_head
         self.n_dim = config.n_dim
+        self.dropout = config.dropout
 
 
-    def forward(self, x, attn_mask):
-        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_dim)
-        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        # nh is "number of heads", hs is "head size", and C (number of channels) = nh * hs
-        # e.g. in GPT-2 (124M), n_head=12, hs=64, so nh*hs=C=768 channels in the Transformer
+    # def forward(self, x, attn_mask=None, kv_cache=None, return_kv_cache=False):
+
+    def forward(self, x: Tensor, 
+            attn_mask: Optional[Tensor] = None, 
+            kv_cache: Optional[Tuple[Tensor, Tensor]] = None, 
+            return_kv_cache: bool = False) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
+        # x: (B, T, C)
+        B, T, C = x.size()
+
+        # qkv: (B, T, 3 * C)
         qkv = self.c_attn(x)
         q, k, v = qkv.split(self.n_dim, dim=2)
 
-
-        # k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        # q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-
-        # For Rope
+        # Reshape for multi-head attention, but do not transpose yet!
+        q = q.view(B, T, self.n_head, C // self.n_head)  # (B, T, n_head, head_dim)
         k = k.view(B, T, self.n_head, C // self.n_head)
-        q = q.view(B, T, self.n_head, C // self.n_head)
-        k = self.rope(k).transpose(1, 2)
-        q = self.rope(q).transpose(1, 2)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  # (B, n_head, T, head_dim)
 
-        ## attention (materializes the large (T,T) matrix for all the queries and keys)
-        y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=self.config.dropout) # flash attention
-        # y = F.scaled_dot_product_attention(q, k, v, is_causal=True, dropout_p=self.config.dropout) # flash attention
+        # If kv_cache is present, concatenate past keys and values BEFORE applying RoPE
+        if kv_cache is not None and torch.jit.isinstance(kv_cache, Tuple[Tensor, Tensor]):
+            past_k, past_v = kv_cache  # K: (B, T_past, n_head, head_dim), V: (B, n_head, T_past, head_dim)
+            k = torch.cat([past_k, k], dim=1)  # Concatenate along sequence length dimension
+            v = torch.cat([past_v, v], dim=2)
 
-        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
-        # output projection
-        y = self.c_proj(y)
-        return y
+        # Update new_kv_cache
+        new_kv_cache: Optional[Tuple[Tensor, Tensor]] = (k, v) if return_kv_cache else None
+
+
+        # Generate position indices for the concatenated sequence
+        total_seq_len = k.size(1)  # k now contains both past and current
+        position_ids = torch.arange(total_seq_len, dtype=torch.long, device=x.device)
+        position_ids = position_ids.unsqueeze(0).unsqueeze(0).expand(B, 1, total_seq_len)
+
+        # Apply RoPE to q and k before transposing for attention
+        # For q, we use positions corresponding to the current tokens (last T positions)
+        q_positions = position_ids[:, :, -T:]  # Shape: (B, 1, T)
+        q = self.rope(q, input_pos=q_positions)
+
+        # For k, we use positions for the entire sequence (past + current)
+        k_positions = position_ids  # Shape: (B, 1, total_seq_len)
+        k = self.rope(k, input_pos=k_positions)
+
+        # Now transpose q and k for attention computation
+        q = q.transpose(1, 2)  # (B, n_head, T, head_dim)
+        k = k.transpose(1, 2)  # (B, n_head, total_seq_len, head_dim)
+        
+        # Compute attention
+        dropout_p = self.dropout if self.training else 0.0
+        attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p)
+
+        # attn_output: (B, n_head, T, head_dim)
+        # Reshape back to (B, T, C)
+        attn_output = attn_output.transpose(1, 2).contiguous().view(B, T, C)
+
+        # Output projection
+        y = self.c_proj(attn_output)
+
+        return y, new_kv_cache
+
 
 
 class SwiGLU(nn.Module):
@@ -306,12 +342,15 @@ class TransformerBlock(nn.Module):
                             RMSNorm(config.n_dim),
                             SwiGLUFFN(config.n_dim, 4 * config.n_dim))
 
+    def forward(self, x: Tensor, 
+            attn_mask: Optional[Tensor] = None, 
+            kv_cache: Optional[Tuple[Tensor, Tensor]] = None, 
+            return_kv_cache: bool = False) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
 
-    def forward(self, x, attn_mask):
-        x = x + self.dropout(self.attn(self.rmsnorm(x), attn_mask))
+        attn_output, new_kv_cache = self.attn(self.rmsnorm(x), attn_mask=attn_mask, kv_cache=kv_cache, return_kv_cache=return_kv_cache)
+        x = x + self.dropout(attn_output)
         x = x + self.dropout(self.normed_mlp(x))
-        return x    
-
+        return x, new_kv_cache
 
 
 class Interpreter(nn.Module):
@@ -321,8 +360,12 @@ class Interpreter(nn.Module):
                 grid_tokenizer: GridTokenizer = None):
         super().__init__()
         self.config = config
+        self.n_layer = config.n_layer
+        self.max_seq_len = config.max_seq_len
+
         self.prog_tokenizer = prog_tokenizer
         self.grid_tokenizer = grid_tokenizer
+        self.PAD_IDX = self.grid_tokenizer.PAD_IDX if self.grid_tokenizer is not None else GridTokenizer().PAD_IDX
 
         self.pte = nn.Embedding(config.prog_vocab_size, config.n_dim, sparse=True)
         self.wte = nn.Embedding(config.grid_vocab_size, config.n_dim)
@@ -344,140 +387,428 @@ class Interpreter(nn.Module):
         # init params
         # self.apply(self._init_weights)
 
-
     @staticmethod
-    def get_attn_mask(batch_seq_len, non_causal_prefix_len):
-        batch_size = non_causal_prefix_len.size(0)
-        device = non_causal_prefix_len.device
-        # CREATE ATTENTION MASK
-        causal_mask = torch.ones(batch_size, batch_seq_len, batch_seq_len, dtype=torch.bool, device=device).tril(diagonal=0)
+    def get_attn_mask(batch_size: int, src_len: int, trg_len: int, device: torch.device, non_causal_prefix_len: Optional[Tensor]) -> Tensor:
+
+        # CREATE ATTENTION MASK Shape [bs, trg_len, src_len]
+        offset = src_len - trg_len
+        causal_mask = torch.ones(batch_size, trg_len, src_len, dtype=torch.bool, device=device).tril(diagonal=offset)
+
+        if non_causal_prefix_len is None:
+            return causal_mask.unsqueeze(1).to(device)
 
         # Create a range tensor for comparison
-        idx = torch.arange(batch_seq_len, device=device).unsqueeze(0).unsqueeze(0)  # Shape: [1, 1, output_len]
+        idx = torch.arange(src_len, device=device).unsqueeze(0).unsqueeze(0)  # Shape: [1, 1, src_len]
 
         # Expand inp_lens to match the dimensions for broadcasting
         expanded_inp_lens = non_causal_prefix_len.unsqueeze(1).unsqueeze(2)  # Shape: [bs, 1, 1]
 
         # Create the full mask by using broadcasting
+        non_causal_mask = (idx < expanded_inp_lens).expand(-1, trg_len, -1)  # Shape: [bs, trg_len, src_len]
 
-        non_causal_mask = (idx < expanded_inp_lens).expand(-1, batch_seq_len, -1)
-
-        # Combine the lower triangular mask with the full mask
+        # # Combine the lower triangular mask with the full mask
         attn_mask = causal_mask | non_causal_mask
 
-        attn_mask = attn_mask.to(device) if device is not None else attn_mask
-
-        return attn_mask.unsqueeze(1)  # Shape: [bs, 1, output_len, output_len]
+        return attn_mask.unsqueeze(1).to(device)  # Shape: [bs, 1, trg_len, src_len]
 
 
-    def forward(self, prog_idx, inp_idx, inp_len, n_loops, next_input_idx=None, max_grad_loops=None):
+    def forward_loop(self, x: Tensor, output: Tensor, attn_mask: Optional[Tensor] = None, return_kv_caches: bool = False) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]:
+        loop_kv_caches: List[Tuple[Tensor, Tensor]] = []
+
+        # Inject input and output from previous loop iteration
+        layer_inp = torch.cat((x, output), dim=-1)  # (B, T, 2 * n_dim)
+        output = self.inp_inject(layer_inp)         # (B, T, n_dim)
+
+        for block in self.blocks:
+            # Pass the kv_caches from the specific loop_id
+            output, new_kv_cache = block(output, attn_mask=attn_mask, return_kv_cache=return_kv_caches)
+
+            # Ensure new_kv_cache is not None before appending
+            if return_kv_caches and new_kv_cache is not None:
+                loop_kv_caches.append(new_kv_cache)
+
+        return output, loop_kv_caches
+
+
+    def forward(self,
+            prog_idx: Tensor, 
+            inp_idx: Tensor, 
+            inp_len: Tensor, 
+            n_loops: int,  
+            max_grad_loops: Optional[int] = None,  
+            return_kv_caches: bool = False,
+            return_convergence_mse: bool = False, 
+        ) -> Tuple[Tensor, Optional[List[List[Tuple[Tensor, Tensor]]]], Optional[List[float]]]:
         # idx is of shape (B, T)
+
         B1, T1 = prog_idx.size()
         B2, T2 = inp_idx.size()
         batch_seq_len = T1 + T2
-        if next_input_idx is not None:
-            B3, T3 = next_input_idx.size()
-            batch_seq_len += T3
-            assert B1 == B3, "Batch size of program and output must match"
-        assert batch_seq_len <= self.config.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.config.max_seq_len}"
         assert B1 == B2, "Batch size of program and input must match"
         assert T1 == 1, "Program input must be a single token"
+
+        assert batch_seq_len <= self.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.max_seq_len}"
+
         assert n_loops > 0, "Number of loops must be greater than 0"
         if max_grad_loops is None or max_grad_loops > n_loops: 
             max_grad_loops = n_loops
+
         assert 0 < max_grad_loops <= n_loops, "max_grad_loops must be less than or equal to n_loops and greater than 0"  
 
         grad_loop_start = n_loops - max_grad_loops
 
-        attn_mask = self.get_attn_mask(batch_seq_len, inp_len)
 
         # forward the token and position embeddings
-        prog_emb = self.pte(prog_idx) # program embeddings of shape (B, T1, n_dim)
-        inp_emb = self.wte(inp_idx) # token embeddings of shape (B, T2, n_dim)
-        if next_input_idx is not None:
-            out_emb = self.wte(next_input_idx)  # output embeddings of shape (B, T3, n_dim)
-            x = torch.cat((prog_emb, inp_emb, out_emb), dim=1)
-        else:
-            x = torch.cat((prog_emb, inp_emb), dim=1)
+        prog_emb = self.pte(prog_idx)  # (B, T1, n_dim)
+        inp_emb = self.wte(inp_idx)    # (B, T2, n_dim)
+        x = torch.cat((prog_emb, inp_emb), dim=1)
+
+        attn_mask = self.get_attn_mask(
+                        batch_size=x.size(0),
+                        src_len=batch_seq_len,
+                        trg_len=x.size(1),
+                        device=x.device,
+                        non_causal_prefix_len=inp_len)
+
         output = torch.zeros_like(x)
-        convergence_mse = []
+
+        convergence_mse: Optional[List[float]] = [] if return_convergence_mse else None
+        updated_kv_caches: Optional[List[List[Tuple[Tensor, Tensor]]]] = [] if return_kv_caches else None
 
         for loop_id in range(n_loops):
             prev_output = output
-            with torch.set_grad_enabled(loop_id >= grad_loop_start and self.training):
-                layer_inp = torch.cat((x, output), dim=-1) # (B, T, 2*n_dim)
-                output = self.inp_inject(layer_inp)  # (B, T, n_dim)
-                for block in self.blocks:
-                    output = block(output, attn_mask)
 
-            output_mse = F.mse_loss(output, prev_output)
-            convergence_mse.append(output_mse.item())
+            # Disable torch.set_grad_enabled for TorchScript since with context manager is not supported
+            if not torch.jit.is_scripting():
+                with torch.set_grad_enabled(loop_id >= grad_loop_start and self.training):
+                    output, loop_kv_caches = self.forward_loop(x, output, attn_mask=attn_mask, return_kv_caches=return_kv_caches)
+            else:
+                output, loop_kv_caches = self.forward_loop(x, output, attn_mask=attn_mask, return_kv_caches=return_kv_caches)
 
-        # forward the final layernorm and the classifier
+            if updated_kv_caches is not None:
+                # Store the updated kv-cache for this loop iteration
+                updated_kv_caches.append(loop_kv_caches)
+
+            if convergence_mse is not None:
+                # Update MSE to track convergence between loops
+                output_mse = F.mse_loss(output, prev_output)
+                convergence_mse.append(output_mse.item())
+
+        # Forward the final layernorm and the classifier
         output = self.ln_f(output)
-        logits = self.lm_head(output) # (B, T, vocab_size)
-        return logits, convergence_mse
-    
+        logits = self.lm_head(output)  # (B, T, vocab_size)
 
-    # Beam Search Function
-    def beam_search(self, prog_idx, inp_idx, inp_len, n_loops, beam_width, max_length, eos_token_id):
-        device = prog_idx.device
-        B = prog_idx.size(0)
-        # Initialize the beam with empty sequences and zero scores
-        beam = [[(torch.tensor([], dtype=torch.long, device=device), 0.0)] for _ in range(B)]
-        completed_sequences = [[] for _ in range(B)]
+        return logits, updated_kv_caches, convergence_mse
+
+
+    @torch.jit.export
+    def forward_inc(self, 
+                next_input_idx: Tensor, 
+                kv_caches: List[List[Tuple[Tensor, Tensor]]], 
+                n_loops: int, 
+                non_causal_prefix_len: Optional[Tensor] = None) -> Tuple[Tensor, List[List[Tuple[Tensor, Tensor]]]]:
+        assert len(kv_caches) == n_loops, "Number of kv_caches count must match number of loops"
+        assert len(kv_caches[0]) == self.n_layer, "Number of kv_caches blocks must match number of layers"
+        past_key = kv_caches[0][0][0]
+        T_past = past_key.size(1)
+        T_future = next_input_idx.size(1)
+        batch_seq_len = T_past + T_future
+        B1 = past_key.size(0)
+        B2 = next_input_idx.size(0)
+        assert B1 == B2, "Batch size of kv_caches and next_input_idx must match"
+
+        assert batch_seq_len <= self.max_seq_len, f"Cannot forward sequence of length {batch_seq_len}, max_seq_len is only {self.max_seq_len}"
+        assert n_loops > 0, "Number of loops must be greater than 0"
+
+        x = self.wte(next_input_idx)  # (B, T3, n_dim)
+
+        attn_mask = self.get_attn_mask(
+                        batch_size=x.size(0),
+                        src_len=batch_seq_len,
+                        trg_len=x.size(1),
+                        device=x.device, 
+                        non_causal_prefix_len=non_causal_prefix_len)
+
+        output = torch.zeros_like(x)
+
+        # List to store the updated kv-cache for each loop
+        updated_kv_caches: List[List[Tuple[Tensor, Tensor]]] = []
+
+
+        for loop_id in range(n_loops):
+            # Create a new list of kv_caches for the current loop
+            loop_kv_caches: List[Tuple[Tensor, Tensor]] = []
+
+
+            # Inject input and output from previous loop iteration
+            layer_inp = torch.cat((x, output), dim=-1)  # (B, T, 2 * n_dim)
+            output = self.inp_inject(layer_inp)         # (B, T, n_dim)
+
+            # new_kv_caches = []
+            for i, block in enumerate(self.blocks):
+                # Pass the kv_caches from the specific loop_id
+                output, new_kv_cache = block(output, attn_mask=attn_mask, kv_cache=kv_caches[loop_id][i], return_kv_cache=True)
+
+                # Store the updated kv-cache for the current block in the current loop
+                if new_kv_cache is not None:  # For torch script. It should always be True
+                    loop_kv_caches.append(new_kv_cache)
+
+            # Store the updated kv-cache for this loop iteration
+            updated_kv_caches.append(loop_kv_caches)
+
+        # Forward the final layernorm and the classifier
+        output = self.ln_f(output)
+        logits = self.lm_head(output)  # (B, T, vocab_size)
+
+        return logits, updated_kv_caches
+
+    @torch.jit.export
+    def greedy_search(self, 
+            prog_idx: List[int],
+            inp_idx: List[int], 
+            n_loops: int, 
+            max_length: int, 
+            eos_token_id: int = 12)-> Tuple[List[int], float]:
+        # Assume prog_idx and inp_idx are lists of integers
+        # Batch size is 1
+        torch.set_grad_enabled(False)
+        device = self.wte.weight.device  # Get the device from the embedding layer (assuming it's available)
+
+        # Compute inp_len as len(prog_idx) + len(inp_idx)
+        inp_len = torch.tensor([len(prog_idx) + len(inp_idx)], dtype=torch.long, device=device)  # Shape: (1,)
+
+        # Convert prog_idx and inp_idx to tensors and add batch dimension
+        prog_idx = torch.tensor([prog_idx], dtype=torch.long, device=device)  # Shape: (1, len(prog_idx))
+
+        # Add EOS token to the end of the input sequence
+        inp_idx = torch.tensor([inp_idx], dtype=torch.long, device=device)    # Shape: (1, len(inp_idx))
+
+        logits, kv_caches, _ = self.forward(
+                prog_idx,
+                inp_idx,
+                inp_len,
+                n_loops,
+                max_grad_loops=None,
+                return_kv_caches=True,
+                return_convergence_mse=False
+        )
+
+        # kv_caches is never None, this is just for TorchScript
+        if kv_caches is None:
+            kv_caches = []  # Ensure kv_caches is a List[List[Tuple[Tensor, Tensor]]]
+
+        # Compute inp_len
+        # Initialize the output sequence and kv_caches
+        pad_token_id = self.PAD_IDX
+        last_token = pad_token_id
+
+        # Annotate the empty tensor for TorchScript
+        output_sequence = torch.empty(0, dtype=torch.long, device=device)  # Shape: (seq_len,)
+        output_log_prob = 0.0
 
         for t in range(max_length):
-            all_candidates = [[] for _ in range(B)]
-            for b in range(B):
-                candidates = beam[b]
-                for seq, score in candidates:
-                    if len(seq) > 0 and seq[-1].item() == eos_token_id:
-                        # Sequence is already completed
-                        completed_sequences[b].append((seq, score))
-                        continue
-                    # Prepare the output_idx
-                    if len(seq) > 0:
-                        output_idx = seq.unsqueeze(0)  # (1, seq_len)
-                    else:
-                        output_idx = None
-                    # Run the model forward
-                    logits, _ = self.forward(
-                        prog_idx[b].unsqueeze(0),
-                        inp_idx[b].unsqueeze(0),
-                        inp_len,
-                        n_loops,
-                        next_input_idx=output_idx
-                    )
-                    # Get the logits for the next token
-                    next_logits = logits[:, -1, :]  # (1, vocab_size)
-                    next_log_probs = F.log_softmax(next_logits, dim=-1)  # (1, vocab_size)
-                    # Get the top beam_width tokens
-                    topk_log_probs, topk_tokens = torch.topk(next_log_probs, beam_width)
-                    # For each possible next token
-                    for i in range(beam_width):
-                        token = topk_tokens[0, i]
-                        token_log_prob = topk_log_probs[0, i]
-                        new_seq = torch.cat([seq, token.unsqueeze(0)])
-                        new_score = score + token_log_prob.item()
-                        all_candidates[b].append((new_seq, new_score))
-            # Reorder and select the top beam_width sequences for each batch element
-            for b in range(B):
-                candidates = all_candidates[b]
-                ordered = sorted(candidates, key=lambda tup: tup[1], reverse=True)
-                beam[b] = ordered[:beam_width]
-        # Collect the best sequences
-        final_sequences = []
-        for b in range(B):
-            sequences = completed_sequences[b] if completed_sequences[b] else beam[b]
-            best_seq = max(sequences, key=lambda tup: tup[1])[0]
-            final_sequences.append(best_seq)
-        return final_sequences
- 
+            # Prepare the next input (the last generated token)
+            if output_sequence.size(0) > 0:
+                last_token = output_sequence[-1].item()
 
+            next_input_idx = torch.tensor([[last_token]], dtype=torch.long, device=device)  # Shape: (1, 1)
+
+            # Run the model forward
+            logits, kv_caches = self.forward_inc(
+                next_input_idx=next_input_idx,
+                kv_caches=kv_caches,
+                n_loops=n_loops,
+                non_causal_prefix_len=None)
+
+            # Get the logits for the last token
+            next_logits = logits[:, -1, :]  # Shape: (1, vocab_size)
+            next_log_probs = F.log_softmax(next_logits, dim=-1)
+
+            # Select the token with the highest probability
+            top_token = torch.argmax(next_logits, dim=-1)  # Shape: (1,)
+            top_log_prob = next_log_probs[0, top_token].item()
+            output_log_prob += top_log_prob
+
+            # Append the new token to the output sequence
+            output_sequence = torch.cat([output_sequence, top_token])
+
+            # If EOS token is generated, stop
+            if top_token.item() == eos_token_id:
+                break
+
+        output_list: List[int] = output_sequence.tolist()  # Use .tolist() now since it's supported in TorchScript
+        torch.set_grad_enabled(True)
+        return output_list, output_log_prob
+    
+    @staticmethod
+    def _select_kv_caches(kv_caches: List[List[Tuple[torch.Tensor, torch.Tensor]]], mask_or_indices: torch.Tensor) -> List[List[Tuple[torch.Tensor, torch.Tensor]]]:
+        # Selects the kv_caches for a specific beam index
+        selected_kv_caches: List[List[Tuple[torch.Tensor, torch.Tensor]]] = []
+        for loop_kv in kv_caches:
+            selected_loop_kv: List[Tuple[torch.Tensor, torch.Tensor]] = []
+            for k, v in loop_kv:
+                if isinstance(mask_or_indices, torch.Tensor) and mask_or_indices.dtype == torch.bool:
+                    k = k[mask_or_indices]
+                    v = v[mask_or_indices]
+                elif isinstance(mask_or_indices, torch.Tensor) and mask_or_indices.dtype == torch.long:
+                    k = gather_4d_tensor_along_zero_dim(k, mask_or_indices)
+                    v = gather_4d_tensor_along_zero_dim(v, mask_or_indices)
+                    assert v.size(0) == mask_or_indices.size(0), "Gathering didn't work!"
+                else:
+                    raise ValueError(f"mask_or_indices must be a tensor of type bool or long. Got {mask_or_indices} ")
+                selected_loop_kv.append((k, v))
+            selected_kv_caches.append(selected_loop_kv)
+        return selected_kv_caches
+    
+
+    @torch.jit.export
+    def beam_search(self, 
+            prog_idx: List[int],
+            inp_idx: List[int], 
+            n_loops: int, 
+            max_length: int, 
+            top_k: int = 5,
+            eos_token_id: int = 12)-> List[Tuple[List[int], float]]:
+        
+        # Assume prog_idx and inp_idx are lists of integers
+        # Batch size is 1
+        torch.set_grad_enabled(False)
+
+        device = self.wte.weight.device  # Get the device from the embedding layer (assuming it's available)
+
+
+        # Compute inp_len as len(prog_idx) + len(inp_idx)
+        inp_len = torch.tensor([len(prog_idx) + len(inp_idx)], dtype=torch.long, device=device)  # Shape: (1,)
+
+        # Convert prog_idx and inp_idx to tensors and add batch dimension
+        prog_idx = torch.tensor([prog_idx], dtype=torch.long, device=device)  # Shape: (1, len(prog_idx))
+
+        # Add EOS token to the end of the input sequence
+        inp_idx = torch.tensor([inp_idx], dtype=torch.long, device=device)    # Shape: (1, len(inp_idx))
+
+        logits, kv_caches, _ = self.forward(
+                prog_idx,
+                inp_idx,
+                inp_len,
+                n_loops,
+                max_grad_loops=None,
+                return_kv_caches=True,
+                return_convergence_mse=False
+            )
+        
+        # kv_caches is never None, this is just for TorchScript
+        if kv_caches is None:
+            kv_caches = []  # Ensure kv_caches is a List[List[Tuple[Tensor, Tensor]]]
+
+
+        # Compute inp_len
+        # Initialize the output sequence and kv_caches
+        pad_token_id = self.PAD_IDX
+        last_token = pad_token_id
+
+        next_input_idx = torch.tensor([[last_token]], dtype=torch.long, device=device) # Shape: (1, 1)
+
+        output_sequence = torch.zeros(1, 0, dtype=torch.long, device=device)  # Shape: (1,)
+        output_log_probs = torch.zeros(1, 0, dtype=torch.float, device=device)  # Shape: (1,)
+
+        candidate_sequences: List[List[int]] = []  # Separate list for sequences
+        candidate_log_probs: List[float] = []  # Separate list for log probabilities
+
+
+        for t in range(max_length):
+            # Prepare the next input (the last generated token)
+            if output_sequence.size(1) > 0:
+                # last_token = output_sequence[-1].item()
+                next_input_idx = output_sequence[:, -1].unsqueeze(1)
+            
+            # Run the model forward
+            logits, kv_caches = self.forward_inc(
+                next_input_idx=next_input_idx,
+                kv_caches=kv_caches,
+                n_loops=n_loops,
+                non_causal_prefix_len=None)
+
+            seq_len = output_sequence.size(1)
+            bs = output_sequence.size(0)
+            # Get the logits for the last token
+            next_logits = logits[:, -1, :]  # Shape: (1, vocab_size)
+            log_probs = F.log_softmax(next_logits, dim=-1)  # Shape: (1, vocab_size)
+
+            # Convert log probabilities to probabilities for sampling
+            probs = torch.exp(log_probs)
+
+            sample_k_tokens = torch.multinomial(probs, top_k, replacement=False)
+            # Gather the log probabilities of the sampled tokens for each sequence
+            batch_indices = torch.arange(log_probs.size(0)).unsqueeze(-1).expand(-1, top_k)
+            sample_log_probs = log_probs[batch_indices, sample_k_tokens]
+
+            # Get top top_k tokens and their log probabilities
+            # topk_log_probs, topk_tokens = log_probs.topk(top_k, dim=-1)  # Each is (1, beam_width)
+
+            topk_log_probs, topk_tokens = sample_log_probs, sample_k_tokens
+
+            # Expand the sequences and log_probs
+            output_sequence = output_sequence.unsqueeze(1).expand(bs, top_k, seq_len)  # Shape: (bs,  top_k, seq_len)
+            output_log_probs = output_log_probs.unsqueeze(1).expand(bs, top_k, seq_len)  # Shape: (bs, top_k, seq_len)
+
+            # Combine the expanded sequences with the new tokens
+            output_sequence = torch.cat([output_sequence, topk_tokens.unsqueeze(-1)], dim=-1)  # Shape: (top_k, seq_len+1, top_k)
+            output_log_probs = torch.cat([output_log_probs, topk_log_probs.unsqueeze(-1)], dim=-1)  # Shape: (top_k, seq_len+1, top_k)
+ 
+            # reshape the output sequence and log_probs
+            output_sequence = output_sequence.reshape(bs * top_k, -1)  # Shape: (top_k*bs, seq_len+1)
+            output_log_probs = output_log_probs.reshape(bs * top_k, -1)  # Shape: (top_k*bs, seq_len+1)
+
+            sorted_log_probs, sorted_indices = output_log_probs.sum(dim=-1).sort(descending=True)  # Shape: (top_k^2,)
+
+            # Select the top top_k sequences
+            topk_indices = sorted_indices[:top_k]  # Shape: (top_k,)
+
+            original_indices = topk_indices // top_k  # Shape: (top_k,)
+
+            # Update the output sequence and log_probs
+            output_sequence = output_sequence[topk_indices]
+            output_log_probs = output_log_probs[topk_indices]
+
+            # reconstruct kv_caches based on the original indices
+            kv_caches = self._select_kv_caches(kv_caches, original_indices)
+            mask_ends_eos = output_sequence[:, -1] == eos_token_id
+
+            # Separate the sequences that end with EOS token
+            completed_sequences = output_sequence[mask_ends_eos]
+            completed_log_probs = output_log_probs[mask_ends_eos].sum(dim=-1)
+
+            for seq, log_prob in zip(completed_sequences, completed_log_probs):
+                seq_list: List[int] = seq.tolist()
+                log_prob: float = float(log_prob.item())
+                candidate_sequences.append(seq_list)
+                candidate_log_probs.append(log_prob)
+
+            output_sequence = output_sequence[~mask_ends_eos]
+            output_log_probs = output_log_probs[~mask_ends_eos]
+
+            kv_caches = self._select_kv_caches(kv_caches, ~mask_ends_eos)
+            
+            # If all sequences are completed, stop
+            if output_sequence.size(0) == 0:
+                break
+
+        # This particular way is used for TorchScript compatibility
+        # Sort the candidate_log_probs and reorder candidate_sequences based on the sorted candidate_log_probs
+        sorted_indices: List[int] = torch.tensor(candidate_log_probs).argsort(descending=True).tolist()  # Sort indices based on log_probs
+        sorted_log_probs = [candidate_log_probs[i] for i in sorted_indices]
+        sorted_sequences = [candidate_sequences[i] for i in sorted_indices]
+
+        # Combine sorted log_probs and sequences into the final output
+        output_candidates = [(seq, log_prob) for log_prob, seq in zip(sorted_log_probs, sorted_sequences)]
+
+        torch.set_grad_enabled(True)
+        return output_candidates
+
+    @torch.jit.export
     def loss_fn(self, logits, targets):
         loss =  F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), reduction='none').view_as(targets)   # This will be a float tensor
-        mask = targets != self.grid_tokenizer.PAD_IDX
+        mask = targets != self.PAD_IDX
         loss = (loss * mask).sum() / mask.sum()
         return loss
     
@@ -487,6 +818,7 @@ class Interpreter(nn.Module):
                 prog_lr,
                 model_wd,
                 prog_wd=0.0,
+                prog_l1=0.0,
                 device_type=None,
             ):
 
@@ -510,13 +842,16 @@ class Interpreter(nn.Module):
         optim_groups = [
             {'params': program_params,
              'lr': prog_lr,
-              'weight_decay': prog_wd},
+              'weight_decay': prog_wd,
+              'l1_coeff': prog_l1},
             {'params': decay_params,
               'lr': model_lr,
-              'weight_decay': model_wd},
+              'weight_decay': model_wd,
+              'l1_coeff': 0.0},
             {'params': nodecay_params,
               'lr': model_lr,
-              'weight_decay': 0.0}]
+              'weight_decay': 0.0,
+              'l1_coeff': 0.0}]
         # Create AdamW optimizer and use the fused version if it is available
         use_fused = False
         if torch.cuda.is_available() and (device_type is None or device_type == 'cuda'):
@@ -632,4 +967,3 @@ class Interpreter(nn.Module):
 #%%
 
 
-# %%

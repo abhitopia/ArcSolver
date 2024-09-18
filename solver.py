@@ -73,6 +73,8 @@ def train(
         # Weight Decay Config
         mwd: float = typer.Option(0.01, min=0.0, help="Weight Decay"),
         pwd: float = typer.Option(0.0, min=0.0, help="Program Weight Decay"),
+        pl1: Optional[float] = typer.Option(0.0, min=0.0, help="Program L1 Regularization"),
+
 
         # Grok Config
         grok_alpha: float = typer.Option(0.0, min=0.0, help="Grok Alpha"),
@@ -148,6 +150,9 @@ def train(
         # Weight Decay
         "wd_model": mwd,
         "wd_prog": pwd,
+
+        # L1 Regularization for Program
+        "l1_prog": pl1,
         
         "max_examples": 5000 if _DEV_MODE else -1, # Yes, this is optimizer config
         "clear_cache_interval": clear_cache_interval
@@ -215,6 +220,7 @@ def fork(
         # Weight Decay Config
         mwd: Optional[float] = typer.Option(None, min=0.0, help="Weight Decay"),
         pwd: Optional[float] = typer.Option(None, min=0.0, help="Program Weight Decay"),
+        pl1: Optional[float] = typer.Option(None, min=0.0, help="Program L1 Regularization"),
 
         # Model Config
         dropout: Optional[float] = typer.Option(None, min=0.0, max=1.0, help="Dropout probability"),
@@ -285,7 +291,10 @@ def fork(
 
         # Weight Decay
         "wd_model": mwd,
-        "wd_prog": pwd,        
+        "wd_prog": pwd,
+
+        # L1 Regularization for Program
+        "l1_prog": pl1,
     }
 
     def override_hparams(hparams, config):

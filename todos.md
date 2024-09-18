@@ -72,9 +72,12 @@
 - [x] Fix the beam search implementation
 - [x] Test the beam search implementation speed on GPU
 - [x] Implement parallel model executor
-- [ ] Set sparse=True for embedding. Should improve memory + speed (check this) (And use https://github.com/davda54/lazy-adam/blob/master/lazy_adam.py) (check if fused can be used!)
+- [x] Implement LazyAdamW + L1 regularisation (inside the LazyAdamW) (Should improve memory + speed (check this) (And use https://github.com/davda54/lazy-adam/blob/master/lazy_adam.py) (check if fused can be used!))
+- [x] Set sparse=True for embedding and migrate to LazwAdamW
+- [x] Add l1_coeff param to the solver
+- [x] Migrate solver to interpreter2
+
 - [ ] Implement embedding norm setting to 1.0
-- [ ] Implement L1 regularisation
 - [ ] Create a task learner/solver
 - [ ] Analyse trained model L2 norms
 - [ ] Verify that it learns for ARC_TRAIN
@@ -92,6 +95,7 @@
 
 ## Future Work
 - [x] Implement faster kv-cached version of the model
+- [ ] Visualise attention to make sure that program embedding is referenced across the loops
 - [ ] https://github.com/neoneye/arc-dataset-tama/tree/main
 - [ ] Use Simon's https://github.com/neoneye/simon-arc-lab/tree/main/simon_arc_dataset_run  to generate more data
 - [ ] Investigate REARC dataset and generation process (possibly use embeddings to selectively generate)

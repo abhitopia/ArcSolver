@@ -15,7 +15,6 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 import torch.nn as nn
 from src.dataset import TrainingData
-from src.interpreter import Interpreter, InterpreterConfig
 from src.trainer import Hparams
 from src.utils import nearest_greater_power_of_2
 from src.curriculum import Curriculum
@@ -149,6 +148,7 @@ class ArcHparams(Hparams):
                                     model_wd=config.wd_model,
                                     prog_lr=config.lr_prog,
                                     prog_wd=config.wd_prog,
+                                    prog_l1=config.l1_prog,
                                     device_type=self.device)
 
         return optimizer
@@ -445,7 +445,7 @@ class ArcTrainer(TrainerBase):
         if self.hparams.optim.max_loops_prob < random.random():
             max_loops = random.randint(min_loops, max_loops)
     
-        logits, convergence_mse = self.model(p, i, pi_l, max_loops, max_grad_loops=max_grad_loops)
+        logits, _, convergence_mse = self.model(p, i, pi_l, max_loops, max_grad_loops=max_grad_loops, return_convergence_mse=True)
         loss = self.model.loss_fn(logits, y)
 
         # if not self.disable_checkpointing_and_logging:
@@ -456,7 +456,7 @@ class ArcTrainer(TrainerBase):
         (p, i, pi_l), (y, _) = batch
         max_loops = self.loop_curriculum.value
 
-        logits, convergence_mse = self.model(p, i, pi_l, max_loops)
+        logits, _, convergence_mse = self.model(p, i, pi_l, max_loops, return_convergence_mse=True)
         loss = self.model.loss_fn(logits, y)    
         # if not self.disable_checkpointing_and_logging:
         self._add_step_metrics(loss, p, logits, y, is_train=False, max_loops=max_loops, convergence_mse=convergence_mse)
