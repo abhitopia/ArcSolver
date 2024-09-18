@@ -365,6 +365,7 @@ class Interpreter(nn.Module):
                 grid_tokenizer: GridTokenizer = None):
         super().__init__()
         self.config = config
+        self.n_dim = config.n_dim
         self.n_layer = config.n_layer
         self.max_seq_len = config.max_seq_len
         self.pnorm = config.pnorm
@@ -967,13 +968,24 @@ class Interpreter(nn.Module):
             trg_block_key = f'blocks.{block_idx}'
 
             if block_idx >= config_src.n_layer:
-                logger.warning(f"WARNING: Copying block {block_idx} from the last block of the source model")
                 src_block_idx = config_src.n_layer - 1
+                src_block_idx = max(block_idx - (config_trg.n_layer - config_src.n_layer), 0)
+                logger.warning(f"WARNING: Copying block idx: {block_idx} from the block idx: {src_block_idx} of the source model")
+
             else:
                 src_block_idx = block_idx
 
             src_block_key = f'blocks.{src_block_idx}'
             copy_(f'{trg_block_key}.', src_prefix=f'{src_block_key}.')
+
+            if block_idx >= config_src.n_layer:
+                logger.warning(f"WARNING: Initialising block idx: {block_idx} to an identity block")
+                with torch.no_grad():
+                    # Set the SwiGLUFFN output multiplication close to zero
+                    self.blocks[block_idx].normed_mlp[1].w3.weight.normal_(mean=0, std=0.0001)
+
+                    # Set the value project close to zero!
+                    self.blocks[block_idx].attn.c_attn.weight[self.n_dim * 2:, :].normal_(mean=0, std=0.0001)
 
         # ln_f
         copy_('ln_f.')
@@ -982,5 +994,3 @@ class Interpreter(nn.Module):
         copy_('lm_head.')
         
 #%%
-
-
