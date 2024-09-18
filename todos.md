@@ -79,7 +79,7 @@
 - [x] Implement embedding norm setting to 1.0
 - [x] Log embedding sparsity to wandb
 
-- [ ] Add idenity block expansion
+- [x] Add idenity block expansion
 - [ ] Add train only identity block facility in solver
 
 - [ ] Implement separate handling of the program embedding. Different input injection + may be different QKV transformation
