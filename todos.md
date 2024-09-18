@@ -82,6 +82,9 @@
 - [ ] Add idenity block expansion
 - [ ] Add train only identity block facility in solver
 
+- [ ] Implement separate handling of the program embedding. Different input injection + may be different QKV transformation
+- [ ] There is potentially a problem with loading model from a checkpoint in train new. try A2D5M128B2H8L8_wo_pin with train new 
+
 - [ ] Add the augmentation scale to different datasets
 - [ ] Add Tama dataset
 
