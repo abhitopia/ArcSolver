@@ -313,7 +313,7 @@ def fork(
     override_hparams(hparams.model, model_config)
     override_hparams(hparams.optim, optimizer_config)
 
-    if pwd > 0:
+    if pwd is not None:
         assert hparams.model.pnorm is None, "Program Norm must be None when Program Weight Decay is greater than 0"
 
     if debug:
