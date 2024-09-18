@@ -151,7 +151,9 @@ class ArcHparams(Hparams):
                                     prog_lr=config.lr_prog,
                                     prog_wd=config.wd_prog,
                                     prog_l1=config.l1_prog,
-                                    device_type=self.device)
+                                    device_type=self.device,
+                                    untrained_only=config.untrained_only
+                                )
 
         return optimizer
     
