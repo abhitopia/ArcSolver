@@ -22,6 +22,7 @@ class InterpreterConfig:
     n_head: int # number of heads within each self-attention block
     n_layer: int = 1 # number of transformer blocks / layers
     max_seq_len: int = 2048 # max sequence length
+    pnorm: float = None
     dropout: float = 0.0 # dropout probability
 
     def __post_init__(self):
@@ -31,6 +32,9 @@ class InterpreterConfig:
 
         if self.n_dim % self.n_head != 0:
             raise ValueError("n_dim must be divisible by n_head")
+        
+        if self.pnorm is not None:
+            assert 0.0 < self.pnorm, "p-norm must be greater than 0"
         
         head_dim = self.n_dim // self.n_head
         assert head_dim % 2 == 0, "Head dimension must be even"
@@ -44,6 +48,7 @@ class InterpreterConfig:
             'n_head': self.n_head,
             'n_layer': self.n_layer,
             'max_seq_len': self.max_seq_len,
+            'pnorm': self.pnorm,
             'dropout': self.dropout
         }
     
@@ -362,6 +367,7 @@ class Interpreter(nn.Module):
         self.config = config
         self.n_layer = config.n_layer
         self.max_seq_len = config.max_seq_len
+        self.pnorm = config.pnorm
 
         self.prog_tokenizer = prog_tokenizer
         self.grid_tokenizer = grid_tokenizer
@@ -386,6 +392,17 @@ class Interpreter(nn.Module):
 
         # init params
         # self.apply(self._init_weights)
+        self.init_prog_embedding()
+
+    def init_prog_embedding(self):
+        if self.pnorm is not None:
+            """Initialize embedding vectors with the target L2 norm."""
+            with torch.no_grad():
+                # Initialize the embedding weights to random values
+                nn.init.normal_(self.pte.weight)
+                # Normalize each embedding vector to the target L2 norm
+                norm = self.pte.weight.norm(p=2, dim=1, keepdim=True)
+                self.pte.weight = nn.Parameter(self.pte.weight * (self.pnorm / norm))
 
     @staticmethod
     def get_attn_mask(batch_size: int, src_len: int, trg_len: int, device: torch.device, non_causal_prefix_len: Optional[Tensor]) -> Tensor:

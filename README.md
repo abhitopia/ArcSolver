@@ -1,6 +1,22 @@
 # ArcSolver
 This is my attempt to solving arc puzzles using Deep Learning.
 
+## Innovation Tracker
+- Task Augmentation
+- Program Embedding
+- Loops
+- Progressive Loss
+- Decoder only Encoder-Decoder architecture
+- Input Injection
+- LazyW optimizer
+- Embedding L1 Regularization
+- Embedding Norm Pinning
+- Beam / Greedy Search (cached)
+- Scripted model for speed
+
+## WIP Innovation 
+- Embedding Sparsity (Via forced sparsity)
+- Identity Block Expansion
 
 ## Version 2 Training Observations
 -  Noticed that higher recurrence leads to better generalisation. Performs better on eval (but not on train)
