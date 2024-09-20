@@ -88,16 +88,17 @@
 ## V6 Analysis
 - [x] Create a task learner/solver
 - [x] Analyse trained model L2 norms (nothing to gained here)
+- [x] Visualise embeddings of the trained model. There does not seem to be any clear semantic similarity between the embeddings
 - [ ] Check the difference between learned embedding between train and test (is there a significant difference?)
-- [ ] Visualise embeddings of the trained model
-- [ ] Fine-tune ARC_EVAL on the trained model?
-- [ ] Visualise attention?
 - [ ] Check if the learned model does well on Tama?
-- [ ] Top-K progressive loss + exponential weighted?
 - [ ] Check solved model embeddings on ARC_EVAL
+- [ ] Visualise attention?
+- [ ] Fine-tune ARC_EVAL on the trained model?
 
 ## V7 Model
+- [ ] Push the current code to V6
 - [ ] Add the abiltiy to specify eval batch size
+- [ ] Top-K progressive loss + exponential weighted?
 - [ ] Synthetic data needs to have uniform embeddings (This is important. Do this for SYNTH/REARC + Tama)
 - [ ] Seprate out program embedding from invariant transformation
 - [ ] Implement separate handling of the program embedding. Different input injection + may be different QKV transformation
