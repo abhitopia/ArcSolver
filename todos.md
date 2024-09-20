@@ -82,15 +82,15 @@
 - [x] Add idenity block expansion
 - [x] Add train only identity block facility in solver train new
 - [ ] Add train only identity block facility in solver train fork (This doesn't make sense. Allow specifying starting step offset)
-- [x] There is potentially a problem with loading model from a checkpoint in train new. try A2D5M128B2H8L8_wo_pin with train new 
+- [x] There is potentially a problem with loading model from a checkpoint in train new. try A2D5M128B2H8L8_w7o_pin with train new 
     - May be it is fine. It could be down to model sensitive to batch size early on in the training (remember there is noise now)
 
 ## V6 Analysis
-- [ ] Analyse trained model L2 norms
-- [ ] Create a task learner/solver
-- [ ] Fine-tune ARC_EVAL on the trained model?
+- [x] Create a task learner/solver
+- [x] Analyse trained model L2 norms (nothing to gained here)
 - [ ] Check the difference between learned embedding between train and test (is there a significant difference?)
 - [ ] Visualise embeddings of the trained model
+- [ ] Fine-tune ARC_EVAL on the trained model?
 - [ ] Visualise attention?
 - [ ] Check if the learned model does well on Tama?
 - [ ] Top-K progressive loss + exponential weighted?
@@ -102,6 +102,8 @@
 - [ ] Seprate out program embedding from invariant transformation
 - [ ] Implement separate handling of the program embedding. Different input injection + may be different QKV transformation
 - [ ] Add the augmentation scale to different datasets
+- [ ] Ability to specify step size?
+- [ ] L2 regularisation despite setting the norm to 1.0
 - [ ] Add Tama dataset
 
 
