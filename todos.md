@@ -80,16 +80,32 @@
 - [x] Log embedding sparsity to wandb
 
 - [x] Add idenity block expansion
-- [ ] Add train only identity block facility in solver
+- [x] Add train only identity block facility in solver train new
+- [ ] Add train only identity block facility in solver train fork (This doesn't make sense. Allow specifying starting step offset)
+- [x] There is potentially a problem with loading model from a checkpoint in train new. try A2D5M128B2H8L8_wo_pin with train new 
+    - May be it is fine. It could be down to model sensitive to batch size early on in the training (remember there is noise now)
 
+## V6 Analysis
+- [ ] Analyse trained model L2 norms
+- [ ] Create a task learner/solver
+- [ ] Fine-tune ARC_EVAL on the trained model?
+- [ ] Check the difference between learned embedding between train and test (is there a significant difference?)
+- [ ] Visualise embeddings of the trained model
+- [ ] Visualise attention?
+- [ ] Check if the learned model does well on Tama?
+- [ ] Top-K progressive loss + exponential weighted?
+- [ ] Check solved model embeddings on ARC_EVAL
+
+## V7 Model
+- [ ] Add the abiltiy to specify eval batch size
+- [ ] Synthetic data needs to have uniform embeddings (This is important. Do this for SYNTH/REARC + Tama)
+- [ ] Seprate out program embedding from invariant transformation
 - [ ] Implement separate handling of the program embedding. Different input injection + may be different QKV transformation
-- [ ] There is potentially a problem with loading model from a checkpoint in train new. try A2D5M128B2H8L8_wo_pin with train new 
-
 - [ ] Add the augmentation scale to different datasets
 - [ ] Add Tama dataset
 
-- [ ] Create a task learner/solver
-- [ ] Analyse trained model L2 norms
+
+
 - [ ] Verify that it learns for ARC_TRAIN
 - [ ] Test performance of the model ARC_EVAL
 
@@ -102,8 +118,10 @@
 - [ ] Add weighting param to each Task Loader based on their importance. 
     - Check how Tamas dataset performs when not trained on it
 - [ ] Change batch size for eval?
+- [ ] Change in data breaks forked training. Need to fix that
 
 ## Future Work
+- [ ] Can the current problem be formulated as a RL problem? The inverse loss being the reward
 - [x] Implement faster kv-cached version of the model
 - [ ] Visualise attention to make sure that program embedding is referenced across the loops
 - [ ] https://github.com/neoneye/arc-dataset-tama/tree/main
