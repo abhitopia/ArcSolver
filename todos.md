@@ -1,9 +1,11 @@
 ## V7 Model
-- [ ] Push the current code to V6
+- [x] Push the current code to V6
 - [ ] Introduct Concept of Example
+- [ ] Example should be able to tokenize and detokenize itself
 - [ ] Change augmentation to be based on the example, as opposed to the task
 - [ ] Add the abiltiy to specify eval batch size
 - [ ] Top-K progressive loss + exponential weighted?
+- [ ] Implement the cool levelled loss
 - [ ] Synthetic data needs to have uniform embeddings (This is important. Do this for SYNTH/REARC + Tama)
 - [ ] Seprate out program embedding from invariant transformation
 - [ ] Implement separate handling of the program embedding. Different input injection + may be different QKV transformation
