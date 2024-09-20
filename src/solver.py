@@ -6,10 +6,15 @@ module_path = os.path.abspath(os.path.join('..'))
 if module_path not in sys.path:
     sys.path.append(module_path)
 
+    
+sys.path.insert(0, "/teamspace/studios/this_studio/ArcSolveR")
+     
+
 #%%
 import numpy as np
 import json
 import torch
+import random
 
 from src.dataset import ArcExamplesDataset, GridTokenizer, ProgramTokenizer
 from src.interpreter import Interpreter, InterpreterConfig
@@ -59,29 +64,35 @@ class ArcSolver:
 
 
     def reset(self):
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize() # wait for the GPU to finish work
+            torch.cuda.empty_cache()
+
         self._model.pte.weight.data.fill_(0)
         for param in self._model.parameters():
             param.requires_grad = False
-            param.grad = None
+            
         self._model.pte.weight.requires_grad = True
 
+    def tokenize(self, example):
 
-    def example_to_batch(self, examples, combined=False):
         def serialize_array(array: np.ndarray) -> str:
             list_of_lists = array.tolist()
             array_str = json.dumps(list_of_lists)
             array_str = array_str.replace('\n', '').replace(',','')
             return array_str.replace('[[', '[[ ').replace(']]', ' ]]').replace('] [', ' ],[ ')
 
-        def tokenize(example):
-            inp_arr, out_arr = example
-            p = [0]
-            inp = self._tokenizer.encode(serialize_array(inp_arr))
-            out = self._tokenizer.encode(serialize_array(out_arr))
-            return (p, inp), out
+        inp_arr, out_arr = example
+        p = [0]
+        inp = self._tokenizer.encode(serialize_array(inp_arr))
+        out = self._tokenizer.encode(serialize_array(out_arr))
+        return (p, inp), out
         
-    
-        tokenized_examples = [tokenize(example) for example in examples]
+
+    def example_to_batch(self, examples, combined=False):
+
+        tokenized_examples = [self.tokenize(example) for example in examples]
         
         if combined:
             batch = ArcExamplesDataset.collate_fn(batch=tokenized_examples,
@@ -126,19 +137,21 @@ class ArcSolver:
     
 
 
-    def learn(self, train_examples, iters=8, combined=False, num_epochs=1000, desired_norm=1.0):
+    def learn(self, train_examples, iters=8, combined=False, num_epochs=1000, desired_norm=1.0, lr=0.01):
         assert isinstance(train_examples, list)
         assert all(isinstance(example, tuple) for example in train_examples)
         assert all(len(example) == 2 for example in train_examples)
 
         trainabled_params = [param for param in self._model.parameters() if param.requires_grad]
-        optimizer = LazyAdamW(trainabled_params, lr=0.01, weight_decay=0.00, betas=(0.9, 0.95), eps=1e-8)
+        optimizer = LazyAdamW(trainabled_params, lr=lr, weight_decay=0.00, betas=(0.9, 0.95), eps=1e-8)
         train_batches = self.example_to_batch(train_examples, combined=combined)
 
         combined_batch = self.example_to_batch(train_examples, combined=True)[0]
         for epoch in range(num_epochs):
+            random.shuffle(train_batches)
             for batch in train_batches:
                 (p, i, l), (y, y_l) = batch
+                optimizer.zero_grad()
                 logits, _, _  = self._model(p, i, l, iters)
                 loss = self._model.loss_fn(logits, y)
                 loss.backward()
@@ -157,24 +170,41 @@ class ArcSolver:
             if sample_accuracy == 1.0:
                 break
 
-
+    @torch.no_grad()
     def solve(self, test_examples):
-        pass
+        for example in test_examples:
+            (p, i), o = self.tokenize(example)
+
+            predictions = self._model.beam_search(p, i, 8, max_length=1024, top_k=10, eos_token_id=12)
+            # print(p, i, o)
+            print("Output:", o)
+            for pred, score in predictions:
+                print("Pred:", pred)
+                if pred == o:
+                    print("Correct")
+                    break
 
 
 #%%
-from src.task import TRAINING_TASKLOADER
+from src.task import TRAINING_TASKLOADER, EVALUATION_TASKLOADER
 
-checkpoint_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/lightning_runs/runs/A2D5M512H16B5L8.v4s/checkpoints/checkpoint_219670.pth'
-tasks = TRAINING_TASKLOADER.load_tasks(None)
-
-task = tasks[1]
-print("Loaded Task:", task.id)
-
-# %%
-task.train[0]
-# %%
+# checkpoint_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/lightning_runs/runs/A2D5M512H16B5L8.v4s/checkpoints/checkpoint_219670.pth'
+# checkpoint_path = '/teamspace/studios/this_studio/ArcSolveR/runs/V5_11Sept/A2D5M256H8B4L8_v15/checkpoints/checkpoint_420211.pth'
+checkpoint_path = '/teamspace/studios/this_studio/ArcSolveR/runs/A2D5M512H16B5L8.v2.3/checkpoint_177891.pth'
 solver = ArcSolver(checkpoint_path)
+solver.reset()
+tasks = TRAINING_TASKLOADER.load_tasks(None)
+# tasks = EVALUATION_TASKLOADER.load_tasks(None)
+#%%
+task = tasks[22]
+print("Loaded Task:", task.id)
+solver.reset()
+solver.learn(task.train, iters=8, num_epochs=1000, desired_norm=1.0, combined=False, lr=0.01)
+
+#%%
+solver.learn(task.train, iters=8, num_epochs=1000, desired_norm=1.0, combined=False, lr=0.005)
+
 # %%
-solver.learn(task.train, iters=8, num_epochs=1000)
+solver.solve(task.test)
 # %%
+import random
