@@ -13,10 +13,10 @@ This is my attempt to solving arc puzzles using Deep Learning.
 - Embedding Norm Pinning
 - Beam / Greedy Search (cached)
 - Scripted model for speed
+- Identity Block Expansion
 
 ## WIP Innovation 
 - Embedding Sparsity (Via forced sparsity)
-- Identity Block Expansion
 
 ## Version 2 Training Observations
 -  Noticed that higher recurrence leads to better generalisation. Performs better on eval (but not on train)

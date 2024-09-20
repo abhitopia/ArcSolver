@@ -1,3 +1,19 @@
+## V7 Model
+- [ ] Push the current code to V6
+- [ ] Introduct Concept of Example
+- [ ] Change augmentation to be based on the example, as opposed to the task
+- [ ] Add the abiltiy to specify eval batch size
+- [ ] Top-K progressive loss + exponential weighted?
+- [ ] Synthetic data needs to have uniform embeddings (This is important. Do this for SYNTH/REARC + Tama)
+- [ ] Seprate out program embedding from invariant transformation
+- [ ] Implement separate handling of the program embedding. Different input injection + may be different QKV transformation
+- [ ] Add the augmentation scale to different datasets
+- [ ] Ability to specify step size?
+- [ ] L2 regularisation despite setting the norm to 1.0
+- [ ] Add Tama dataset
+
+
+
 # V2 TODOS
 - [x] Move current code to a separate branch
 - [x] Generate Synthetic ARC Dataset (Identity, Transform, CP)
@@ -95,17 +111,6 @@
 - [ ] Visualise attention?
 - [ ] Fine-tune ARC_EVAL on the trained model?
 
-## V7 Model
-- [ ] Push the current code to V6
-- [ ] Add the abiltiy to specify eval batch size
-- [ ] Top-K progressive loss + exponential weighted?
-- [ ] Synthetic data needs to have uniform embeddings (This is important. Do this for SYNTH/REARC + Tama)
-- [ ] Seprate out program embedding from invariant transformation
-- [ ] Implement separate handling of the program embedding. Different input injection + may be different QKV transformation
-- [ ] Add the augmentation scale to different datasets
-- [ ] Ability to specify step size?
-- [ ] L2 regularisation despite setting the norm to 1.0
-- [ ] Add Tama dataset
 
 
 
