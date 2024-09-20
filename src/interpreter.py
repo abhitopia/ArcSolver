@@ -735,6 +735,11 @@ class Interpreter(nn.Module):
 
 
         for t in range(max_length):
+
+            if torch.cuda.is_available():
+                torch.cuda.synchronize() # wait for the GPU to finish work
+                torch.cuda.empty_cache()
+
             # Prepare the next input (the last generated token)
             if output_sequence.size(1) > 0:
                 # last_token = output_sequence[-1].item()

@@ -8,18 +8,16 @@ from typing import Dict, Tuple, Union
 import numpy as np
 import pandas as pd
 import torch
-from .dataset import GridTokenizer, ProgramTokenizer, AUXILIARY_TASKLOADERS
-from .interpreter import Interpreter, InterpreterConfig
-from .trainer import TrainerBase, Hparams
-from torch.utils.data import DataLoader
 import torch.optim as optim
 import torch.nn as nn
-from src.dataset import TrainingData
-from src.trainer import Hparams
-from src.utils import nearest_greater_power_of_2
-from src.curriculum import Curriculum
 import math
 import wandb
+from torch.utils.data import DataLoader
+from .dataset import GridTokenizer, ProgramTokenizer, AUXILIARY_TASKLOADERS, TrainingData
+from .interpreter import Interpreter, InterpreterConfig
+from .trainer import TrainerBase, Hparams
+from .utils import nearest_greater_power_of_2
+from .curriculum import Curriculum
 
 
 
