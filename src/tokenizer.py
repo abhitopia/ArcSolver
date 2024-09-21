@@ -1,5 +1,5 @@
 from typing import List
-from .task1 import ArrayTransform, ColorPermutation
+from .task1 import ArrayTransform, ColorPermutation, Example
 
 
 class Tokenizer:
@@ -74,6 +74,8 @@ class ProgramTokenizer(Tokenizer):
             raise ValueError('Tokenizer is frozen. No new tokens can be added.')
         for token in tokens:
             for t in token.strip().split(' '):
+                if len(t) == 1:
+                    print(f'Adding token: {token}')
                 self.add_token(t)
         self.frozen = True
 
@@ -102,12 +104,17 @@ class ArcTokenizer:
         self.array_transform_tokenizer = ArrayTransformTokenizer()
     
     def to_dict(self):
+        assert self.program_tokenizer.frozen, 'ProgramTokenizer must be frozen before saving.'
         return {
             'color_permutation_tokenizer': self.color_permutation_tokenizer.to_dict(),
             'array_transform_tokenizer': self.array_transform_tokenizer.to_dict(),
             'program_tokenizer': self.program_tokenizer.to_dict(),
             'grid_tokenizer': self.grid_tokenizer.to_dict(),
         }
+    
+    def build_program_tokenizer(self, examples: List[Example]):
+        programs = [example.program_id for example in examples]
+        self.program_tokenizer.build(programs)
     
     @classmethod
     def from_dict(cls, data):

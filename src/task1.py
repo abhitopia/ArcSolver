@@ -344,10 +344,22 @@ class ProgramDataset:
         return self._train
     
     @property
+    def train_examples(self):
+        if not self._train:
+            self.load()
+        return sum([es for es in self._train.values()], [])
+    
+    @property
     def test(self):
         if not self._test:
             self.load()
         return self._test
+    
+    @property
+    def test_examples(self):
+        if not self._test:
+            self.load()
+        return sum([es for es in self._test.values()], [])
 
     def __len__(self):
         return len(self._train)
@@ -356,11 +368,9 @@ class ProgramDataset:
         new_train = defaultdict(list)
         new_test = defaultdict(list)
 
-
-        for prog_id in self._train.keys():
-
+        for prog_id in self.train.keys():
             # Migrate excess test examples to train
-            num_test_examples = len(self._test[prog_id])
+            num_test_examples = len(self.test[prog_id])
             test_examples_to_keep = list(range(num_test_examples))
 
             if num_test_examples > max_test_per_prog:
@@ -369,9 +379,9 @@ class ProgramDataset:
                 # print(test_examples_to_keep)
 
             for idx in test_examples_to_keep:
-                new_test[prog_id].append(self._test[prog_id][idx])
+                new_test[prog_id].append(self.test[prog_id][idx])
 
-            discarded_test_examples =  [self._test[prog_id][idx] for idx in range(num_test_examples) if idx not in test_examples_to_keep]
+            discarded_test_examples =  [self.test[prog_id][idx] for idx in range(num_test_examples) if idx not in test_examples_to_keep]
             new_train_examples = self._train[prog_id] + discarded_test_examples
 
             ## Add augmented examples to train if needed
