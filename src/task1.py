@@ -1,0 +1,425 @@
+#%%
+from collections import defaultdict
+from enum import Enum, auto
+import json
+from pathlib import Path
+import random
+from typing import List
+import numpy as np
+
+#%%
+
+class ColorPermutation(Enum):
+    CPID = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]  # Identity
+    CP01 = [7, 4, 5, 2, 8, 3, 0, 9, 6, 1]
+    CP02 = [0, 9, 4, 5, 6, 8, 1, 3, 2, 7]
+    CP03 = [7, 4, 1, 9, 6, 0, 8, 2, 5, 3]
+    CP04 = [9, 6, 5, 7, 4, 0, 3, 8, 1, 2]
+    CP05 = [1, 8, 0, 3, 9, 5, 6, 2, 7, 4]
+    CP06 = [5, 3, 1, 9, 7, 6, 0, 2, 8, 4]
+    CP07 = [1, 4, 3, 8, 7, 9, 6, 2, 5, 0]
+    CP08 = [6, 0, 2, 1, 3, 4, 7, 8, 5, 9]
+    CP09 = [2, 0, 3, 8, 4, 6, 1, 9, 5, 7]
+
+    @property
+    def transform(self):
+        colors = self.value
+        color_mapping = {original: new for original, new in enumerate(colors)}
+        return lambda x: np.vectorize(color_mapping.get)(x)
+
+
+class ArrayTransform(Enum):
+    IDENT = auto()
+    RT090 = auto()
+    RT180 = auto()
+    RT270 = auto()
+    FLPLR = auto()
+    FLPUD = auto()
+    FLPDG = auto()
+    FLPAD = auto()
+
+    @property
+    def transform(self):
+        return {
+            'IDENT': lambda x: x,
+            'RT090': lambda x: np.rot90(x),
+            'RT180': lambda x: np.rot90(x, k=2),
+            'RT270' : lambda x: np.rot90(x, k=3),
+            'FLPLR': lambda x: np.fliplr(x),
+            'FLPUD': lambda x: np.flipud(x),
+            'FLPDG': lambda x: np.flipud(np.rot90(x)),
+            'FLPAD': lambda x: np.fliplr(np.rot90(x)),           
+        }[self.name]
+
+
+class Example:
+    def __init__(self, idx: int, input: np.array, output: np.array, program_id: str, task_id: str, dataset: str, color_perm: str, transform: str, is_test=False):
+        self.idx = idx    
+        self.input = input
+        self.output = output
+        self.program_id = program_id
+        self.task_id = task_id
+        self.dataset = dataset
+        self.color_perm = color_perm
+        self.transform = transform
+        self.is_test = is_test
+        self._complexity = None
+
+    def __repr__(self):
+        prefix = 'Test' if self.is_test else 'Train'
+        return f'{self.program_id} : {self.dataset}/{self.task_id}/{prefix}/{self.idx}/{self.color_perm}/{self.transform}'
+
+    def to_dict(self):
+        return {
+            "idx": self.idx,
+            "input": np.asarray(self.input),
+            "output": np.asarray(self.output),
+            "program_id": self.program_id,
+            "task_id": self.task_id,
+            "dataset": self.dataset,
+            "color_perm": self.color_perm,
+            "transform": self.transform,
+            "is_test": self.is_test
+        }
+
+    @staticmethod
+    def from_dict(example_dict):
+        return Example(idx=example_dict['idx'],
+                       input=example_dict['input'].tolist(),
+                       output=example_dict['output'].tolist(),
+                       program_id=example_dict['program_id'],
+                       task_id=example_dict['task_id'],
+                       dataset=example_dict['dataset'],
+                       color_perm=example_dict['color_perm'],
+                       transform=example_dict['transform'],
+                       is_test=example_dict['is_test'])
+
+    def compute_complexity(self):
+        size = max(len(self.input), len(self.output))
+        scale = max(len(self.input)/len(self.output), len(self.output)/len(self.input))
+        hist_inp, _ = np.histogram(self.input.flatten(), bins=np.arange(11), density=True)
+        hist_out, _ = np.histogram(self.output.flatten(), bins=np.arange(11), density=True)
+        color_var = np.sqrt(np.square(hist_inp - hist_out).sum())
+        complexity = size*4 + scale*2 + color_var
+        complexity = np.log(complexity + 1)/2
+        return complexity
+
+    @property
+    def complexity(self):
+        if self._complexity is None:
+            self._complexity = self.compute_complexity()
+        return self._complexity
+
+    def augment(self, color_perm=None, transform=None):
+        assert self.color_perm == ColorPermutation.CPID.name, 'Augmentation is only supported for identity color permutation'
+        assert self.transform == ArrayTransform.IDENT.name, 'Augmentation is only supported for identity transformation'
+
+        if color_perm is None:
+            cps = list(ColorPermutation)
+            color_perm = random.choice(cps)
+
+        if transform is None:
+            ats = list(ArrayTransform)
+            transform = random.choice(ats)
+
+        # Try again if the identity transformation is selected with the identity color permutation
+        if color_perm == ColorPermutation.CPID and transform == ArrayTransform.IDENT:
+            return self.augment()
+
+        input = color_perm.transform(self.input)
+        output = color_perm.transform(self.output)
+        input = transform.transform(input)
+        output = transform.transform(output)
+
+        return Example(
+            idx=self.idx,
+            input=input,
+            output=output,
+            program_id=self.program_id,
+            task_id=self.task_id,
+            dataset=self.dataset,
+            color_perm=color_perm.name,
+            transform=transform.name,
+            is_test=self.is_test
+        )
+
+
+class ArcTask:
+    def __init__(self, id, prog_id, train: List[Example], test: List[Example], dataset=None):
+        self.id = id
+        self.prog_id = prog_id
+        self.dataset = dataset
+        self.train = train
+        self.test = test
+        self._complexity = None
+
+    def __repr__(self):
+        return f'ArcTask(id={self.id}, prog={self.prog_id}, dataset={self.dataset})'
+
+    def to_dict(self):
+        result = {
+            "id": self.id,
+            "prog_id": self.prog_id,
+            "dataset": self.dataset,
+            "train": [e.to_dict() for e in self.train],
+            "test": [e.to_dict() for e in self.test]
+        }
+        return result
+    
+
+    @staticmethod
+    def from_dict(task_dict):
+        return ArcTask(id=task_dict['id'],
+                       prog_id=task_dict['prog_id'],
+                       train=task_dict['train'],
+                       test=task_dict['test'],
+                       dataset=task_dict.get('dataset'),
+                       version=task_dict.get('version'),
+                       augmentation_group=task_dict.get('augmentation_group'))
+
+
+    def compute_complexity(self):
+        complexity = np.max([e.complexity for e in self.train + self.test])
+        return complexity
+
+    @property
+    def complexity(self):
+        if self._complexity is None:
+            self._complexity = self.compute_complexity()
+        return self._complexity
+    
+
+class ArcTasksLoader:
+    def __init__(self, name: str, path: str, prog_prefix='', identical_task_per_folder=False):
+        base_path = Path(__file__).resolve().parent.parent    
+        self.path = base_path / Path(path)
+        assert self.path.exists(), f'Path does not exist: {self.path}'
+        self.name = name
+        self.prog_prefix = prog_prefix
+        self._tasks = None
+        self._train_examples = None
+        self._test_examples = None
+        self.identical_task_per_folder = identical_task_per_folder
+
+    def json_files(self):
+        return 
+    
+    @property
+    def tasks(self):
+        if not self._tasks:
+            self.load()
+        return self._tasks
+    
+    @property
+    def train(self):
+        return [example for task in self.tasks for example in task.train]
+    
+    @property
+    def test(self):
+        return [example for task in self.tasks for example in task.test]
+
+    def load_examples(self, task_id, prog_id, examples_json, is_test=False) -> List[Example]:
+        examples = []
+        for idx, example in enumerate(examples_json):
+            examples.append(
+                    Example(
+                    idx=idx,
+                    input=np.asarray(example['input']),
+                    output=np.asarray(example['output']),
+                    program_id=prog_id,
+                    task_id=task_id,
+                    dataset=self.name,
+                    color_perm=ColorPermutation.CPID.name, # This is the identity transformation
+                    transform=ArrayTransform.IDENT.name,
+                    is_test=is_test
+                    )
+                )
+        return examples
+
+    def stats(self):
+        print(f"Dataset: {self.name}")
+        print(f"Number of programs: {len(set([task.prog_id for task in self.tasks]))}")
+        print(f"Number of tasks: {len(self.tasks)}")
+        print(f"Number of train examples: {len(self.train)}")
+        print(f"Number of test examples: {len(self.test)}")
+        print(f"Average train examples per task: {len(self.train)/len(self.tasks)}")
+        print(f"Average test examples per task: {len(self.test)/len(self.tasks)}")
+    
+    def load(self) -> None:
+        json_files = [json for json in Path(self.path).glob("**/*.json")]
+        tasks = []
+        train_examples = []
+        test_examples = []
+        for f in json_files:
+            task_json = json.load(f.open('r'))
+            task_id = self.name + "_" + f.stem
+
+            if self.identical_task_per_folder:
+                prog_id = f.parent.stem
+            else:
+                prog_id = f.stem
+
+            if self.prog_prefix:
+                prog_id = self.prog_prefix + prog_id
+
+            train = self.load_examples(task_id, prog_id, task_json['train'], is_test=False)
+            test = self.load_examples(task_id, prog_id, task_json['test'], is_test=True)
+            train_examples.extend(train)
+            test_examples.extend(test)
+            task = ArcTask(
+                    id=task_id,
+                    prog_id=prog_id,
+                    train=train,
+                    test=test,
+                    dataset=self.name
+                )  
+            tasks.append(task)
+
+        self._tasks = tasks
+        # self.merge_tasks()
+
+    def __len__(self):
+        return len(self.tasks)
+
+
+class ProgramDataset:
+    def __init__(self, loaders: List[ArcTasksLoader]):
+        self.loaders = loaders
+        self._train = defaultdict(list)
+        self._test = defaultdict(list)
+
+    @property
+    def tasks(self):
+        if not self._tasks:
+            self.load()
+        return self._tasks
+
+    def load(self):
+        for loader in self.loaders:
+            for task in loader.tasks:
+                self._train[task.prog_id].extend(task.train)
+                self._test[task.prog_id].extend(task.test)
+        assert len(self._train) == len(self._test), 'Number of programs in train and test should be the same'
+
+    def stats(self):
+
+        num_progs = len(self.train)
+        num_train = sum([len(v) for v in self._train.values()])
+        num_test = sum([len(v) for v in self._test.values()])
+        print(f"Number of programs: {num_progs}")
+        print(f"Number of train examples: {num_train}")
+        print(f"Number of test examples: {num_test}")
+        print(f"Average train examples per task: {num_train/num_progs}")
+        print(f"Average test examples per task: {num_test/num_progs}")
+
+
+        ## Print color permutation and transformation distribution
+        color_permutations = defaultdict(int)
+        transformations = defaultdict(int)
+
+        for prog_id in self.train.keys():
+            train_examples = self.train[prog_id]
+            test_examples = self.test[prog_id]
+            for example in train_examples:
+                color_permutations[example.color_perm] += 1
+                transformations[example.transform] += 1
+
+            for example in test_examples:
+                color_permutations[example.color_perm] += 1
+                transformations[example.transform] += 1
+
+        print("Color Permutations:")
+        for k, v in sorted(color_permutations.items(), key=lambda x: x[1], reverse=True):
+            print(f"\t{k}: {v}")
+
+        print("Transformations:")
+        for k, v in sorted(transformations.items(), key=lambda x: x[1], reverse=True):
+            print(f"\t{k}: {v}")
+
+
+    @property
+    def train(self):
+        if not self._train:
+            self.load()
+        return self._train
+    
+    @property
+    def test(self):
+        if not self._test:
+            self.load()
+        return self._test
+
+    def __len__(self):
+        return len(self._train)
+    
+    def augment(self, num_train_per_prog=100, max_test_per_prog=2):
+        new_train = defaultdict(list)
+        new_test = defaultdict(list)
+
+
+        for prog_id in self._train.keys():
+
+            # Migrate excess test examples to train
+            num_test_examples = len(self._test[prog_id])
+            test_examples_to_keep = list(range(num_test_examples))
+
+            if num_test_examples > max_test_per_prog:
+                test_examples_to_keep = random.sample(test_examples_to_keep, max_test_per_prog)
+                # print(f"Reducing test examples for {prog_id} from {num_test_examples} to {num_test_per_prog}")
+                # print(test_examples_to_keep)
+
+            for idx in test_examples_to_keep:
+                new_test[prog_id].append(self._test[prog_id][idx])
+
+            discarded_test_examples =  [self._test[prog_id][idx] for idx in range(num_test_examples) if idx not in test_examples_to_keep]
+            new_train_examples = self._train[prog_id] + discarded_test_examples
+
+            ## Add augmented examples to train if needed
+            num_missing_train_examples = max(num_train_per_prog - len(new_train_examples), 0)
+            examples_to_augment = [random.choice(new_train_examples)  for _ in range(num_missing_train_examples)]
+            augmented_train_examples = [example.augment() for example in examples_to_augment]
+            all_train_examples = new_train_examples + augmented_train_examples
+
+            ## Discard any excess train examples
+            training_examples_kept = random.sample(all_train_examples, num_train_per_prog)
+            new_train[prog_id] = training_examples_kept
+
+
+        self._train = new_train
+        self._test = new_test
+
+#%%
+ARC_NOSOUND = ArcTasksLoader(name='ARC_NOSOUND', path='data/arc_dataset_collection/dataset/nosound/data')
+ARC_1D = ArcTasksLoader(name='ARC_1D', path='data/arc_dataset_collection/dataset/1D-ARC/data', identical_task_per_folder=True)
+ARC_REARC_EASY = ArcTasksLoader(name='ARC_REARC_EASY', path='data/arc_dataset_collection/dataset/RE-ARC/data/easy')
+ARC_REARC_HARD = ArcTasksLoader(name='ARC_REARC_HARD', path='data/arc_dataset_collection/dataset/RE-ARC/data/hard')
+ARC_COMMUNITY = ArcTasksLoader(name='ARC_COMMUNITY', path='data/arc_dataset_collection/dataset/arc-community/data')
+ARC_DIVA = ArcTasksLoader(name='ARC_DIVA', path='data/arc_dataset_collection/dataset/arc-dataset-diva/data', identical_task_per_folder=True)
+ARC_CONCEPT = ArcTasksLoader(name='ARC_CONCEPT', path='data/arc_dataset_collection/dataset/ConceptARC/data')
+ARC_DBIGHAM = ArcTasksLoader(name='ARC_DBIGHAM', path='data/arc_dataset_collection/dataset/dbigham/data')
+ARC_MINI = ArcTasksLoader(name='ARC_MINI', path='data/arc_dataset_collection/dataset/Mini-ARC/data')
+ARC_NOSOUND = ArcTasksLoader(name='ARC_NOSOUND', path='data/arc_dataset_collection/dataset/nosound/data')
+ARC_PQA = ArcTasksLoader(name='ARC_PQA', path='data/arc_dataset_collection/dataset/PQA/data', identical_task_per_folder=True)
+ARC_SEQUENCE = ArcTasksLoader(name='ARC_SEQUENCE', path='data/arc_dataset_collection/dataset/Sequence_ARC/data', prog_prefix='SEQ')
+ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_dataset_collection/dataset/synth_riddles/data')
+ARC_TAMA = ArcTasksLoader(name='ARC_TAMA', path='data/arc_dataset_collection/dataset/arc-dataset-tama/data')
+ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dataset/ARC/data/evaluation')
+ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
+
+
+TRAIN_COLLECTION = ProgramDataset([
+    ARC_TRAIN,
+    ARC_1D,
+    ARC_REARC_EASY,
+    ARC_REARC_HARD, 
+    ARC_COMMUNITY, 
+    ARC_DIVA, 
+    ARC_CONCEPT, 
+    ARC_DBIGHAM, 
+    ARC_MINI, 
+    ARC_NOSOUND, 
+    ARC_PQA, 
+    ARC_SEQUENCE, 
+    ARC_SYNTH_RIDDLES, 
+    ARC_TAMA])
+
