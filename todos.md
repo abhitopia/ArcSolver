@@ -1,7 +1,9 @@
 ## V7 Model
-- [ ] Push the current code to V6
-- [ ] Introduct Concept of Example
-- [ ] Change augmentation to be based on the example, as opposed to the task
+- [x] Push the current code to V6
+- [x] Introduct Concept of Example
+- [x] Change augmentation to be based on the example, as opposed to the task
+- [x] Create tokeniser.py and add interpreter tokenizer
+- [ ] Create new dataset.py to handle new ProgramDataset
 - [ ] Add the abiltiy to specify eval batch size
 - [ ] Top-K progressive loss + exponential weighted?
 - [ ] Synthetic data needs to have uniform embeddings (This is important. Do this for SYNTH/REARC + Tama)
