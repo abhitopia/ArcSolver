@@ -1,4 +1,7 @@
-from typing import List
+from typing import List, Tuple
+from collections import namedtuple
+import json
+import numpy as np
 from .task1 import ArrayTransform, ColorPermutation, Example
 
 
@@ -96,12 +99,74 @@ class ArrayTransformTokenizer(Tokenizer):
         super().__init__(token2idx=token2idx, idx2token=idx2token, frozen=True)
 
 
+MODEL_INPUT = namedtuple('MODEL_INPUT', ['color_permutation', 'array_transform', 'program', 'input', 'meta'])
+MODEL_OUTPUT = namedtuple('MODEL_OUTPUT', ['output'])
+
 class ArcTokenizer:
     def __init__(self) -> None:
         self.grid_tokenizer = GridTokenizer()
         self.program_tokenizer = ProgramTokenizer()
         self.color_permutation_tokenizer = ColorPermutationTokenizer()
         self.array_transform_tokenizer = ArrayTransformTokenizer()
+
+    
+    @staticmethod
+    def serialize_array(array: np.ndarray) -> str:
+        list_of_lists = array.tolist()
+        array_str = json.dumps(list_of_lists)
+        array_str = array_str.replace('\n', '').replace(',','')
+        return array_str.replace('[[', '[[ ').replace(']]', ' ]]').replace('] [', ' ],[ ')
+
+    @staticmethod
+    def deserialize_array(array_str: str) -> np.ndarray:
+        rows = array_str.split('],[')
+        rows[0] = rows[0][3:]
+        rows[-1] = rows[-1][:-3]
+        
+        result = []
+        for row in rows:
+            result.append('[' + ', '.join(row.strip().split(' ')) + ']')
+        result = "[" + ",".join(result) + "]"
+        result = json.loads(result)
+        return np.array(result)
+
+    def encode(self, example: Example) -> Tuple[MODEL_INPUT, MODEL_OUTPUT]:
+        input_encoded = self.grid_tokenizer.encode(self.serialize_array(example.input))
+        output_encoded = self.grid_tokenizer.encode(self.serialize_array(example.output))
+        program_encoded = self.program_tokenizer.encode(example.program_id)
+        color_permutation_encoded = self.color_permutation_tokenizer.encode(example.color_perm)
+        array_transform_encoded = self.array_transform_tokenizer.encode(example.transform)
+
+        x = MODEL_INPUT(
+            color_permutation=color_permutation_encoded,
+            array_transform=array_transform_encoded,
+            program=program_encoded,
+            input=input_encoded,
+            meta={'task_id': example.task_id, 'example_id': example.idx, 'dataset': example.dataset}
+        )
+        y = MODEL_OUTPUT(output=output_encoded)
+        return x, y
+
+    def decode(self, x: MODEL_INPUT, y: MODEL_OUTPUT=None) -> Example:
+        input_decoded = self.grid_tokenizer.decode(x.input)
+        output_decoded = self.grid_tokenizer.decode(y.output) if y else None
+        program_decoded = self.program_tokenizer.decode(x.program)
+        color_permutation_decoded = self.color_permutation_tokenizer.decode(x.color_permutation)
+        array_transform_decoded = self.array_transform_tokenizer.decode(x.array_transform)
+
+        example = Example(
+            idx=x.meta['example_id'],
+            task_id=x.meta['task_id'],
+            dataset=x.meta['dataset'],
+            input=self.deserialize_array(input_decoded),
+            output=self.deserialize_array(output_decoded),
+            program_id=program_decoded,
+            color_perm=color_permutation_decoded,
+            transform=array_transform_decoded
+        )
+
+        return example
+    
     
     def to_dict(self):
         assert self.program_tokenizer.frozen, 'ProgramTokenizer must be frozen before saving.'
