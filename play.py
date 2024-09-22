@@ -159,7 +159,10 @@ class SelfAttention(nn.Module):
         dropout_p = self.dropout if self.training else 0.0
 
         # default scale (1/sqrt(D)) is applied inside scaled_dot_product_attention
-        attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p)
+        attn_output = F.scaled_dot_product_attention(q, k, v, 
+                                                    attn_mask=attn_mask,
+                                                    # is_causal=attn_mask is None, # default to causal if attn_mask is None
+                                                    dropout_p=dropout_p)
 
         # attn_output: (B, n_head, T, head_dim)
         # Reshape back to (B, T, C)
@@ -259,7 +262,6 @@ class DecoderBlock(nn.Module):
         return x, new_kv_cache
 
 
-
 class Decoder(nn.Module):
     def __init__(self, config: InterpreterConfig):
         super().__init__()
@@ -287,6 +289,38 @@ class Decoder(nn.Module):
                 updated_kv_caches.append(kv_cache)
         return x, updated_kv_caches
     
+
+class LoopEncoder(nn.Module):
+    def __init__(self, config: InterpreterConfig):
+        super().__init__()
+        self.config = config
+        self.n_dim = config.n_dim
+        self.n_layer = config.n_layer
+        self.max_seq_len = config.max_seq_len
+        rope = RotaryPositionalEmbeddings(config.n_dim // config.n_head, config.max_seq_len)
+        self.enc_blocks = nn.ModuleList([EncoderBlock(config, rope=rope) for _ in range(config.n_layer)])
+        self.rms_out = RMSNorm(config.n_dim)
+
+    def forward(self, x: List[torch.Tensor]):
+        B, T, C = x[0].size()
+
+        x_reshape = [i.reshape(B*T, C) for i in x]
+        print("Loops", [i.shape for i in x_reshape])
+
+        x_cat = torch.stack(x_reshape, dim=0).permute(1, 0, 2)
+
+        print("x_cat", x_cat.shape)
+
+        for block in self.enc_blocks:
+            x_cat, _ = block(x_cat, attn_mask=None, return_kv_cache=False)
+        
+        print("x_cat", x_cat.shape)
+
+        output = x_cat[:, -1, :].reshape(B, T, C)
+        print("output", output.shape)
+
+        return output
+
 
 class Interpreter(nn.Module):
     def __init__(self,
@@ -324,6 +358,8 @@ class Interpreter(nn.Module):
         
         self.encoder = Encoder(config)
         self.decoder = Decoder(config)
+        self.loop_encoder = LoopEncoder(config)
+        self.loop_decoder = LoopEncoder(config)
         # self.inp_inject = nn.Linear(2*config.n_dim, config.n_dim, bias=False)
         # self.dec_blocks = nn.ModuleList([TransformerBlock(config, rope=rope) for _ in range(config.n_layer)])
         self.ln_f = RMSNorm(config.n_dim)
@@ -373,7 +409,7 @@ class Interpreter(nn.Module):
     def dec_enc_mask(inp_grid, output_grid, program_prefix=3, pad_idx=13):
         kT = inp_grid.size(1) + program_prefix
         qT = output_grid.size(1)
-
+        device = inp_grid.device
         inp_lens = (inp_grid != pad_idx).sum(1).unsqueeze(1).unsqueeze(2) + program_prefix
         idx = torch.arange(kT, device=device)
         mask = (idx < inp_lens).expand(-1, qT, -1)
@@ -389,6 +425,10 @@ class Interpreter(nn.Module):
         dec_mask = self.dec_mask(output_grid)
         dec_enc_mask = self.dec_enc_mask(input_grid, output_grid, program_prefix=3, pad_idx=self.PAD_IDX)
 
+        enc_mask = None
+        # dec_enc_mask = None
+        # dec_mask = None
+
         program = self.pte(program)
         color_permutation = self.cte(color_permutation)
         array_transform = self.ate(array_transform)
@@ -397,12 +437,21 @@ class Interpreter(nn.Module):
         enc_inp = torch.cat([program, color_permutation, array_transform, inp_grid], dim=1)
         dec_inp = self.gte(output_grid)
 
-        encoder_out, enc_kv_cache = self.encoder(enc_inp, enc_mask=enc_mask)
-        decoder_out, dec_kv_cache = self.decoder(encoder_out, dec_inp, enc_mask=dec_enc_mask, dec_mask=dec_mask)
+        loop_enc_inps = []
+        loop_dec_inps = []
+        for _ in range(n_loops):
+            enc_inp, enc_kv_cache = self.encoder(enc_inp, enc_mask=enc_mask)
+            loop_enc_inps.append(enc_inp)
+            enc_inp = self.loop_encoder(loop_enc_inps)
 
-        print(program.shape, inp_grid.shape, color_permutation.shape, array_transform.shape, dec_inp.shape)
+            dec_inp, dec_kv_cache = self.decoder(enc_inp, dec_inp, enc_mask=dec_enc_mask, dec_mask=dec_mask)
+            loop_dec_inps.append(dec_inp)
+            dec_inp = self.loop_decoder(loop_dec_inps)
+
         print(enc_inp.shape, dec_inp.shape)
-        return enc_inp.shape
+        dec_out = self.ln_f(dec_inp)
+        logits = self.lm_head(dec_out)
+        return logits
     
 
 config = InterpreterConfig(
@@ -417,7 +466,7 @@ config = InterpreterConfig(
 )
 
 interpreter = Interpreter(config)
-interpreter(x)
+interpreter(x, 3).shape
 # %%
 
 
