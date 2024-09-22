@@ -3,9 +3,16 @@
 - [x] Introduct Concept of Example
 - [x] Change augmentation to be based on the example, as opposed to the task
 - [x] Create tokeniser.py and add interpreter tokenizer
-- [ ] Create new dataset.py to handle new ProgramDataset
-- [ ] Add the abiltiy to specify eval batch size
+- [x] Create new dataset.py to handle new ProgramDataset
+- [x] Fix encoder attention (Seems to throw no nans anymore magically)
+- [x] Encoder-Decoder Attention Should be different
+- [x] Add loop_heads
+- [x] Specify various configs
+- [ ] Rename to REPL
+- [ ] Consider replacing MSE to KL Divergence??
+- [ ] Create the progressive loss
 - [ ] Top-K progressive loss + exponential weighted?
+- [ ] Add the abiltiy to specify eval batch size
 - [ ] Synthetic data needs to have uniform embeddings (This is important. Do this for SYNTH/REARC + Tama)
 - [ ] Seprate out program embedding from invariant transformation
 - [ ] Implement separate handling of the program embedding. Different input injection + may be different QKV transformation

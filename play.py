@@ -29,7 +29,6 @@ for batch in dl:
 x, y = batch
 # %%
 from dataclasses import dataclass
-from src.utils import is_power_of_two, get_logger, gather_4d_tensor_along_zero_dim
 import torch.nn as nn
 
 
@@ -39,19 +38,18 @@ class InterpreterConfig:
     n_dim: int  # dimension of the model
     n_embd: int  # embedding dimension
     n_head: int # number of heads within each self-attention block
-    n_layer: int  # number of transformer blocks / layers
+    n_dec_layer: int  # number of transformer decoder blocks per loop
+    n_enc_layer: int  # number of transformer encoder blocks per loop
+    n_lecn_layer: int # number of transformer encoder blocks across loops
+    n_ldec_layer: int # number of transformer decoder blocks across loops
     pnorm: float = None # target L2 norm for embedding vectors
-    max_seq_len: int = 2048 # max sequence length
+    max_seq_len: int = 2048 # max sequence length per encoder/decoder
     grid_vocab_size: int = len(GridTokenizer()) # number of array element tokens (one extra for niceness)
     perm_vocab_size: int = len(ColorPermutationTokenizer())
     tform_vocab_size: int = len(ArrayTransformTokenizer())
     dropout: float = 0.0 # dropout probability
 
     def __post_init__(self):
-        # assert is_power_of_two(self.prog_vocab_size), "Program vocab size must be a power of 2"
-        # assert is_power_of_two(self.grid_vocab_size), "Grid vocab size must be a power of 2"
-        # assert is_power_of_two(self.n_dim), "Model dimension must be a power of 2"
-
         if self.n_dim % self.n_head != 0:
             raise ValueError("n_dim must be divisible by n_head")
         
@@ -71,7 +69,10 @@ class InterpreterConfig:
             'n_dim': self.n_dim,
             'n_embd': self.n_embd,
             'n_head': self.n_head,
-            'n_layer': self.n_layer,
+            'n_dec_layer': self.n_dec_layer,
+            'n_enc_layer': self.n_enc_layer,
+            'n_lecn_layer': self.n_lecn_layer,
+            'n_ldec_layer': self.n_ldec_layer,
             'max_seq_len': self.max_seq_len,
             'pnorm': self.pnorm,
             'dropout': self.dropout
@@ -86,26 +87,20 @@ class SelfAttention(nn.Module):
     def __init__(self, config: InterpreterConfig, rope: RotaryPositionalEmbeddings):
         super().__init__()
         self.config = config
+        self.n_head = config.n_head
+        self.n_dim = config.n_dim
+        self.dropout = config.dropout
         self.rope = rope
         assert config.n_dim % config.n_head == 0
-        # key, query, value projections for all heads, but in a batch
-        # self.c_attn = nn.Linear(config.n_dim, 3 * config.n_dim, bias=False)
 
+        # query, key, value projections
         self.c_attn_q = nn.Linear(config.n_dim, config.n_dim, bias=False)
         self.c_attn_k = nn.Linear(config.n_dim, config.n_dim, bias=False)
         self.c_attn_v = nn.Linear(config.n_dim, config.n_dim, bias=False)
 
         # output projection
         self.c_proj = nn.Linear(config.n_dim, config.n_dim, bias=False)
-        self.c_proj.RESCALE_RESIDUAL = 1
 
-        # regularization
-        self.n_head = config.n_head
-        self.n_dim = config.n_dim
-        self.dropout = config.dropout
-
-
-    # def forward(self, x, attn_mask=None, kv_cache=None, return_kv_cache=False):
 
     def forward(self, q: Tensor, k: Tensor, v: Tensor,
             attn_mask: Optional[Tensor] = None, 
@@ -137,19 +132,21 @@ class SelfAttention(nn.Module):
         new_kv_cache: Optional[Tuple[Tensor, Tensor]] = (k, v) if return_kv_cache else None
 
 
-        # Generate position indices for the concatenated sequence
-        total_seq_len = k.size(1)  # k now contains both past and current
-        position_ids = torch.arange(total_seq_len, dtype=torch.long, device=q.device)
-        position_ids = position_ids.unsqueeze(0).unsqueeze(0).expand(B, 1, total_seq_len)
+        # # TODO: Below logic is utterly wrong for encoder-decoder architecture
 
-        # Apply RoPE to q and k before transposing for attention
-        # For q, we use positions corresponding to the current tokens (last T positions)
-        q_positions = position_ids[:, :, -qT:]  # Shape: (B, 1, T)
-        q = self.rope(q, input_pos=q_positions)
+        # # Generate position indices for the concatenated sequence
+        # total_seq_len = k.size(1)  # k now contains both past and current
+        # position_ids = torch.arange(total_seq_len, dtype=torch.long, device=q.device)
+        # position_ids = position_ids.unsqueeze(0).unsqueeze(0).expand(B, 1, total_seq_len)
 
-        # For k, we use positions for the entire sequence (past + current)
-        k_positions = position_ids  # Shape: (B, 1, total_seq_len)
-        k = self.rope(k, input_pos=k_positions)
+        # # Apply RoPE to q and k before transposing for attention
+        # # For q, we use positions corresponding to the current tokens (last T positions)
+        # q_positions = position_ids[:, :, -qT:]  # Shape: (B, 1, T)
+        q = self.rope(q)
+
+        # # For k, we use positions for the entire sequence (past + current)
+        # k_positions = position_ids  # Shape: (B, 1, total_seq_len)
+        k = self.rope(k)
 
         # Now transpose q and k for attention computation
         q = q.transpose(1, 2)  # (B, n_head, T, head_dim)
@@ -206,10 +203,9 @@ class Encoder(nn.Module):
 
         self.config = config
         self.n_dim = config.n_dim
-        self.n_layer = config.n_layer
         self.max_seq_len = config.max_seq_len
         rope = RotaryPositionalEmbeddings(config.n_dim // config.n_head, config.max_seq_len)
-        self.enc_blocks = nn.ModuleList([EncoderBlock(config, rope=rope) for _ in range(config.n_layer)])
+        self.enc_blocks = nn.ModuleList([EncoderBlock(config, rope=rope) for _ in range(config.n_enc_layer)])
 
         self.rms_out = RMSNorm(config.n_dim)
 
@@ -268,11 +264,11 @@ class Decoder(nn.Module):
 
         self.config = config
         self.n_dim = config.n_dim
-        self.n_layer = config.n_layer
         self.max_seq_len = config.max_seq_len
         rope = RotaryPositionalEmbeddings(config.n_dim // config.n_head, config.max_seq_len)
-        self.dec_blocks = nn.ModuleList([DecoderBlock(config, rope=rope) for _ in range(config.n_layer)])
+        self.dec_blocks = nn.ModuleList([DecoderBlock(config, rope=rope) for _ in range(config.n_dec_layer)])
 
+        self.rms_out = RMSNorm(config.n_dim)
 
     def forward(self, 
             enc_out: Tensor, 
@@ -287,38 +283,35 @@ class Decoder(nn.Module):
             x, kv_cache = block(enc_out, x, enc_mask=enc_mask, dec_mask=dec_mask, return_kv_cache=False)
             if return_kv_caches and kv_cache is not None:
                 updated_kv_caches.append(kv_cache)
+
+        x = self.rms_out(x)
         return x, updated_kv_caches
     
 
 class LoopEncoder(nn.Module):
-    def __init__(self, config: InterpreterConfig):
+    def __init__(self, config: InterpreterConfig, n_layer):
         super().__init__()
         self.config = config
         self.n_dim = config.n_dim
-        self.n_layer = config.n_layer
+        self.n_layer = n_layer
         self.max_seq_len = config.max_seq_len
         rope = RotaryPositionalEmbeddings(config.n_dim // config.n_head, config.max_seq_len)
-        self.enc_blocks = nn.ModuleList([EncoderBlock(config, rope=rope) for _ in range(config.n_layer)])
+        self.enc_blocks = nn.ModuleList([EncoderBlock(config, rope=rope) for _ in range(self.n_layer)])
         self.rms_out = RMSNorm(config.n_dim)
 
     def forward(self, x: List[torch.Tensor]):
+
+        ## TODO: Need to make this incremental
         B, T, C = x[0].size()
-
         x_reshape = [i.reshape(B*T, C) for i in x]
-        print("Loops", [i.shape for i in x_reshape])
-
         x_cat = torch.stack(x_reshape, dim=0).permute(1, 0, 2)
-
-        print("x_cat", x_cat.shape)
 
         for block in self.enc_blocks:
             x_cat, _ = block(x_cat, attn_mask=None, return_kv_cache=False)
-        
-        print("x_cat", x_cat.shape)
 
+        # Reshape back to (B, T, C)
         output = x_cat[:, -1, :].reshape(B, T, C)
-        print("output", output.shape)
-
+        output = self.rms_out(output)
         return output
 
 
@@ -329,7 +322,6 @@ class Interpreter(nn.Module):
         super().__init__()
         self.config = config
         self.n_dim = config.n_dim
-        self.n_layer = config.n_layer
         self.max_seq_len = config.max_seq_len
         self.pnorm = config.pnorm
 
@@ -358,11 +350,10 @@ class Interpreter(nn.Module):
         
         self.encoder = Encoder(config)
         self.decoder = Decoder(config)
-        self.loop_encoder = LoopEncoder(config)
-        self.loop_decoder = LoopEncoder(config)
-        # self.inp_inject = nn.Linear(2*config.n_dim, config.n_dim, bias=False)
-        # self.dec_blocks = nn.ModuleList([TransformerBlock(config, rope=rope) for _ in range(config.n_layer)])
-        self.ln_f = RMSNorm(config.n_dim)
+        self.loop_encoder = LoopEncoder(config, n_layer=config.n_lecn_layer)
+        self.loop_decoder = LoopEncoder(config, n_layer=config.n_ldec_layer)
+
+  
 
         self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
         
@@ -370,21 +361,17 @@ class Interpreter(nn.Module):
         
         # weight sharing scheme. Transformer++ (Llama architecture does not tie weights)
         # Reference: https://youtu.be/pRM_P6UfdIc?t=1500
-        # self.wte.weight = self.lm_head.weight
-
-        # init params
-        # self.apply(self._init_weights)
-        # self.init_prog_embedding()
+        self.init_prog_embedding()
 
     def init_prog_embedding(self):
         if self.pnorm is not None:
             """Initialize embedding vectors with the target L2 norm."""
             with torch.no_grad():
                 # Initialize the embedding weights to random values
-                nn.init.normal_(self.pte.weight)
+                nn.init.normal_(self.pte[0].weight)
                 # Normalize each embedding vector to the target L2 norm
-                norm = self.pte.weight.norm(p=2, dim=1, keepdim=True)
-                self.pte.weight = nn.Parameter(self.pte.weight * (self.pnorm / norm))
+                norm = self.pte[0].weight.norm(p=2, dim=1, keepdim=True)
+                self.pte[0].weight = nn.Parameter(self.pte[0].weight * (self.pnorm / norm))
 
 
     @staticmethod
@@ -425,10 +412,6 @@ class Interpreter(nn.Module):
         dec_mask = self.dec_mask(output_grid)
         dec_enc_mask = self.dec_enc_mask(input_grid, output_grid, program_prefix=3, pad_idx=self.PAD_IDX)
 
-        enc_mask = None
-        # dec_enc_mask = None
-        # dec_mask = None
-
         program = self.pte(program)
         color_permutation = self.cte(color_permutation)
         array_transform = self.ate(array_transform)
@@ -439,6 +422,7 @@ class Interpreter(nn.Module):
 
         loop_enc_inps = []
         loop_dec_inps = []
+        loop_logits = []
         for _ in range(n_loops):
             enc_inp, enc_kv_cache = self.encoder(enc_inp, enc_mask=enc_mask)
             loop_enc_inps.append(enc_inp)
@@ -447,64 +431,26 @@ class Interpreter(nn.Module):
             dec_inp, dec_kv_cache = self.decoder(enc_inp, dec_inp, enc_mask=dec_enc_mask, dec_mask=dec_mask)
             loop_dec_inps.append(dec_inp)
             dec_inp = self.loop_decoder(loop_dec_inps)
+            logits = self.lm_head(dec_inp)
+            loop_logits.append(logits)
 
-        print(enc_inp.shape, dec_inp.shape)
-        dec_out = self.ln_f(dec_inp)
-        logits = self.lm_head(dec_out)
-        return logits
+        return loop_logits
     
 
 config = InterpreterConfig(
     prog_vocab_size=len(arc_tokenizer.program_tokenizer),
-    n_dim=256,
-    n_embd=256,
-    n_head=8,
-    n_layer=2,
+    n_dim=64,
+    n_head=4,
+    n_embd=8,
+    n_enc_layer=1,
+    n_dec_layer=2,
+    n_lecn_layer=2,
+    n_ldec_layer=1,
     max_seq_len=2048,
     pnorm=1.0,
     dropout=0.0
 )
 
 interpreter = Interpreter(config)
-interpreter(x, 3).shape
-# %%
-
-
-def dec_enc_mask(inp_grid, output_grid, program_prefix=3, pad_idx=13):
-    kT = inp_grid.size(1) + program_prefix
-    qT = output_grid.size(1)
-
-    inp_lens = (inp_grid != pad_idx).sum(1).unsqueeze(1).unsqueeze(2) + program_prefix
-    idx = torch.arange(kT, device=device)
-    mask = (idx < inp_lens).expand(-1, qT, -1)
-    return mask.unsqueeze(1)
-
-
-
-dec_enc_mask(x.input, x.causal_output)[4]
-# %%
-
-# bs = 6
-kT = 5
-qT = 3
-device = x.input.device
-
-enc_inp = torch.tensor(
-    [[1, 2, 3, 13, 13, 13],
-     [1, 2, 3, 4, 13, 13],
-     [1, 13, 13, 13, 13, 13]])
-
-dec_inp = torch.ones(3, 8)
-
-dec_enc_mask(enc_inp, dec_inp)[2]
-#      k1, k2, k3, k4 k5
-# q1 [   ,   ,   ,   ,   ]
-# q2 [   ,   ,   ,   ,   ]
-# q3 [   ,   ,   ,   ,   ]
-# %%
-
-(x.input != 13).sum(1)
-# %%
-
-x.causal_output.shape, x.input.shape
+interpreter(x, 3)
 # %%
