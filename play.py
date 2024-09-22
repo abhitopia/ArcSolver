@@ -17,9 +17,7 @@ train_examples = TRAIN_COLLECTION.train_examples
 test_examples = TRAIN_COLLECTION.test_examples
 arc_tokenizer = ArcTokenizer()
 arc_tokenizer.build_program_tokenizer(train_examples)
-# %%
-len(train_examples), len(test_examples)
-# %%
+
 ds = ArcExamplesDataset(train_examples, arc_tokenizer)
 dl = ds.get_dataloader(32000)
 for batch in dl:
@@ -33,7 +31,7 @@ import torch.nn as nn
 
 
 @dataclass
-class InterpreterConfig:
+class REPLConfig:
     prog_vocab_size: int # number of program tokens
     n_dim: int  # dimension of the model
     n_embd: int  # embedding dimension
@@ -79,12 +77,12 @@ class InterpreterConfig:
         }
     
     @staticmethod
-    def from_dict(data: dict) -> "InterpreterConfig":
-        return InterpreterConfig(**data)
+    def from_dict(data: dict) -> "REPLConfig":
+        return REPLConfig(**data)
 
 
 class SelfAttention(nn.Module):
-    def __init__(self, config: InterpreterConfig, rope: RotaryPositionalEmbeddings):
+    def __init__(self, config: REPLConfig, rope: RotaryPositionalEmbeddings):
         super().__init__()
         self.config = config
         self.n_head = config.n_head
@@ -173,7 +171,7 @@ class SelfAttention(nn.Module):
 
 
 class EncoderBlock(nn.Module):
-    def __init__(self, config: InterpreterConfig, rope: RotaryPositionalEmbeddings):
+    def __init__(self, config: REPLConfig, rope: RotaryPositionalEmbeddings):
         super().__init__()
         self.config = config
         self.dropout = nn.Dropout(config.dropout)
@@ -198,7 +196,7 @@ class EncoderBlock(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, config: InterpreterConfig):
+    def __init__(self, config: REPLConfig):
         super().__init__()
 
         self.config = config
@@ -223,7 +221,7 @@ class Encoder(nn.Module):
     
 
 class DecoderBlock(nn.Module):
-    def __init__(self, config: InterpreterConfig, rope: RotaryPositionalEmbeddings):
+    def __init__(self, config: REPLConfig, rope: RotaryPositionalEmbeddings):
         super().__init__()
         self.config = config
         self.dropout = nn.Dropout(config.dropout)
@@ -259,7 +257,7 @@ class DecoderBlock(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, config: InterpreterConfig):
+    def __init__(self, config: REPLConfig):
         super().__init__()
 
         self.config = config
@@ -289,7 +287,7 @@ class Decoder(nn.Module):
     
 
 class LoopEncoder(nn.Module):
-    def __init__(self, config: InterpreterConfig, n_layer):
+    def __init__(self, config: REPLConfig, n_layer):
         super().__init__()
         self.config = config
         self.n_dim = config.n_dim
@@ -315,9 +313,9 @@ class LoopEncoder(nn.Module):
         return output
 
 
-class Interpreter(nn.Module):
+class REPL(nn.Module):
     def __init__(self,
-                config: InterpreterConfig,
+                config: REPLConfig,
                 pad_idx: int = GridTokenizer().PAD_IDX):
         super().__init__()
         self.config = config
@@ -332,11 +330,6 @@ class Interpreter(nn.Module):
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
-        self.gte = nn.Sequential(
-            nn.Embedding(config.grid_vocab_size, config.n_embd),
-            nn.Linear(config.n_embd, config.n_dim, bias=False)
-        )
-
         self.cte = nn.Sequential(
             nn.Embedding(config.perm_vocab_size, config.n_embd),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
@@ -344,6 +337,11 @@ class Interpreter(nn.Module):
 
         self.ate = nn.Sequential(
             nn.Embedding(config.tform_vocab_size, config.n_embd),
+            nn.Linear(config.n_embd, config.n_dim, bias=False)
+        )
+
+        self.gte = nn.Sequential(
+            nn.Embedding(config.grid_vocab_size, config.n_embd),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
@@ -365,7 +363,7 @@ class Interpreter(nn.Module):
 
     def init_prog_embedding(self):
         if self.pnorm is not None:
-            """Initialize embedding vectors with the target L2 norm."""
+            """Initialize prog embedding vectors with the target L2 norm."""
             with torch.no_grad():
                 # Initialize the embedding weights to random values
                 nn.init.normal_(self.pte[0].weight)
@@ -436,8 +434,12 @@ class Interpreter(nn.Module):
 
         return loop_logits
     
+    def loss(self, loop_logits, y):
+        # loss_fn = nn.CrossEntropyLoss()
+        # return loss_fn(logits.view(-1, logits.size(-1)), y.view(-1))
+    
 
-config = InterpreterConfig(
+config = REPLConfig(
     prog_vocab_size=len(arc_tokenizer.program_tokenizer),
     n_dim=64,
     n_head=4,
@@ -451,6 +453,85 @@ config = InterpreterConfig(
     dropout=0.0
 )
 
-interpreter = Interpreter(config)
-interpreter(x, 3)
+interpreter = REPL(config)
+loop_logits = interpreter(x, 3)
+# %%
+
+import numpy as np
+def exponential_spacing(n):
+    # Generate n points linearly spaced in log scale
+    log_space = np.linspace(0, 1, n)
+    
+    # Exponentiate to create an exponentially spaced set
+    exp_values = np.exp(log_space * np.log(1.0 / 0.5))
+    
+    # Normalize the values to the range [0.5, 1.0]
+    scaled_values = 0.5 * exp_values
+    diffs = scaled_values[1:] - scaled_values[:-1]
+    diffs = diffs[::-1]
+    cumsum = np.cumsum(diffs)
+    scaled_values = [0.5] + [0.5 + d for d in cumsum]
+    return scaled_values
+
+xx = exponential_spacing(10)
+xx
+# %%
+xx[1:] - xx[:-1]
+# %%
+xx
+# %%
+import numpy as np
+
+def exp_spacing(n):
+    exponents = np.linspace(0, 1, n)
+    values = 1 - np.exp(-exponents)
+    normalized_values = 0.5 + (values / np.max(values)) * 0.5
+    return normalized_values
+xx = exp_spacing(10)
+# %%
+np.asarray(xx[1:]) - np.asarray(xx[:-1])
+# %%
+def exp_spacing(n, rate):
+    exponents = np.linspace(0, rate, n)
+    values = 1 - np.exp(-exponents)
+    normalized_values = 0.5 + (values / np.max(values)) * 0.5
+    return normalized_values
+
+exp_spacing(10, 0.00001)
+# %%
+def exp_spacing(n, rate):
+    if rate == 0:
+        return np.linspace(0.5, 1.0, n)
+    else:
+        exponents = np.linspace(0, rate, n)
+        values = 1 - np.exp(-exponents)
+        normalized_values = 0.5 + (values / np.max(values)) * 0.5
+        return normalized_values
+    
+exp_spacing(10, 6)
+# %%
+def exp_spacing(n, rate=1, min_val=40, max_val=100, round_int=True):
+    assert n > 0, "n must be greater than 0"
+    if n == 1:
+        spaced_intervals = np.array([max_val])
+    elif rate == 0:
+        spaced_intervals = np.linspace(min_val, max_val, n)
+    else:
+        exponents = np.linspace(0, rate, n)
+        values = 1 - np.exp(-exponents)
+        spaced_intervals = min_val + (values / np.max(values)) * (max_val - min_val)
+
+    if round_int:
+        spaced_intervals = np.round(spaced_intervals).astype(int)
+
+    return spaced_intervals
+
+exp_spacing(10)
+# %%
+# 
+# 1/5 = 100/40
+
+
+exp_spacing(10, 0.0, 10, 100)
+
 # %%
