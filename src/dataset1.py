@@ -249,7 +249,7 @@ class ArcExamplesDataset(Dataset):
         return ArcExamplesDataset([self.examples[i] for i in indices], self.tokenizer)
     
     @staticmethod
-    def collate_fn(batch: List[Tuple[MODEL_INPUT, MODEL_OUTPUT]], pad_idx: int, device=torch.device('cpu')):
+    def collate_fn(batch: List[Tuple[MODEL_INPUT, MODEL_OUTPUT]], pad_idx: int, device=torch.device('cpu'))-> Tuple[MODEL_INPUT, MODEL_OUTPUT]:
         x, y  = zip(*batch)
 
         cps = [xi.color_permutation for xi in x]
@@ -272,12 +272,18 @@ class ArcExamplesDataset(Dataset):
         inps = torch.tensor(inps, dtype=torch.long).to(device, non_blocking=True)
         outs = torch.tensor(outs, dtype=torch.long).to(device, non_blocking=True)
 
+        pads = torch.tensor([pad_idx]*outs.size(0), dtype=torch.long).to(device, non_blocking=True)
+
+        outs_in = torch.cat([pads.unsqueeze(1), outs[:, :-1]], dim=1)
+
+        # assert torch.allclose(outs[:, :-1], outs_in[:, 1:]), "Output and Input are not causal"
 
         x = MODEL_INPUT(
             color_permutation=cps,
             array_transform=ats,
             program=prgs,
             input=inps,
+            causal_output = outs_in,
             meta=meta
         )
 

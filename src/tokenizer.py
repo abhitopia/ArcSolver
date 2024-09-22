@@ -1,7 +1,9 @@
-from typing import List, Tuple
+from dataclasses import dataclass
+from typing import List, Optional, Tuple, Union
 from collections import namedtuple
 import json
 import numpy as np
+import torch
 from .task1 import ArrayTransform, ColorPermutation, Example
 
 
@@ -98,9 +100,22 @@ class ArrayTransformTokenizer(Tokenizer):
         idx2token = {idx: token for idx, token in enumerate(tokens)}
         super().__init__(token2idx=token2idx, idx2token=idx2token, frozen=True)
 
+@dataclass
+class MODEL_INPUT:
+    color_permutation: Union[List[int], torch.Tensor]
+    array_transform: Union[List[int], torch.Tensor]
+    program: Union[List[int], torch.Tensor]
+    input: Union[List[int], torch.Tensor]
+    meta: Union[dict, List[dict]]
+    causal_output: Optional[torch.Tensor] = None
 
-MODEL_INPUT = namedtuple('MODEL_INPUT', ['color_permutation', 'array_transform', 'program', 'input', 'meta'])
-MODEL_OUTPUT = namedtuple('MODEL_OUTPUT', ['output'])
+@dataclass
+class MODEL_OUTPUT:
+    output: Union[List[int], torch.Tensor]
+
+
+# MODEL_INPUT = namedtuple('MODEL_INPUT', ['color_permutation', 'array_transform', 'program', 'input', 'meta'])
+# MODEL_OUTPUT = namedtuple('MODEL_OUTPUT', ['output'])
 
 class ArcTokenizer:
     def __init__(self) -> None:
