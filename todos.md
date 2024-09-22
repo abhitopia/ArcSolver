@@ -8,9 +8,13 @@
 - [x] Encoder-Decoder Attention Should be different
 - [x] Add loop_heads
 - [x] Specify various configs
-- [ ] Rename to REPL
+- [x] Rename to REPL
+- [x] Create the multi-level loss module
+- [ ] Test and add multilevel loss with/to repl model
+- [ ] Make loop encoder incremental
+- [ ] Remove any samples with > max_seq_len input or output
+- [ ] Add loop level token/sample accuracy
 - [ ] Consider replacing MSE to KL Divergence??
-- [ ] Create the progressive loss
 - [ ] Top-K progressive loss + exponential weighted?
 - [ ] Add the abiltiy to specify eval batch size
 - [ ] Synthetic data needs to have uniform embeddings (This is important. Do this for SYNTH/REARC + Tama)
