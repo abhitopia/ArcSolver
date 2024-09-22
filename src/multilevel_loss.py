@@ -4,6 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 #%%
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 class MultiLevelLoss(nn.Module):
     def __init__(self, PAD_IDX, pct_indices_per_level):
         super(MultiLevelLoss, self).__init__()
@@ -111,25 +115,25 @@ class MultiLevelLoss(nn.Module):
 
         return selected_mask
 
-    def compute_loss_for_level(self, logits_i, targets, new_selected_mask, valid_mask):
+    def compute_loss_for_level(self, logits_i, targets, selected_mask, valid_mask):
         """
-        Computes cross-entropy loss for the current level over newly selected positions.
+        Computes cross-entropy loss for the current level over selected positions.
 
         Args:
             logits_i (torch.Tensor): Logits tensor for the current level, shape (B, T, D).
             targets (torch.Tensor): Target tensor, shape (B, T).
-            new_selected_mask (torch.Tensor): Mask of positions newly selected at this level, shape (B, T).
+            selected_mask (torch.Tensor): Mask of positions selected up to this level, shape (B, T).
             valid_mask (torch.Tensor): Mask of valid positions, shape (B, T).
 
         Returns:
             loss_level (torch.Tensor): Loss value for the current level.
-            num_tokens (int): Number of tokens used in the loss computation.
+            num_tokens_level (int): Number of tokens used in the loss computation at this level.
         """
-        selected_positions = new_selected_mask & valid_mask  # Ensure only valid positions are considered
+        selected_positions = selected_mask & valid_mask  # Ensure only valid positions are considered
 
-        num_tokens = selected_positions.sum().item()
-        if num_tokens == 0:
-            return 0.0, 0  # No positions to compute loss on
+        num_tokens_level = selected_positions.sum().item()
+        if num_tokens_level == 0:
+            return 0.0, 0
 
         # Extract logits and targets for selected positions
         logits_selected = logits_i[selected_positions]  # shape (Total_Selected_Positions, D)
@@ -138,7 +142,7 @@ class MultiLevelLoss(nn.Module):
         # Compute cross-entropy loss with 'sum' reduction
         loss_level = F.cross_entropy(logits_selected, targets_selected, reduction='sum')
 
-        return loss_level, num_tokens
+        return loss_level, num_tokens_level
 
     def forward(self, logits_list, targets):
         """
@@ -177,9 +181,6 @@ class MultiLevelLoss(nn.Module):
             # Get correct predictions not already selected
             correct_mask = self.get_correct_mask(preds, targets, valid_mask, selected_mask)
 
-            # Store a copy of selected_mask before updating
-            previous_selected_mask = selected_mask.clone()
-
             # Update selected_mask with correct predictions
             selected_mask |= correct_mask
 
@@ -188,24 +189,21 @@ class MultiLevelLoss(nn.Module):
                 confidences, valid_mask, selected_mask, N_i_per_seq
             )
 
-            # Compute new selections made at this level
-            new_selected_mask = selected_mask ^ previous_selected_mask
-
-            # Compute loss for this level over newly selected positions
+            # Compute loss for this level over all selected positions
             loss_level, num_tokens_level = self.compute_loss_for_level(
-                logits_i, targets, new_selected_mask, valid_mask
+                logits_i, targets, selected_mask, valid_mask
             )
 
             total_loss += loss_level
-            total_tokens += num_tokens_level
+            total_tokens += num_tokens_level  # Accumulate total tokens over levels
 
         if total_tokens == 0:
             return torch.tensor(0.0, device=device, requires_grad=True)
 
-        # Compute the final loss by dividing the total loss by the total number of tokens
         final_loss = total_loss / total_tokens
 
         return final_loss
+
 
 
 #%%
