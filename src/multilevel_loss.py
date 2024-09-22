@@ -209,34 +209,58 @@ class MultiLevelLoss(nn.Module):
 #%%
 
 # Example tensors (replace with actual data)
-B, T, D = 3, 5, 10  # Example dimensions
+B, T, D = 3, 20, 10  # Example dimensions
 N_levels = 3
 logits_list = [torch.randn(B, T, D) for _ in range(N_levels)]
-targets = torch.randint(0, D, (B, T))
+targets = torch.randint(1, D, (B, T))
 PAD_IDX = 0  # Index of the padding token
 pct_indices_per_level = [0.5, 0.75, 1.0]  # Percentages for each level
 
+for i in range(B):
+    seq_len_i = torch.randint(T//2, T, (1,))[0].item()
+    targets[i, seq_len_i:] = 0  # Add padding tokens to targets
+
+targets
+#%%
 # Initialize the ProgressiveLoss class
 progressive_loss = MultiLevelLoss(PAD_IDX, pct_indices_per_level)
 
-# Compute the loss
-loss = progressive_loss(logits_list, targets)
-print(f"Total Loss: {loss.item()}")
-
-
-#%%
-# Test compute_valid_mask
 valid_mask, num_valid_tokens_per_seq = progressive_loss.compute_valid_mask(targets)
 print("Valid Mask:", valid_mask)
 print("Number of Valid Tokens per Sequence:", num_valid_tokens_per_seq)
+#%%
+# Test compute_valid_mask
+
 
 # Test compute_predictions_and_confidences
-logits_i = logits_list[0]
+logits_i = logits_list[1]
 preds, confidences = progressive_loss.compute_predictions_and_confidences(logits_i)
 print("Predictions:", preds)
 print("Confidences:", confidences)
 
+bid  = 2
+tid = 10
+
+# F.log_softmax(logits_i[test_bid, test_tid, :], dim=0)
+logits_i[bid, tid, :].unsqueeze(0).shape
+confid = F.log_softmax(logits_i[bid, tid, :].unsqueeze(0), dim=1).max()
+predid = logits_i[bid, tid, :].argmax()
+confid, confidences[bid, tid], predid, preds[bid, tid]
+#%%
+
+selected_mask = torch.zeros(B, T, dtype=torch.bool)
+# selected_mask[1, 2] = True
+correct_mask = progressive_loss.get_correct_mask(preds, targets, valid_mask, selected_mask)
+correct_mask
+
+#%%
+targets
+preds
+valid_mask
+#%%
 # Continue testing other methods similarly...
 
-
+# Compute the loss
+loss = progressive_loss(logits_list, targets)
+print(f"Total Loss: {loss.item()}")
 # %%
