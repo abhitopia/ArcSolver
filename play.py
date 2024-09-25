@@ -8,6 +8,7 @@ import torch
 from torch import Tensor
 from src.dataset1 import ArcExamplesDataset
 from src.interpreter import RMSNorm, RotaryPositionalEmbeddings, SwiGLUFFN
+from src.multilevel_loss import MultiLevelLoss
 from src.task1 import TRAIN_COLLECTION, ColorPermutation, ArrayTransform, Example
 from src.tokenizer import ArcTokenizer, ArrayTransformTokenizer, ColorPermutationTokenizer, GridTokenizer
 from src.tokenizer import ArcTokenizer, MODEL_OUTPUT, MODEL_INPUT
@@ -20,9 +21,14 @@ arc_tokenizer.build_program_tokenizer(train_examples)
 
 ds = ArcExamplesDataset(train_examples, arc_tokenizer)
 dl = ds.get_dataloader(32000)
+
 for batch in dl:
     x, y = batch
     print(x.input.shape, y.output.shape)
+
+    non_pad = (x.input != 13).sum()
+    total = x.input.numel()
+    print(non_pad, total, non_pad/total)
     break
 x, y = batch
 # %%
