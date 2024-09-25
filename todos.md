@@ -1,11 +1,24 @@
 ## V7 Model
 - [x] Push the current code to V6
-- [ ] Introduct Concept of Example
-- [ ] Example should be able to tokenize and detokenize itself
-- [ ] Change augmentation to be based on the example, as opposed to the task
-- [ ] Add the abiltiy to specify eval batch size
+- [x] Introduct Concept of Example
+- [x] Change augmentation to be based on the example, as opposed to the task
+- [x] Create tokeniser.py and add interpreter tokenizer
+- [x] Create new dataset.py to handle new ProgramDataset
+- [x] Fix encoder attention (Seems to throw no nans anymore magically)
+- [x] Encoder-Decoder Attention Should be different
+- [x] Add loop_heads
+- [x] Specify various configs
+- [x] Rename to REPL
+- [x] Create the multi-level loss module
+- [x] Investigate why there are nans in inp_kv_cache (new issue for loop encoder kv cache) (This is expected)
+- [ ] Rope Should be different for LoopEncoder, rotation should take bigger jumpd?
+- [ ] Test and add multilevel loss with/to repl model
+- [ ] Make loop encoder incremental
+- [ ] Remove any samples with > max_seq_len input or output
+- [ ] Add loop level token/sample accuracy
+- [ ] Consider replacing MSE to KL Divergence??
 - [ ] Top-K progressive loss + exponential weighted?
-- [ ] Implement the cool levelled loss
+- [ ] Add the abiltiy to specify eval batch size
 - [ ] Synthetic data needs to have uniform embeddings (This is important. Do this for SYNTH/REARC + Tama)
 - [ ] Seprate out program embedding from invariant transformation
 - [ ] Implement separate handling of the program embedding. Different input injection + may be different QKV transformation
@@ -13,6 +26,7 @@
 - [ ] Ability to specify step size?
 - [ ] L2 regularisation despite setting the norm to 1.0
 - [ ] Add Tama dataset
+- [ ] Use ARC verifiers to generate novel valid programs
 
 
 
@@ -237,7 +251,7 @@ But this is all done in the future. For now, we will just use the unique embeddi
 
 
 # Experimentation Strategy
-- Find_LR
+- Find_L
 - After training stagnates
     - Find a new LR on the loaded model
     - Increase n_mixers (until the loss stops getting better)

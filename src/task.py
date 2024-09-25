@@ -408,10 +408,10 @@ class ArcTasksLoader:
 # Training Tasks
 ARC_1D = ArcTasksLoader(name='ARC_1D', path='data/arc_dataset_collection/dataset/1D-ARC/data')
 ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
-ARC_SYTH_EXTEND = ArcTasksLoader(name='ARC_SYTH_EXTEND', path='data/arc_dataset_collection/dataset/ARC_synthetic_extend/data')
+# ARC_SYTH_EXTEND = ArcTasksLoader(name='ARC_SYTH_EXTEND', path='data/arc_dataset_collection/dataset/ARC_synthetic_extend/data')
 
-# They seem to be bad quality tasks
 ARC_COMMUNITY = ArcTasksLoader(name='ARC_COMMUNITY', path='data/arc_dataset_collection/dataset/arc-community/data')
+# They seem to be bad quality tasks
 ARC_DIVA = ArcTasksLoader(name='ARC_DIVA', path='data/arc_dataset_collection/dataset/arc-dataset-diva/data', max_tasks=100)
 ARC_CONCEPT = ArcTasksLoader(name='ARC_CONCEPT', path='data/arc_dataset_collection/dataset/ConceptARC/data')
 ARC_DBIGHAM = ArcTasksLoader(name='ARC_DBIGHAM', path='data/arc_dataset_collection/dataset/dbigham/data')
@@ -442,7 +442,7 @@ EVALUATION_TASKLOADER = ARC_EVAL
 
 AUXILIARY_TASKLOADERS = [
     ARC_1D,
-    ARC_SYTH_EXTEND,
+    # ARC_SYTH_EXTEND,
     ARC_COMMUNITY,
     ARC_DIVA,
     ARC_CONCEPT,
