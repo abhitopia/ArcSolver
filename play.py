@@ -46,6 +46,12 @@ class REPLConfig:
     perm_vocab_size: int = len(ColorPermutationTokenizer())
     tform_vocab_size: int = len(ArrayTransformTokenizer())
     dropout: float = 0.0 # dropout probability
+    edr: float = 2.0 # exponential error decay rate per loop, 0.0 means uniform dep rate
+    mctp: float = 0.4 # minimum correct token percentage for loss computation
+    max_loops: int = 20 # maximum number of loops
+    loop_rope_base: int = 1_000 # Smaller for higher sensitivity to loop iterations
+
+
 
     def __post_init__(self):
         if self.n_dim % self.n_head != 0:
@@ -54,6 +60,9 @@ class REPLConfig:
         if self.pnorm is not None:
             assert 0.0 < self.pnorm, "p-norm must be greater than 0"
         
+        assert self.mctp < 1.0, "Minimum error rate must be less than 1.0"
+
+        assert self.edr >= 0.0, "Error depreciation rate must be greater than 0.0"
         head_dim = self.n_dim // self.n_head
         assert head_dim % 2 == 0, "Head dimension must be even"
 
@@ -73,7 +82,11 @@ class REPLConfig:
             'n_ldec_layer': self.n_ldec_layer,
             'max_seq_len': self.max_seq_len,
             'pnorm': self.pnorm,
-            'dropout': self.dropout
+            'dropout': self.dropout,
+            'edr': self.edr,
+            'mctp': self.mctp,
+            'max_loops': self.max_loops,
+            'loop_rope_base': self.loop_rope_base
         }
     
     @staticmethod
@@ -156,7 +169,7 @@ class SelfAttention(nn.Module):
         # default scale (1/sqrt(D)) is applied inside scaled_dot_product_attention
         attn_output = F.scaled_dot_product_attention(q, k, v, 
                                                     attn_mask=attn_mask,
-                                                    # is_causal=attn_mask is None, # default to causal if attn_mask is None
+                                                    is_causal=attn_mask is None, # default to causal if attn_mask is None
                                                     dropout_p=dropout_p)
 
         # attn_output: (B, n_head, T, head_dim)
@@ -272,7 +285,8 @@ class Decoder(nn.Module):
             enc_out: Tensor, 
             x: torch.Tensor, 
             enc_mask: Optional[torch.Tensor] = None,   
-            dec_mask: Optional[Tensor] = None, 
+            dec_mask: Optional[Tensor] = None,
+            kv_caches: Optional[List[Tuple[Tensor, Tensor]]] = None,
             return_kv_caches: bool = False
         ):
 
@@ -293,7 +307,11 @@ class LoopEncoder(nn.Module):
         self.n_dim = config.n_dim
         self.n_layer = n_layer
         self.max_seq_len = config.max_seq_len
-        rope = RotaryPositionalEmbeddings(config.n_dim // config.n_head, config.max_seq_len)
+        rope = RotaryPositionalEmbeddings(
+                                    config.n_dim // config.n_head,
+                                    config.max_loops, 
+                                    base=config.loop_rope_base
+                )
         self.enc_blocks = nn.ModuleList([EncoderBlock(config, rope=rope) for _ in range(self.n_layer)])
         self.rms_out = RMSNorm(config.n_dim)
 
@@ -304,13 +322,43 @@ class LoopEncoder(nn.Module):
         x_reshape = [i.reshape(B*T, C) for i in x]
         x_cat = torch.stack(x_reshape, dim=0).permute(1, 0, 2)
 
+
         for block in self.enc_blocks:
+            # attn_mask is None defaulting to causal mask
             x_cat, _ = block(x_cat, attn_mask=None, return_kv_cache=False)
 
         # Reshape back to (B, T, C)
         output = x_cat[:, -1, :].reshape(B, T, C)
         output = self.rms_out(output)
         return output
+    
+
+
+    def forwardx(self, x: List[torch.Tensor], kv_caches: Optional[List[Tuple[Tensor, Tensor]]]=None):
+
+        ## TODO: Need to make this incremental
+        # B, T, C = x[0].size()
+        # x_reshape = [i.reshape(B*T, C) for i in x]
+        # x_cat = torch.stack(x_reshape, dim=0).permute(1, 0, 2)
+
+        B, T, C = x[-1].size()
+        x_cat = x[-1].reshape(B*T, 1, C)
+        updated_kv_caches: List[Tuple[Tensor, Tensor]] = []
+
+        if kv_caches is None:
+            kv_caches = [None] * self.n_layer
+
+        for idx, block in enumerate(self.enc_blocks):
+            # attn_mask is None defaulting to causal mask
+            x_cat, kv_cache = block(x_cat, attn_mask=None, kv_cache=kv_caches[idx], return_kv_cache=True)
+            if kv_cache is not None:
+                updated_kv_caches.append(kv_cache)
+
+        # Reshape back to (B, T, C)
+        output = x_cat[:, -1, :].reshape(B, T, C)
+        output = self.rms_out(output)
+        return output, updated_kv_caches
+
 
 
 class REPL(nn.Module):
@@ -348,14 +396,18 @@ class REPL(nn.Module):
         
         self.encoder = Encoder(config)
         self.decoder = Decoder(config)
-        self.loop_encoder = LoopEncoder(config, n_layer=config.n_lecn_layer)
-        self.loop_decoder = LoopEncoder(config, n_layer=config.n_ldec_layer)
+        self.inp_collate = LoopEncoder(config, n_layer=config.n_lecn_layer)
+        self.out_collate = LoopEncoder(config, n_layer=config.n_ldec_layer)
 
   
 
         self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
         
         self._untrained_block_ids = []
+
+        self.loss = MultiLevelLoss(PAD_IDX=self.PAD_IDX,
+                                edr=config.edr,
+                                min_pct=config.mctp)
         
         # weight sharing scheme. Transformer++ (Llama architecture does not tie weights)
         # Reference: https://youtu.be/pRM_P6UfdIc?t=1500
@@ -373,7 +425,7 @@ class REPL(nn.Module):
 
 
     @staticmethod
-    def enc_mask(inp_grid, program_prefix=3, pad_idx=13):
+    def enc_mask(inp_grid: torch.Tensor, program_prefix=3, pad_idx=13):
         T = inp_grid.size(1) + program_prefix
         device = inp_grid.device
         inp_lens = (inp_grid != pad_idx).sum(1).unsqueeze(1) + program_prefix
@@ -391,7 +443,7 @@ class REPL(nn.Module):
         return causal_mask
     
     @staticmethod
-    def dec_enc_mask(inp_grid, output_grid, program_prefix=3, pad_idx=13):
+    def dec_enc_mask(inp_grid: torch.Tensor, output_grid, program_prefix=3, pad_idx=13):
         kT = inp_grid.size(1) + program_prefix
         qT = output_grid.size(1)
         device = inp_grid.device
@@ -424,20 +476,62 @@ class REPL(nn.Module):
         for _ in range(n_loops):
             enc_inp, enc_kv_cache = self.encoder(enc_inp, enc_mask=enc_mask)
             loop_enc_inps.append(enc_inp)
-            enc_inp = self.loop_encoder(loop_enc_inps)
+            enc_inp = self.inp_collate(loop_enc_inps)
 
             dec_inp, dec_kv_cache = self.decoder(enc_inp, dec_inp, enc_mask=dec_enc_mask, dec_mask=dec_mask)
             loop_dec_inps.append(dec_inp)
-            dec_inp = self.loop_decoder(loop_dec_inps)
+            dec_inp = self.out_collate(loop_dec_inps)
+
             logits = self.lm_head(dec_inp)
             loop_logits.append(logits)
 
         return loop_logits
     
-    def loss(self, loop_logits, y):
-        # loss_fn = nn.CrossEntropyLoss()
-        # return loss_fn(logits.view(-1, logits.size(-1)), y.view(-1))
+
+    def forwardx(self, x: torch.Tensor, n_loops: int = 1):
+        color_permutation = x.color_permutation
+        array_transform = x.array_transform
+        program = x.program
+        input_grid = x.input
+        output_grid = x.causal_output
+        enc_mask = self.enc_mask(input_grid, program_prefix=3, pad_idx=self.PAD_IDX)
+        dec_mask = self.dec_mask(output_grid)
+        dec_enc_mask = self.dec_enc_mask(input_grid, output_grid, program_prefix=3, pad_idx=self.PAD_IDX)
+
+        program = self.pte(program)
+        color_permutation = self.cte(color_permutation)
+        array_transform = self.ate(array_transform)
+        inp_grid = self.gte(input_grid)
+
+        enc_inp = torch.cat([program, color_permutation, array_transform, inp_grid], dim=1)
+        dec_inp = self.gte(output_grid)
+
+        print(enc_inp.size(), dec_inp.size())
+        loop_enc_inps = []
+        loop_dec_inps = []
+        loop_logits = []
+
+        inp_kv_caches = None
+
+        for _ in range(n_loops):
+            enc_inp, enc_kv_cache = self.encoder(enc_inp, enc_mask=enc_mask)
+            loop_enc_inps.append(enc_inp)
+            enc_inp, inp_kv_caches = self.inp_collate.forwardx(loop_enc_inps, kv_caches=inp_kv_caches)
+
+            print(inp_kv_caches)
+            dec_inp, dec_kv_cache = self.decoder(enc_inp, dec_inp, enc_mask=dec_enc_mask, dec_mask=dec_mask)
+            loop_dec_inps.append(dec_inp)
+            dec_inp = self.out_collate(loop_dec_inps)
+            
+            logits = self.lm_head(dec_inp)
+            loop_logits.append(logits)
+
+        return loop_logits
     
+    def compute_loss(self, loop_logits: List[torch.Tensor], y: torch.Tensor):
+        return self.loss(loop_logits, y)
+
+#%%
 
 config = REPLConfig(
     prog_vocab_size=len(arc_tokenizer.program_tokenizer),
@@ -454,84 +548,63 @@ config = REPLConfig(
 )
 
 interpreter = REPL(config)
-loop_logits = interpreter(x, 3)
-# %%
+num_loops = 6
 
-import numpy as np
-def exponential_spacing(n):
-    # Generate n points linearly spaced in log scale
-    log_space = np.linspace(0, 1, n)
-    
-    # Exponentiate to create an exponentially spaced set
-    exp_values = np.exp(log_space * np.log(1.0 / 0.5))
-    
-    # Normalize the values to the range [0.5, 1.0]
-    scaled_values = 0.5 * exp_values
-    diffs = scaled_values[1:] - scaled_values[:-1]
-    diffs = diffs[::-1]
-    cumsum = np.cumsum(diffs)
-    scaled_values = [0.5] + [0.5 + d for d in cumsum]
-    return scaled_values
+#%%
+loop_logits = interpreter(x, num_loops)
 
-xx = exponential_spacing(10)
-xx
+loss = interpreter.compute_loss(loop_logits, y.output)
+loss
 # %%
-xx[1:] - xx[:-1]
+loop_logits2 = interpreter.forwardx(x, num_loops)
+loss2 = interpreter.compute_loss(loop_logits2, y.output)
+loss2
 # %%
-xx
-# %%
-import numpy as np
-
-def exp_spacing(n):
-    exponents = np.linspace(0, 1, n)
-    values = 1 - np.exp(-exponents)
-    normalized_values = 0.5 + (values / np.max(values)) * 0.5
-    return normalized_values
-xx = exp_spacing(10)
-# %%
-np.asarray(xx[1:]) - np.asarray(xx[:-1])
-# %%
-def exp_spacing(n, rate):
-    exponents = np.linspace(0, rate, n)
-    values = 1 - np.exp(-exponents)
-    normalized_values = 0.5 + (values / np.max(values)) * 0.5
-    return normalized_values
-
-exp_spacing(10, 0.00001)
-# %%
-def exp_spacing(n, rate):
-    if rate == 0:
-        return np.linspace(0.5, 1.0, n)
-    else:
-        exponents = np.linspace(0, rate, n)
-        values = 1 - np.exp(-exponents)
-        normalized_values = 0.5 + (values / np.max(values)) * 0.5
-        return normalized_values
-    
-exp_spacing(10, 6)
-# %%
-def exp_spacing(n, rate=1, min_val=40, max_val=100, round_int=True):
-    assert n > 0, "n must be greater than 0"
-    if n == 1:
-        spaced_intervals = np.array([max_val])
-    elif rate == 0:
-        spaced_intervals = np.linspace(min_val, max_val, n)
-    else:
-        exponents = np.linspace(0, rate, n)
-        values = 1 - np.exp(-exponents)
-        spaced_intervals = min_val + (values / np.max(values)) * (max_val - min_val)
-
-    if round_int:
-        spaced_intervals = np.round(spaced_intervals).astype(int)
-
-    return spaced_intervals
-
-exp_spacing(10)
-# %%
-# 
-# 1/5 = 100/40
+loss = interpreter.compute_loss(loop_logits, y.output)
 
 
-exp_spacing(10, 0.0, 10, 100)
+#%%
 
+for i in range(len(loop_logits)):
+    print(loop_logits[i].shape, loop_logits2[i].shape)
+    print((loop_logits[i] - loop_logits2[i]).abs().max())
 # %%
+loop_logits2
+# %%
+x.input.shape
+# %%
+x.program.shape
+# %%
+
+def create_test_inp(config, bs=10, inp_seq_len=10, out_seq_len=5, pad_idx=13):
+
+    program = torch.randint(0, config.prog_vocab_size, (bs, 1))
+    color_permutation = torch.randint(0, config.perm_vocab_size, (bs, 1))
+    array_transform = torch.randint(0, config.tform_vocab_size, (bs, 1))
+    input_grid = torch.randint(0, pad_idx-1, (bs, inp_seq_len))
+
+    for b in range(bs):
+        input_grid[b, np.random.randint(inp_seq_len//2, inp_seq_len):] = pad_idx
+
+    output_grid = torch.randint(0, pad_idx-1, (bs, out_seq_len))
+    output_grid[:, 0] = pad_idx
+
+    return MODEL_INPUT(program=program, color_permutation=color_permutation, array_transform=array_transform, input=input_grid,causal_output=output_grid, meta=None)
+
+
+x = create_test_inp(config, 1)
+
+x.input.shape
+# %%
+enc_mask = interpreter.enc_mask(x.input, program_prefix=0, pad_idx=13)
+enc_mask.shape
+# %%
+enc_mask
+# %%
+x.input
+# %%
+x.input
+# %%
+x.causal_output
+# %%
+interpreter(x, 1)

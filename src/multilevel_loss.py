@@ -1,4 +1,5 @@
 #%%
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -8,11 +9,27 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
+def exp_spacing(n, rate=1, min_val=0.4, max_val=1.0):
+    assert n > 0, "n must be greater than 0"
+    if n == 1:
+        spaced_intervals = np.array([max_val])
+    elif rate == 0:
+        spaced_intervals = np.linspace(min_val, max_val, n)
+    else:
+        exponents = np.linspace(0, rate, n)
+        values = 1 - np.exp(-exponents)
+        spaced_intervals = min_val + (values / np.max(values)) * (max_val - min_val)
+    return spaced_intervals
+
+
 class MultiLevelLoss(nn.Module):
-    def __init__(self, PAD_IDX, pct_indices_per_level):
+    def __init__(self, PAD_IDX, edr: float = 2, min_pct: float = 0.4, max_pct: float = 1.0):
         super(MultiLevelLoss, self).__init__()
         self.PAD_IDX = PAD_IDX
-        self.pct_indices_per_level = pct_indices_per_level
+        self.edr = edr
+        self.min_pct = min_pct
+        self.max_pct = max_pct
 
     def compute_valid_mask(self, targets):
         """
@@ -159,6 +176,9 @@ class MultiLevelLoss(nn.Module):
         N = len(logits_list)  # Number of levels
         device = targets.device
 
+        pct_indices_per_level = exp_spacing(N, self.edr, self.min_pct, self.max_pct)
+        print("pct_indices_per_level", pct_indices_per_level)
+
         # Compute valid_mask and number of valid tokens per sequence
         valid_mask, num_valid_tokens_per_seq = self.compute_valid_mask(targets)
 
@@ -170,7 +190,7 @@ class MultiLevelLoss(nn.Module):
 
         for level_i in range(N):
             logits_i = logits_list[level_i]  # shape (B, T, D)
-            pct_i = self.pct_indices_per_level[level_i]
+            pct_i = pct_indices_per_level[level_i]
 
             # Compute N_i for each sequence
             N_i_per_seq = (num_valid_tokens_per_seq.float() * pct_i).ceil().long()  # shape (B,)
