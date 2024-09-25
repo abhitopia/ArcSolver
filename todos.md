@@ -10,6 +10,8 @@
 - [x] Specify various configs
 - [x] Rename to REPL
 - [x] Create the multi-level loss module
+- [x] Investigate why there are nans in inp_kv_cache (new issue for loop encoder kv cache) (This is expected)
+- [ ] Rope Should be different for LoopEncoder, rotation should take bigger jumpd?
 - [ ] Test and add multilevel loss with/to repl model
 - [ ] Make loop encoder incremental
 - [ ] Remove any samples with > max_seq_len input or output
@@ -24,6 +26,7 @@
 - [ ] Ability to specify step size?
 - [ ] L2 regularisation despite setting the norm to 1.0
 - [ ] Add Tama dataset
+- [ ] Use ARC verifiers to generate novel valid programs
 
 
 
@@ -248,7 +251,7 @@ But this is all done in the future. For now, we will just use the unique embeddi
 
 
 # Experimentation Strategy
-- Find_LR
+- Find_L
 - After training stagnates
     - Find a new LR on the loaded model
     - Increase n_mixers (until the loss stops getting better)
