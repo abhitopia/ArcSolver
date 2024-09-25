@@ -21,6 +21,7 @@ ipdb = "^0.13.13"
 pandas = "^2.2.2"
 unique-names-generator = "^1.0.2"
 plotly = "^5.24.1"
+einops = "^0.8.0"
 
 
 [build-system]
