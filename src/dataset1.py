@@ -31,9 +31,9 @@ class TargetTokenCountBatchSampler(BatchSampler):
 
     @staticmethod
     def sample_len(model_input: MODEL_INPUT, model_output: MODEL_OUTPUT):
-        inp_len = len(model_input.input)
+        inp_len = len(model_input.grid)
         # print(inp_len, model_input.input.size)
-        out_len = len(model_output.output)
+        out_len = len(model_output.grid)
         if inp_len == out_len:
             return (0, inp_len, out_len)
         elif inp_len < out_len:
@@ -89,6 +89,28 @@ class TargetTokenCountBatchSampler(BatchSampler):
 
         return super_batches, super_batch_token_counts, super_batch_widths
 
+
+    def reduce_num_batches(self, batches, batch_token_counts, batch_widths):
+        mean_util = np.mean([self.batch_utilisation(batch) for batch in batches])
+
+        score = mean_util/len(batches)
+        for _ in range(10):
+            new_batches, new_batch_token_counts, new_batch_widths = self.merge_batches(batches, batch_token_counts, batch_widths)
+            mean_util = np.mean([self.batch_utilisation(batch) for batch in new_batches])
+            new_score = mean_util/len(new_batches)
+            print(new_score, len(new_batches))
+            if new_score > score:
+                batches = new_batches
+                batch_token_counts = new_batch_token_counts
+                batch_widths = new_batch_widths
+                score = new_score
+            else:
+                break
+
+        return batches, batch_token_counts, batch_widths
+
+
+
     def create_batches(self):
         indices = list(range(len(self.dataset)))
         random.shuffle(indices)
@@ -107,8 +129,8 @@ class TargetTokenCountBatchSampler(BatchSampler):
 
         for idx in sorted_indices:
             x, y = self.dataset[idx]
-            input_len = len(x.input)
-            output_len = len(y.output)
+            input_len = len(x.grid)
+            output_len = len(y.grid)
 
             # Incremental stats
             inc_max_inp_len = max(input_len, max_batch_inp_len)
@@ -146,9 +168,7 @@ class TargetTokenCountBatchSampler(BatchSampler):
             batch_token_counts.append(batch_token_count)
             batch_widths.append(max_batch_inp_len + max_batch_out_len + 3)
 
-        # Merge Small Batches
-        for _ in range(5):
-            batches, batch_token_counts, batch_widths = self.merge_batches(batches, batch_token_counts, batch_widths)
+        self.reduce_num_batches(batches, batch_token_counts, batch_widths)
 
         return batches
 
@@ -162,8 +182,8 @@ class TargetTokenCountBatchSampler(BatchSampler):
 
         for i in batch:
             x, y = self.dataset[i]
-            inp_lens.append(len(x.input))
-            out_lens.append(len(y.output))
+            inp_lens.append(len(x.grid))
+            out_lens.append(len(y.grid))
 
         avg_inp_len = np.mean(inp_lens)
         max_inp_len = np.max(inp_lens)
@@ -203,7 +223,7 @@ class TargetTokenCountBatchSampler(BatchSampler):
             seq_len = 0
             for i in batch:
                 x, y = self.dataset[i]
-                seq_len = max(len(x.input) + len(y.output) + 3, seq_len)
+                seq_len = max(len(x.grid) + len(y.grid) + 3, seq_len)
             token_counts.append(seq_len * len(batch))
             
 
@@ -255,39 +275,43 @@ class ArcExamplesDataset(Dataset):
         cps = [xi.color_permutation for xi in x]
         ats = [xi.array_transform for xi in x]
         prgs = [xi.program for xi in x]
-        inputs = [xi.input for xi in x]
-        outputs = [yi.output for yi in y]
+        inp_grids = [xi.grid for xi in x]
+        inp_indices = [xi.grid_indices for xi in x]
+        out_grids = [yi.grid for yi in y]
+        out_indices = [yi.grid_indices for yi in y]
         meta = [xi.meta for xi in x]
 
         prgs = torch.tensor(prgs, dtype=torch.long).to(device, non_blocking=True)
         cps = torch.tensor(cps, dtype=torch.long).to(device, non_blocking=True)
         ats = torch.tensor(ats, dtype=torch.long).to(device, non_blocking=True)
 
-        inp_seq_len = max([len(i) for i in inputs])
-        out_seq_len = max([len(o) for o in outputs])
+        inp_seq_len = max([len(i) for i in inp_grids])
+        out_seq_len = max([len(o) for o in out_grids])
 
-        inps = [i + [pad_idx] * (inp_seq_len - len(i)) for i in inputs]
-        outs = [o + [pad_idx] * (out_seq_len - len(o)) for o in outputs]
+        inp_grids = [i + [pad_idx] * (inp_seq_len - len(i)) for i in inp_grids]
+        out_grids = [o + [pad_idx] * (out_seq_len - len(o)) for o in out_grids]
+        inp_indices = [i + [(-1, -1)] * (inp_seq_len - len(i)) for i in inp_indices]
+        out_indices = [o + [(-1, -1)] * (out_seq_len - len(o)) for o in out_indices]
 
-        inps = torch.tensor(inps, dtype=torch.long).to(device, non_blocking=True)
-        outs = torch.tensor(outs, dtype=torch.long).to(device, non_blocking=True)
-
-        pads = torch.tensor([pad_idx]*outs.size(0), dtype=torch.long).to(device, non_blocking=True)
-
-        outs_in = torch.cat([pads.unsqueeze(1), outs[:, :-1]], dim=1)
-
-        # assert torch.allclose(outs[:, :-1], outs_in[:, 1:]), "Output and Input are not causal"
+        inp_grids = torch.tensor(inp_grids, dtype=torch.long).to(device, non_blocking=True)
+        out_grids = torch.tensor(out_grids, dtype=torch.long).to(device, non_blocking=True)
+        inp_indices = torch.tensor(inp_indices, dtype=torch.long).to(device, non_blocking=True)
+        out_indices = torch.tensor(out_indices, dtype=torch.long).to(device, non_blocking=True)
 
         x = MODEL_INPUT(
             color_permutation=cps,
             array_transform=ats,
             program=prgs,
-            input=inps,
-            causal_output = outs_in,
+            grid=inp_grids,
+            grid_indices=inp_indices,
             meta=meta
         )
 
-        y = MODEL_OUTPUT(output=outs)
+        y = MODEL_OUTPUT(
+            grid=out_grids,
+            grid_indices=out_indices
+        )
+
         return x, y
         
     
@@ -309,11 +333,12 @@ class ArcExamplesDataset(Dataset):
         pad_idx = self.tokenizer.grid_tokenizer.PAD_IDX
 
         batch_sampler = TargetTokenCountBatchSampler(self, approx_token_count=token_count, min_util=min_util, shuffle=shuffle)
-        dataloader = DataLoader(dataset=self,
+        dl = DataLoader(dataset=self,
                                 batch_sampler=batch_sampler,
                                 collate_fn=lambda b: self.collate_fn(b, pad_idx, device=device),
                                 pin_memory=pin_memory,
                                 drop_last=False)
 
-        return dataloader
+        return dl
     
+# %%
