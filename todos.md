@@ -14,11 +14,12 @@
 - [x] Rope Should be different for LoopEncoder, rotation should take bigger jumpd?
     - Added a new Rope2D to handle grids
 - [x] Optimise Rope2D, add decorators, deal with device, etc. (register buffer should move to correct device as it is added to state_dict)
-- [ ] Fix the array toknization to allow Rope2D
+- [x] Fix the array toknization to allow Rope2D
+- [x] Remove Causal_Out from Model_Input
 - [ ] Change the collate_fn to include position indices
-- [ ] Remove Causal_Out from Model_Input
 - [ ] Make padding as the last token always
 - [ ] Change model forward to take predicted output (which is shifted by one inside the model)
+- [ ] Add type embeddings to the tokens
 - [ ] default causal_mask is broken
 - [ ] Decoder enc_dec mask is broken. It should non-causal in second transformer block.
 - [ ] Test and add multilevel loss with/to repl model
