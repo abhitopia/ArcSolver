@@ -76,6 +76,8 @@ k_B = k_rotated[:, :, idx_B, :]
 q_C = q_rotated[:, :, idx_C, :]
 k_D = k_rotated[:, :, idx_D, :]
 
+q_A.shape, k_B.shape, q_C.shape, k_D.shape
+#%%
 # Compute attention scores for each pair
 score_AB = torch.einsum('bhc,bhc->bh', q_A, k_B) / math.sqrt(head_dim)
 score_CD = torch.einsum('bhc,bhc->bh', q_C, k_D) / math.sqrt(head_dim)
