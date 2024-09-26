@@ -52,7 +52,6 @@ def apply_rotary_emb(freqs, t, start_index = 0, scale = 1., seq_dim = -2):
 
     # Apply rotary embeddings without modifying t in place    
     t_transformed = (t_middle * freqs.cos() * scale) + (rotate_half(t_middle) * freqs.sin() * scale)
-        
     out = torch.cat((t_left, t_transformed, t_right), dim=-1)
 
     return out.type(dtype)
@@ -105,6 +104,7 @@ class RotaryEmbedding(Module):
         elif freqs_for == 'constant':
             freqs = torch.ones(num_freqs).float()
 
+        # print(freqs)
         self.cache_if_possible = cache_if_possible
         self.cache_max_seq_len = cache_max_seq_len
 
@@ -259,12 +259,17 @@ class RotaryEmbedding(Module):
                 pos = torch.arange(dim, device = self.device)
 
             freqs = self.forward(pos, seq_len = dim)
+            print("Pos:", pos)
+            print("After forward", freqs.shape, freqs)
 
+            # print("Freqs", freqs)
             all_axis = [None] * len(dims)
             all_axis[ind] = Colon
 
             new_axis_slice = (Ellipsis, *all_axis, Colon)
-            all_freqs.append(freqs[new_axis_slice])
+            new_freqs = freqs[new_axis_slice]
+            print("New Freqs", new_freqs.shape, new_freqs)
+            all_freqs.append(new_freqs)
 
         all_freqs = broadcast_tensors(*all_freqs)
         return torch.cat(all_freqs, dim = -1)
