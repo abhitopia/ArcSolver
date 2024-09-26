@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import re
 from typing import List, Optional, Tuple, Union
 from collections import namedtuple
 import json
@@ -55,11 +56,12 @@ class Tokenizer:
 class GridTokenizer(Tokenizer):
     def __init__(self):
         self.PAD_TOKEN = '<NOOP>'
-        tokens = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '[[', '],[', ']]', self.PAD_TOKEN]
+        tokens = [self.PAD_TOKEN, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '[[', ']', '[', ']]']
         token2idx = {token: idx for idx, token in enumerate(tokens)}
         idx2token = {idx: token for idx, token in enumerate(tokens)}
         super().__init__(token2idx=token2idx, idx2token=idx2token, frozen=True)
         self.PAD_IDX = self.token2idx[self.PAD_TOKEN]
+        assert self.PAD_IDX == 0
 
     def decode(self, sequence, remove_padding=True):
         tokens = super().decode(sequence)
@@ -68,6 +70,37 @@ class GridTokenizer(Tokenizer):
             return ' '.join(tokens)
     
         return tokens
+
+
+
+class GridSerializer:
+    @staticmethod
+    def serialize_array(array: np.ndarray) -> str:
+        list_of_lists = array.tolist()
+        array_str = str(list_of_lists)
+        array_str = array_str.replace('],' , ' ],').replace('[[', '[[ ').replace(']]', ' ]]').replace(' [', ' [ ').replace(',', '')
+        num_tokens = len(array_str.split())
+        assert num_tokens == array.shape[0] * (array.shape[1] + 2)
+        indices = GridSerializer.indices(array)
+        assert num_tokens == len(indices)
+        return array_str, indices
+
+    @staticmethod
+    def indices(array: np.ndarray) -> List[Tuple[int, int]]:
+        height, width = array.shape
+        indices = np.indices((height, width + 2)).transpose(1, 2, 0)
+        indices = indices.reshape(height*(width+2), 2)
+        indices = [tuple(row) for row in indices]
+        return indices
+
+    @staticmethod
+    def deserialize_array(array_str: str) -> np.ndarray:
+        pattern = r'(?<=\d) (?=\d)'
+        replacement = ', '
+        result = re.sub(pattern, replacement, array_str)
+        result = result.replace('] [', '], [')
+        result = json.loads(result)
+        return np.array(result)
 
 
 class ProgramTokenizer(Tokenizer):
@@ -105,13 +138,14 @@ class MODEL_INPUT:
     color_permutation: Union[List[int], torch.Tensor]
     array_transform: Union[List[int], torch.Tensor]
     program: Union[List[int], torch.Tensor]
-    input: Union[List[int], torch.Tensor]
+    grid: Union[List[int], torch.Tensor]
+    grid_indices: Union[List[Tuple[int, int]], torch.Tensor]
     meta: Union[dict, List[dict]]
-    causal_output: Optional[torch.Tensor] = None
 
 @dataclass
 class MODEL_OUTPUT:
-    output: Union[List[int], torch.Tensor]
+    grid: Union[List[int], torch.Tensor]
+    grid_indices: Union[List[Tuple[int, int]], torch.Tensor]
 
 
 # MODEL_INPUT = namedtuple('MODEL_INPUT', ['color_permutation', 'array_transform', 'program', 'input', 'meta'])
@@ -124,30 +158,11 @@ class ArcTokenizer:
         self.color_permutation_tokenizer = ColorPermutationTokenizer()
         self.array_transform_tokenizer = ArrayTransformTokenizer()
 
-    
-    @staticmethod
-    def serialize_array(array: np.ndarray) -> str:
-        list_of_lists = array.tolist()
-        array_str = json.dumps(list_of_lists)
-        array_str = array_str.replace('\n', '').replace(',','')
-        return array_str.replace('[[', '[[ ').replace(']]', ' ]]').replace('] [', ' ],[ ')
-
-    @staticmethod
-    def deserialize_array(array_str: str) -> np.ndarray:
-        rows = array_str.split('],[')
-        rows[0] = rows[0][3:]
-        rows[-1] = rows[-1][:-3]
-        
-        result = []
-        for row in rows:
-            result.append('[' + ', '.join(row.strip().split(' ')) + ']')
-        result = "[" + ",".join(result) + "]"
-        result = json.loads(result)
-        return np.array(result)
-
     def encode(self, example: Example) -> Tuple[MODEL_INPUT, MODEL_OUTPUT]:
-        input_encoded = self.grid_tokenizer.encode(self.serialize_array(example.input))
-        output_encoded = self.grid_tokenizer.encode(self.serialize_array(example.output))
+        input_grid_ser, input_indices = GridSerializer.serialize_array(example.input)
+        input_grid_encoded = self.grid_tokenizer.encode(input_grid_ser)
+        output_grid_ser, output_indices = GridSerializer.serialize_array(example.output)
+        output_grid_encoded = self.grid_tokenizer.encode(output_grid_ser)
         program_encoded = self.program_tokenizer.encode(example.program_id)
         color_permutation_encoded = self.color_permutation_tokenizer.encode(example.color_perm)
         array_transform_encoded = self.array_transform_tokenizer.encode(example.transform)
@@ -156,10 +171,14 @@ class ArcTokenizer:
             color_permutation=color_permutation_encoded,
             array_transform=array_transform_encoded,
             program=program_encoded,
-            input=input_encoded,
+            grid=input_grid_encoded,
+            grid_indices=input_indices,
             meta={'task_id': example.task_id, 'example_id': example.idx, 'dataset': example.dataset}
         )
-        y = MODEL_OUTPUT(output=output_encoded)
+        y = MODEL_OUTPUT(
+            grid=output_grid_encoded,
+            grid_indices=output_indices
+            )
         return x, y
 
     def decode(self, x: MODEL_INPUT, y: MODEL_OUTPUT=None) -> Example:
@@ -173,8 +192,8 @@ class ArcTokenizer:
             idx=x.meta['example_id'],
             task_id=x.meta['task_id'],
             dataset=x.meta['dataset'],
-            input=self.deserialize_array(input_decoded),
-            output=self.deserialize_array(output_decoded),
+            input=GridSerializer.deserialize_array(input_decoded),
+            output=GridSerializer.deserialize_array(output_decoded),
             program_id=program_decoded,
             color_perm=color_permutation_decoded,
             transform=array_transform_decoded
