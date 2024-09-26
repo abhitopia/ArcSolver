@@ -11,7 +11,16 @@
 - [x] Rename to REPL
 - [x] Create the multi-level loss module
 - [x] Investigate why there are nans in inp_kv_cache (new issue for loop encoder kv cache) (This is expected)
-- [ ] Rope Should be different for LoopEncoder, rotation should take bigger jumpd?
+- [x] Rope Should be different for LoopEncoder, rotation should take bigger jumpd?
+    - Added a new Rope2D to handle grids
+- [x] Optimise Rope2D, add decorators, deal with device, etc. (register buffer should move to correct device as it is added to state_dict)
+- [ ] Fix the array toknization to allow Rope2D
+- [ ] Change the collate_fn to include position indices
+- [ ] Remove Causal_Out from Model_Input
+- [ ] Make padding as the last token always
+- [ ] Change model forward to take predicted output (which is shifted by one inside the model)
+- [ ] default causal_mask is broken
+- [ ] Decoder enc_dec mask is broken. It should non-causal in second transformer block.
 - [ ] Test and add multilevel loss with/to repl model
 - [ ] Make loop encoder incremental
 - [ ] Remove any samples with > max_seq_len input or output
