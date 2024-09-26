@@ -46,7 +46,6 @@ class Rope2D(nn.Module):
 
         # Compute axial frequencies: [max_height, max_width, h_dim]
         max_freqs = self.get_axial_freqs_pytorch(max_height, max_width)  # [height, width, h_dim]
-        print("Print Freq", max_freqs.shape)
 
         # Precompute cosine and sine frequencies
         cos_freqs = torch.cos(max_freqs)  # [height, width, h_dim]
@@ -134,7 +133,6 @@ class Rope2D(nn.Module):
         """
         # Apply rotary embeddings
         rotated_x = Rope2D.rotate_half(x)  # Rotate the first half
-        print(x.shape, rotated_x.shape, cos.shape, sin.shape)
         x_rotated = (x * cos) + (rotated_x * sin)
         return x_rotated.type(x.dtype)
 
@@ -229,12 +227,15 @@ positions = torch.tensor([
 rope2d = Rope2D(h_dim=head_dim, max_height=max_height, max_width=max_width)
 
 
+q = embedding_vector.unsqueeze(0).unsqueeze(0).expand(batch_size, seq_len, n_dim)
+q = q.reshape(batch_size, seq_len, n_head, head_dim).permute(0, 2, 1, 3)
+
 positions.shape, q.shape, k.shape
 #%%
 # Apply RoPE2D
 q_rotated = rope2d(q, positions)
-k_rotated = rope2d(k, positions)
-
+k_rotated = rope2d(q, positions)
+#%%
 # Compute attention scores between pairs
 def compute_attention_score(q, k):
     # q, k: [batch_size, n_head, head_dim]
