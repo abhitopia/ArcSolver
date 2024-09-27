@@ -168,22 +168,23 @@ class ArcTokenizer:
         array_transform_encoded = self.array_transform_tokenizer.encode(example.transform)
 
         x = MODEL_INPUT(
-            color_permutation=color_permutation_encoded,
-            array_transform=array_transform_encoded,
-            program=program_encoded,
-            grid=input_grid_encoded,
-            grid_indices=input_indices,
+            color_permutation = color_permutation_encoded,
+            array_transform = array_transform_encoded,
+            program = program_encoded,
+            grid = input_grid_encoded,
+            grid_indices = input_indices,
             meta={'task_id': example.task_id, 'example_id': example.idx, 'dataset': example.dataset}
         )
         y = MODEL_OUTPUT(
-            grid=output_grid_encoded,
-            grid_indices=output_indices
+            grid = output_grid_encoded,
+            grid_indices = output_indices,
+            target_grid = output_grid_encoded[:-1] + [self.grid_tokenizer.PAD_IDX]
             )
         return x, y
 
     def decode(self, x: MODEL_INPUT, y: MODEL_OUTPUT=None) -> Example:
-        input_decoded = self.grid_tokenizer.decode(x.input)
-        output_decoded = self.grid_tokenizer.decode(y.output) if y else None
+        input_decoded = self.grid_tokenizer.decode(x.grid)
+        output_decoded = self.grid_tokenizer.decode(y.grid) if y else None
         program_decoded = self.program_tokenizer.decode(x.program)
         color_permutation_decoded = self.color_permutation_tokenizer.decode(x.color_permutation)
         array_transform_decoded = self.array_transform_tokenizer.decode(x.array_transform)
