@@ -131,7 +131,14 @@ class SelfAttention(nn.Module):
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) 
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  
 
-        # # If kv_cache is present, concatenate past keys and values BEFORE applying RoPE
+        # Apply Rope2D to q and k
+        if self.rope is not None:
+            k = self.rope(k, positions)
+            q = self.rope(q, positions)
+
+
+        # # If kv_cache is present, concatenate past keys and values
+        # Assume kv_cache is has rope applied to it already
         if kv_cache is not None and torch.jit.isinstance(kv_cache, Tuple[Tensor, Tensor]):
             past_k, past_v = kv_cache  # K: (B, n_head, T_past, head_dim)
             k = torch.cat([past_k, k], dim=2)  # Concatenate along sequence length dimension
@@ -140,12 +147,6 @@ class SelfAttention(nn.Module):
 
         # Update new_kv_cache
         new_kv_cache: Optional[Tuple[Tensor, Tensor]] = (k, v) if return_kv_cache else None
-
-        # Apply Rope2D to q and k
-        if self.rope is not None:
-            print("K, POs", k.size(), positions.size())
-            k = self.rope(k, positions)
-            q = self.rope(q, positions)
 
         # Compute attention
         dropout_p = self.dropout if self.training else 0.0
@@ -275,16 +276,17 @@ class Interpreter(nn.Module):
             x: Tensor, 
             attn_mask: Tensor, 
             positions: Tensor, 
+            kv_cache: Optional[List[Tuple[Tensor, Tensor]]] = None,
             return_kv_caches: bool = False
         ) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]:
 
         loop_kv_caches: List[Tuple[Tensor, Tensor]] = []
 
-        for block in self.blocks:
+        for i, block in enumerate(self.blocks):
             x, new_kv_cache = block( x, 
                 attn_mask=attn_mask,
                 positions=positions, 
-                kv_cache=None,
+                kv_cache=kv_cache[i] if kv_cache is not None else None,
                 return_kv_cache=return_kv_caches
             )
 
@@ -397,8 +399,6 @@ class REPL(nn.Module):
         return enc_inp, enc_valid_mask, enc_indices
 
     def contruct_decoder_input(self, y: MODEL_OUTPUT):
-        bs = y.grid.size(0)
-
         out_grid = self.gte(y.grid)
         out_grid_type = self.type_emb(self.out_grid_type_idx)
         dec_inp = out_grid + out_grid_type
@@ -406,45 +406,11 @@ class REPL(nn.Module):
         dec_indices = y.grid_indices
         return dec_inp, dec_valid_mask, dec_indices
     
-    def get_enc_indices(self, x: MODEL_INPUT):
-        enc_indices = x.grid_indices
-        bs = enc_indices.size(0)
-        inp_len = enc_indices.size(1)
-        prefix_len = 3
-        indices = torch.full((bs, prefix_len+inp_len, 2), -1, dtype=enc_indices.dtype)
-        indices[:, prefix_len:, :] = enc_indices
-        return indices
-
-    
-    def forwardb(self, x: MODEL_INPUT, y: MODEL_OUTPUT, iters: int = 1):
-        enc_inp, enc_valid_mask = self.contruct_encoder_input(x)
-        dec_inp, dec_valid_mask = self.contruct_decoder_input(y)
-        indices = self.get_enc_dec_indices(x, y)
-        attn_mask = create_enc_dec_mask(enc_valid_mask, dec_valid_mask).unsqueeze(1)
-
-        dec_start_idx = enc_inp.size(1)
-        enc_dec_inp = torch.cat([enc_inp, dec_inp], dim=1)
-
-        logits = []
-        iter_states = [enc_dec_inp]
-        current_state = self.state_agg.forward_nocache(iter_states)
-        # current_state = enc_dec_inp
-        for i in range(iters):
-            print("Current State", current_state[:, :, 0])
-            new_state, _ = self.interpreter(current_state, attn_mask, indices)
-            # current_state = new_state
-            iter_states.append(new_state)
-            current_state = self.state_agg.forward_nocache(iter_states)
-            logits_i = self.lm_head(current_state[:, dec_start_idx:, :])
-            logits.append(logits_i)
-            # print(logits_i.size())
-        return logits
-    
     def forward(self, x: MODEL_INPUT,
             y: Optional[MODEL_OUTPUT] = None, 
             iters: int = 1, 
-            return_caches: bool = False
-        )-> Tuple[List[Tensor], Optional[List[List[Tuple[Tensor, Tensor]]]]]:
+            return_cache: bool = False
+        )-> Tuple[List[Tensor], Optional[Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]]:
 
         if y is None:
             bs = x.grid.size(0)
@@ -460,40 +426,72 @@ class REPL(nn.Module):
         dec_start_idx = enc_inp.size(1)
 
         enc_dec_inp = torch.cat([enc_inp, dec_inp], dim=1)
-        print("Indices", enc_indices.shape, dec_indices.shape)
-        indices = torch.cat([enc_indices, dec_indices], dim=1)
+        enc_dec_indices = torch.cat([enc_indices, dec_indices], dim=1)
 
         logits = []
         iter_states = [enc_dec_inp]
 
-        updated_kv_caches: Optional[List[List[Tuple[Tensor, Tensor]]]] = [] if return_caches else None
+        updated_kv_cache: Optional[List[List[Tuple[Tensor, Tensor]]]] = [] if return_cache else None
 
         current_state, states_kv_cache = self.state_agg(iter_states, None)
         for i in range(iters):
-            print("Current State", current_state[:, :, 0])
-            new_state, iter_kv_cache = self.interpreter(current_state, attn_mask, indices, return_kv_caches=return_caches)
-            # current_state = new_state
-
+            new_state, iter_kv_cache = self.interpreter(
+                                            x=current_state,
+                                            attn_mask=attn_mask,
+                                            positions=enc_dec_indices,
+                                            kv_cache=None,
+                                            return_kv_caches=return_cache)
             iter_states.append(new_state)
             current_state, states_kv_cache = self.state_agg(iter_states, states_kv_cache)
             logits_i = self.lm_head(current_state[:, dec_start_idx:, :])
             logits.append(logits_i)
 
-            if updated_kv_caches is not None:
-                # Store the updated kv-cache for this loop iteration
-                updated_kv_caches.append(iter_kv_cache)
-            # print(logits_i.size())
-        return logits, updated_kv_caches
+            if updated_kv_cache is not None:
+                updated_kv_cache.append(iter_kv_cache)
 
+        cache = (updated_kv_cache, enc_valid_mask, dec_valid_mask) if return_cache else None
+        return logits, cache
 
     def forward_inc(self,
-            next_y: Optional[MODEL_OUTPUT], 
-            caches: List[List[Tuple[Tensor, Tensor]]],
+            next_y: MODEL_OUTPUT, 
+            cache: Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor],
             iters: int = 1, 
         ) -> Tuple[List[Tensor], Optional[List[List[Tuple[Tensor, Tensor]]]]]:
                    
-        dec_inp, dec_valid_mask = self.contruct_decoder_input(y)
-        print("Dec Input", dec_inp.size(), dec_valid_mask.size())
+        dec_inp, dec_valid_mask, dec_indices = self.contruct_decoder_input(next_y)
+        seq_len = dec_inp.size(1)
+        past_kv_cache, past_enc_valid_mask, past_dec_valid_mask = cache
+
+        dec_valid_mask = torch.cat([past_dec_valid_mask, dec_valid_mask], dim=1)
+
+        attn_mask = create_enc_dec_mask(past_enc_valid_mask, dec_valid_mask).unsqueeze(1)
+
+        # Need to strip the attn_mask to match the size of decoder input
+        attn_mask = attn_mask[:, :, -seq_len:, :]
+
+        logits = []
+        iter_states = [dec_inp]
+
+        updated_kv_caches: List[List[Tuple[Tensor, Tensor]]] = []
+        current_state, states_kv_cache = self.state_agg(iter_states, None)
+
+        for i in range(iters):
+            new_state, iter_kv_cache = self.interpreter(
+                                            x=current_state,
+                                            attn_mask=attn_mask,
+                                            positions=dec_indices,
+                                            kv_cache=past_kv_cache[i],
+                                            return_kv_caches=True)
+
+            iter_states.append(new_state)
+            current_state, states_kv_cache = self.state_agg(iter_states, states_kv_cache)
+            logits_i = self.lm_head(current_state)
+            logits.append(logits_i)
+
+            # Store the updated kv-cache for this loop iteration
+            updated_kv_caches.append(iter_kv_cache)
+
+        return logits, updated_kv_caches
 
 
 
@@ -528,14 +526,19 @@ print("Valid Mask", valid_mask)
 model = REPL(config)
 
 #%%
-logits, cache = model(x, None, iters=4, return_caches=True)
+logits, cache = model(x, None, iters=4, return_cache=True)
 logits[-1][:, :, 0], y.grid.shape
-#%%
-logits_next = model.forward_inc(y, cache, iters=4)
 
 #%%
+#%%
+logits_next, cache_next = model.forward_inc(y, cache, iters=4)
+logits_next[-1][:, :, 0], y.grid.shape
+#%%
+logits, cache = model(x, y, iters=4, return_cache=True)
+logits[-1][:, :, 0], y.grid.shape
+#%%
 global_nan_value = 0.0
-logits, cache = model(x, y, iters=4, return_caches=True)# %%
+logits, cache = model(x, y, iters=4, return_cache=True)# %%
 logits[-1][:, :, 0]
 # logitsx[0]
 # %%
