@@ -56,11 +56,18 @@ class Tokenizer:
 class GridTokenizer(Tokenizer):
     def __init__(self):
         self.PAD_TOKEN = '<NOOP>'
+        self.BOS_TOKEN = '[['
+        self.EOS_TOKEN = ']]'
+        self.NEW_ROW_TOKEN = '['
+
         tokens = [self.PAD_TOKEN, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '[[', ']', '[', ']]']
         token2idx = {token: idx for idx, token in enumerate(tokens)}
         idx2token = {idx: token for idx, token in enumerate(tokens)}
         super().__init__(token2idx=token2idx, idx2token=idx2token, frozen=True)
         self.PAD_IDX = self.token2idx[self.PAD_TOKEN]
+        self.BOS_IDX = self.token2idx[self.BOS_TOKEN]
+        self.EOS_IDX = self.token2idx[self.EOS_TOKEN]
+        self.NEW_ROW_IDX = self.token2idx[self.NEW_ROW_TOKEN]
         assert self.PAD_IDX == 0
 
     def decode(self, sequence, remove_padding=True):
