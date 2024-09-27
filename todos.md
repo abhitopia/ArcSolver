@@ -16,10 +16,23 @@
 - [x] Optimise Rope2D, add decorators, deal with device, etc. (register buffer should move to correct device as it is added to state_dict)
 - [x] Fix the array toknization to allow Rope2D
 - [x] Remove Causal_Out from Model_Input
-- [ ] Change the collate_fn to include position indices
-- [ ] Make padding as the last token always
-- [ ] Change model forward to take predicted output (which is shifted by one inside the model)
-- [ ] Add type embeddings to the tokens
+- [x] Change the collate_fn to include position indices
+- [x] Make padding as the zeroth token always
+- [x] enc_dec_mask is incorrect. It should include all the input tokens (including non-grid tokens)
+- [x] Change model forward to take predicted output (which is shifted by one inside the model)
+- [x] Add type embeddings to the tokens
+- [x] setting attn_mask to None has no effect on StateAggregator. (This is expected in the kv_cached forwardx model because due to caching, the past tokens
+don't access future tokens making it causal by default)
+- [x] Implement return kv_cache in the forward of the model
+- [ ] implement forwardx in the model
+- [ ] Port greedy search to the new model
+- [ ] Port beam search to the new model
+- [ ] Add training only methods to the model
+- [ ] Update ArcTrainer
+- [ ] Update Solver
+- [ ] Let the training beging
+- [ ] Verify Rope2D is working
+
 - [ ] default causal_mask is broken
 - [ ] Decoder enc_dec mask is broken. It should non-causal in second transformer block.
 - [ ] Test and add multilevel loss with/to repl model

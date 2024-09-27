@@ -99,8 +99,6 @@ class REPLConfig:
 from torch import Tensor
 from torch.nn import functional as F
 
-global_nan_value = 0.0
-
 class SelfAttention(nn.Module):
     def __init__(self, config: REPLConfig, rope: Optional[Rope2D]=None):
         super().__init__()
@@ -149,6 +147,7 @@ class SelfAttention(nn.Module):
 
         # Apply Rope2D to q and k
         if self.rope is not None:
+            print("K, POs", k.size(), positions.size())
             k = self.rope(k, positions)
             q = self.rope(q, positions)
 
@@ -166,9 +165,8 @@ class SelfAttention(nn.Module):
         y = self.c_proj(attn_output)
 
         # Zero out NaN values, so they don't affect future computations
-        global global_nan_value
-        # print(f"Setting NaN to {global_nan_value}")
-        y = torch.nan_to_num(y, nan=global_nan_value)
+        # I have also verified that the it doesn't matter what the nan values are set to
+        y = torch.nan_to_num(y, nan=0.0)
 
         return y, new_kv_cache
 
@@ -209,7 +207,7 @@ class StateAggregator(nn.Module):
         causal_mask = torch.ones(1, qT, kT, dtype=torch.bool, device=device).tril(diagonal=offset).unsqueeze(1)
         return causal_mask
 
-    def forward(self, x: List[Tensor]) -> Tensor:
+    def forward_nocache(self, x: List[Tensor]) -> Tensor:
         B, T, D = x[0].size()
         x_reshape = [i.reshape(B*T, D) for i in x]
         x_cat = torch.stack(x_reshape, dim=0).permute(1, 0, 2)
@@ -218,7 +216,8 @@ class StateAggregator(nn.Module):
         x_pos_emb = self.pos_emb(x_pos)
         x_cat = x_cat + x_pos_emb
         attn_mask = self.get_causal_mask(n_iters, n_iters, x_cat.device)
-
+        # attn_mask = None
+        print("Mask", attn_mask)
         # print("Mask", attn_mask)
         for block in self.blocks:
             x_cat, _ = block(x_cat,
@@ -232,7 +231,7 @@ class StateAggregator(nn.Module):
         return output
     
 
-    def forwardx(self, x: List[torch.Tensor], kv_caches: Optional[List[Tuple[Tensor, Tensor]]]=None):
+    def forward(self, x: List[torch.Tensor], kv_caches: Optional[List[Tuple[Tensor, Tensor]]]=None):
         B, T, D = x[-1].size()
         past_iters = 0 if kv_caches is None else kv_caches[0][0].size(2)
         n_iters = len(x)
@@ -243,14 +242,14 @@ class StateAggregator(nn.Module):
         x_pos_emb = self.pos_emb(x_pos)
         x_cat = x_cat + x_pos_emb
 
-        attn_mask = self.get_causal_mask(new_iters, n_iters, x_cat.device)
+        # attn_mask = self.get_causal_mask(new_iters, n_iters, x_cat.device)
+        # NOTE: In incremental setting, even if attn_mask is None, (full non-causal attention)
+        # The fact that previous states are cached and don't access the future states means that
+        # the model is still causal.
         attn_mask = None
-        if new_iters != n_iters:
-            print("No Match Mask", attn_mask)
 
         if kv_caches is None:
             kv_caches = [None] * self.n_state_layer
-
 
         updated_kv_caches: List[Tuple[Tensor, Tensor]] = []
         for idx, block in enumerate(self.blocks):
@@ -278,15 +277,28 @@ class Interpreter(nn.Module):
         rope_2d = Rope2D(config.n_dim // config.n_head, max_height=60, max_width=60)
         self.blocks = nn.ModuleList([TransformerBlock(config, rope=rope_2d) for _ in range(config.n_layer)])
         
-    def forward(self, x: Tensor, attn_mask: Tensor, positions: Tensor) -> Tensor:
+    def forward(self,
+            x: Tensor, 
+            attn_mask: Tensor, 
+            positions: Tensor, 
+            return_kv_caches: bool = False
+        ) -> Tuple[Tensor, List[Tuple[Tensor, Tensor]]]:
+
+        loop_kv_caches: List[Tuple[Tensor, Tensor]] = []
+
         for block in self.blocks:
-            x, _ = block( x, 
+            x, new_kv_cache = block( x, 
                 attn_mask=attn_mask,
                 positions=positions, 
                 kv_cache=None,
-                return_kv_cache=False
+                return_kv_cache=return_kv_caches
             )
-        return x
+
+            # Ensure new_kv_cache is not None before appending
+            if return_kv_caches and new_kv_cache is not None:
+                loop_kv_caches.append(new_kv_cache)
+
+        return x, loop_kv_caches
 
 class REPL(nn.Module):
     def __init__(self,
@@ -387,7 +399,6 @@ class REPL(nn.Module):
 
     def contruct_decoder_input(self, y: MODEL_OUTPUT):
         bs = y.grid.size(0)
-        dec_valid_mask = y.grid != self.PAD_IDX
 
         pad = torch.full((bs, 1), self.PAD_IDX, dtype=y.grid.dtype, device=y.grid.device)
         pad = self.gte(pad)
@@ -401,6 +412,9 @@ class REPL(nn.Module):
         # Right shift the output grid by one position (Causal Decoder)
         dec_inp = torch.cat([pad, out_grid[:, 1:]], dim=1)
 
+        dec_valid_mask = torch.ones((bs, dec_inp.size(1)), dtype=torch.bool, device=y.grid.device)
+        dec_valid_mask[:, 1:] = y.grid[:, 1:] != self.PAD_IDX
+
         return dec_inp, dec_valid_mask
     
     def get_enc_dec_indices(self, x: MODEL_INPUT, y: MODEL_OUTPUT):
@@ -409,14 +423,18 @@ class REPL(nn.Module):
 
         bs = enc_indices.size(0)
         inp_len = enc_indices.size(1)
-        out_len = dec_indices.size(1)
+        out_len = 1 + max(dec_indices.size(1)-1, 0)
         prefix_len = 3
         indices = torch.full((bs, prefix_len+inp_len+out_len, 2), -1, dtype=torch.int64)
         indices[:, prefix_len:prefix_len+inp_len, :] = enc_indices
-        indices[:, prefix_len+inp_len+1:, :] = dec_indices[:, 1:, :]
+        print("Indices", indices.size(), prefix_len, inp_len, out_len, dec_indices.size())
+        if out_len > 1:
+            indices[:, prefix_len+inp_len+1:, :] = dec_indices[:, 1:, :]
+        else:
+            print(indices)
         return indices
     
-    def forward(self, x: MODEL_INPUT, y: MODEL_OUTPUT, iters: int = 1):
+    def forwardb(self, x: MODEL_INPUT, y: MODEL_OUTPUT, iters: int = 1):
         enc_inp, enc_valid_mask = self.contruct_encoder_input(x)
         dec_inp, dec_valid_mask = self.contruct_decoder_input(y)
         indices = self.get_enc_dec_indices(x, y)
@@ -427,21 +445,32 @@ class REPL(nn.Module):
 
         logits = []
         iter_states = [enc_dec_inp]
-        current_state = self.state_agg(iter_states)
+        current_state = self.state_agg.forward_nocache(iter_states)
         # current_state = enc_dec_inp
         for i in range(iters):
-            # print("Current State", current_state[:, :, 0])
-            new_state = self.interpreter(current_state, attn_mask, indices)
+            print("Current State", current_state[:, :, 0])
+            new_state, _ = self.interpreter(current_state, attn_mask, indices)
             # current_state = new_state
             iter_states.append(new_state)
-            current_state = self.state_agg(iter_states)
+            current_state = self.state_agg.forward_nocache(iter_states)
             logits_i = self.lm_head(current_state[:, dec_start_idx:, :])
             logits.append(logits_i)
             # print(logits_i.size())
         return logits
     
 
-    def forwardx(self, x: MODEL_INPUT, y: MODEL_OUTPUT, iters: int = 1):
+    def forward(self, x: MODEL_INPUT,
+            y: Optional[MODEL_OUTPUT] = None, 
+            iters: int = 1, 
+            return_caches: bool = False
+        )-> Tuple[List[Tensor], Optional[List[List[Tuple[Tensor, Tensor]]]]]:
+
+        if y is None:
+            bs = x.grid.size(0)
+            y = MODEL_OUTPUT(
+                    grid=torch.zeros((bs, 0), dtype=x.grid.dtype, device=x.grid.device),
+                    grid_indices=torch.zeros((bs, 0), dtype=x.grid_indices.dtype, device=x.grid.device))
+                                                 
         enc_inp, enc_valid_mask = self.contruct_encoder_input(x)
         dec_inp, dec_valid_mask = self.contruct_decoder_input(y)
         indices = self.get_enc_dec_indices(x, y)
@@ -450,21 +479,29 @@ class REPL(nn.Module):
         dec_start_idx = enc_inp.size(1)
         enc_dec_inp = torch.cat([enc_inp, dec_inp], dim=1)
 
+        print("Enc-Dec", enc_dec_inp.size(), attn_mask.size(), indices.size())
+        print("Mask", attn_mask)
         logits = []
         iter_states = [enc_dec_inp]
-        current_state, states_kv_cache = self.state_agg.forwardx(iter_states, None)
-        # current_state = enc_dec_inp
+
+        updated_kv_caches: Optional[List[List[Tuple[Tensor, Tensor]]]] = [] if return_caches else None
+
+        current_state, states_kv_cache = self.state_agg(iter_states, None)
         for i in range(iters):
-            # print("Current State", current_state[:, :, 0])
-            new_state = self.interpreter(current_state, attn_mask, indices)
+            print("Current State", current_state[:, :, 0])
+            new_state, iter_kv_cache = self.interpreter(current_state, attn_mask, indices, return_kv_caches=return_caches)
             # current_state = new_state
 
             iter_states.append(new_state)
-            current_state, states_kv_cache = self.state_agg.forwardx(iter_states, states_kv_cache)
+            current_state, states_kv_cache = self.state_agg(iter_states, states_kv_cache)
             logits_i = self.lm_head(current_state[:, dec_start_idx:, :])
             logits.append(logits_i)
+
+            if updated_kv_caches is not None:
+                # Store the updated kv-cache for this loop iteration
+                updated_kv_caches.append(iter_kv_cache)
             # print(logits_i.size())
-        return logits
+        return logits, updated_kv_caches
 
 
 
@@ -497,17 +534,22 @@ x.grid, x.grid_indices, y.grid, y.grid_indices
 valid_mask = torch.cat([(x.grid != 0), (y.grid != 0)], dim=1)
 print("Valid Mask", valid_mask)
 model = REPL(config)
+logits, cache = model(x, None, iters=4, return_caches=True)
 #%%
 global_nan_value = 0.0
-logits = model(x, y, iters=4)# %%
+logits, cache = model(x, y, iters=4, return_caches=True)# %%
 logits[-1][:, :, 0]
 
 # logitsx[0]
 # %%
 global_nan_value = 0.0
-logits = model.forwardx(x, y, iters=4)
+logits = model.forwardb(x, y, iters=4)
 logits[-1][:, :, 0]
+#
+#%%
+len(cache[0][0]), cache[0][0][1].size()
 # %%
 # %%
-x.grid, y.grid
+%
+
 # %%
