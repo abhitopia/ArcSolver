@@ -8,6 +8,7 @@ from src.rope_2d import Rope2D
 from src.interpreter import RMSNorm, SwiGLUFFN
 from src.tokenizer import MODEL_INPUT, MODEL_OUTPUT, ArrayTransformTokenizer, ColorPermutationTokenizer, GridTokenizer
 from src.mask_utils import create_enc_dec_mask
+from src.multilevel_loss import MultiLevelLoss
 
 def create_test_inp(bs=10, inp_seq_len=10, out_seq_len=5, prog_vocab_size=15, perm_vocab_size=10, tform_vocab_size=11, grid_vocab_size=16, pad_idx=0):
 
@@ -32,6 +33,10 @@ def create_test_inp(bs=10, inp_seq_len=10, out_seq_len=5, prog_vocab_size=15, pe
         out_indices[b, :out_len, :] = torch.tensor(random_indices(out_len), dtype=torch.long)
 
 
+    target_grid = torch.cat([output_grid[:, 1:],
+                            torch.full((bs, 1), pad_idx, dtype=output_grid.dtype)], dim=1)
+
+
     x = MODEL_INPUT(program=program,
                 color_permutation=color_permutation,
                 array_transform=array_transform, 
@@ -39,7 +44,9 @@ def create_test_inp(bs=10, inp_seq_len=10, out_seq_len=5, prog_vocab_size=15, pe
                 grid_indices=inp_indices,
                 meta=None)
     y = MODEL_OUTPUT(grid=output_grid,
-                grid_indices=out_indices)
+                grid_indices=out_indices,
+                target_grid=target_grid
+                )
     return x, y
 
 
@@ -58,6 +65,8 @@ class REPLConfig:
     tform_vocab_size: int = len(ArrayTransformTokenizer())
     max_iters: int = 64 # maximum number of iterations
     n_state_layer: int = 1 # number of transformer blocks / layers for state aggregation    
+    edr: float = 2.0 # exponential error decay rate per loop, 0.0 means uniform dep rate
+    mctp: float = 0.4 # minimum correct token percentage for loss computation
 
     def __post_init__(self):
         if self.n_dim % self.n_head != 0:
@@ -83,7 +92,9 @@ class REPLConfig:
             'perm_vocab_size': self.perm_vocab_size,
             'tform_vocab_size': self.tform_vocab_size,
             'max_iters': self.max_iters,
-            'n_state_layer': self.n_state_layer
+            'n_state_layer': self.n_state_layer,
+            'edr': self.edr,
+            'mctp': self.mctp
         }
     
     @staticmethod
@@ -351,6 +362,11 @@ class REPL(nn.Module):
 
         self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
                 
+
+        self.loss = MultiLevelLoss(
+                            pad_idx=self.PAD_IDX,
+                            edr=config.edr,
+                            min_pct=config.mctp)
         # weight sharing scheme. Transformer++ (Llama architecture does not tie weights)
         # Reference: https://youtu.be/pRM_P6UfdIc?t=1500
         # self.wte.weight = self.lm_head.weight
@@ -416,7 +432,8 @@ class REPL(nn.Module):
             bs = x.grid.size(0)
             y = MODEL_OUTPUT(
                     grid=torch.zeros((bs, 0), dtype=x.grid.dtype, device=x.grid.device),
-                    grid_indices=torch.zeros((bs, 0, 2), dtype=x.grid_indices.dtype, device=x.grid.device))
+                    grid_indices=torch.zeros((bs, 0, 2), dtype=x.grid_indices.dtype, device=x.grid.device),
+                    target_grid=None)
                                                  
         enc_inp, enc_valid_mask, enc_indices = self.contruct_encoder_input(x)
         dec_inp, dec_valid_mask, dec_indices = self.contruct_decoder_input(y)
@@ -493,9 +510,10 @@ class REPL(nn.Module):
 
         return logits, updated_kv_caches
 
+    def compute_loss(self, logits: List[Tensor], y: MODEL_OUTPUT) -> Tensor:
+        loss = self.loss(logits, y.target_grid)
+        return loss
 
-
-# logitsx = model.forwardx(x, y, iters=3)
 # %%
 
 config = REPLConfig(
@@ -532,10 +550,12 @@ logits[-1][:, :, 0], y.grid.shape
 #%%
 #%%
 logits_next, cache_next = model.forward_inc(y, cache, iters=4)
-logits_next[-1][:, :, 0], y.grid.shape
+loss_next = model.compute_loss(logits_next, y)
+logits_next[-1][:, :, 0], y.grid.shape, loss_next
 #%%
 logits, cache = model(x, y, iters=4, return_cache=True)
-logits[-1][:, :, 0], y.grid.shape
+loss = model.compute_loss(logits, y)
+logits[-1][:, :, 0], loss
 #%%
 global_nan_value = 0.0
 logits, cache = model(x, y, iters=4, return_cache=True)# %%

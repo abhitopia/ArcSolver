@@ -24,9 +24,9 @@ def exp_spacing(n, rate=1, min_val=0.4, max_val=1.0):
 
 
 class MultiLevelLoss(nn.Module):
-    def __init__(self, PAD_IDX, edr: float = 2, min_pct: float = 0.4, max_pct: float = 1.0):
+    def __init__(self, pad_idx: int, edr: float = 2, min_pct: float = 0.4, max_pct: float = 1.0):
         super(MultiLevelLoss, self).__init__()
-        self.PAD_IDX = PAD_IDX
+        self.PAD_IDX = pad_idx
         self.edr = edr
         self.min_pct = min_pct
         self.max_pct = max_pct

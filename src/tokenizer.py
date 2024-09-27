@@ -146,6 +146,7 @@ class MODEL_INPUT:
 class MODEL_OUTPUT:
     grid: Union[List[int], torch.Tensor]
     grid_indices: Union[List[Tuple[int, int]], torch.Tensor]
+    target_grid: Union[List[int], torch.Tensor]
 
 
 # MODEL_INPUT = namedtuple('MODEL_INPUT', ['color_permutation', 'array_transform', 'program', 'input', 'meta'])
