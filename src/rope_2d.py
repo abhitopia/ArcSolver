@@ -12,7 +12,7 @@ import torch.nn as nn
 import math
 
 class Rope2D(nn.Module):
-    def __init__(self, h_dim, max_height, max_width, device='cpu'):
+    def __init__(self, h_dim, max_height, max_width):
         """
         Initializes the Rope2D module.
 
@@ -20,14 +20,13 @@ class Rope2D(nn.Module):
             h_dim (int): Head dimension (must be divisible by 2).
             max_height (int): Maximum height for positional indices.
             max_width (int): Maximum width for positional indices.
-            device (str): Device to store buffers ('cpu' or 'cuda').
         """
+
         super().__init__()
         self.head_dim = h_dim
         self.max_height = max_height
         self.max_width = max_width
         self.max_freq = max(max_height, max_width)
-        self.device = device
 
         assert h_dim % 2 == 0, 'The head dimension must be divisible by 2.'
         self.dim = h_dim // 2  # Dimension per axis
@@ -57,10 +56,10 @@ class Rope2D(nn.Module):
         all_freqs = []
 
         # Initialize frequency buffer: [dim//2], Unsure full precision
-        freqs = (torch.linspace(1., self.max_freq / 2, self.dim // 2, device=self.device) * math.pi).float()  # [dim//2]
+        freqs = (torch.linspace(1., self.max_freq / 2, self.dim // 2) * math.pi).float()  # [dim//2]
         for ind, dim_size in enumerate(dims):
             # Generate positional values, full precision
-            pos = torch.linspace(-1., 1., steps=dim_size, device=self.device).float()  # [dim_size]
+            pos = torch.linspace(-1., 1., steps=dim_size).float()  # [dim_size]
 
             # Compute outer product: [dim_size, dim//2]
             freqs_dim = torch.einsum('i,j->ij', pos.type(freqs.dtype), freqs)  # [dim_size, dim//2]
@@ -142,7 +141,7 @@ class Rope2D(nn.Module):
         Returns:
             Tensor: Tensor with rotary embeddings applied, shape [batch_size, n_head, S, h_dim].
         """
-        # batch_size, n_head, S, h_dim = x.shape
+        batch_size, n_head, S, h_dim = x.shape
         # device = x.device
 
         # Extract row and column indices
