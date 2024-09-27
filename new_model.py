@@ -283,6 +283,9 @@ class Interpreter(nn.Module):
         rope_2d = Rope2D(config.n_dim // config.n_head, max_height=60, max_width=60)
         self.blocks = nn.ModuleList([TransformerBlock(config, rope=rope_2d) for _ in range(config.n_layer)])
         
+        self.rms_out = RMSNorm(config.n_dim)
+
+
     def forward(self,
             x: Tensor, 
             attn_mask: Tensor, 
@@ -305,6 +308,7 @@ class Interpreter(nn.Module):
             if return_kv_caches and new_kv_cache is not None:
                 loop_kv_caches.append(new_kv_cache)
 
+        x = self.rms_out(x)
         return x, loop_kv_caches
 
 class REPL(nn.Module):
@@ -340,7 +344,7 @@ class REPL(nn.Module):
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
-        # color + array + program + inp_grid + pad + out_grid
+        # color + array + program + inp_grid + out_grid
         self.type_emb = nn.Embedding(5, config.n_dim)
 
         dummy_idx = torch.ones((1, 1), dtype=torch.long, requires_grad=False)
@@ -350,13 +354,6 @@ class REPL(nn.Module):
         self.register_buffer('inp_grid_type_idx', (3 * dummy_idx.clone()))
         self.register_buffer('out_grid_type_idx', (4 * dummy_idx.clone()))
 
-
-        # rope_2d = Rope2D(config.n_dim // config.n_head, max_height=60, max_width=60)
-        # self.blocks = nn.ModuleList([TransformerBlock(config, rope=rope_2d) for _ in range(config.n_layer)])
-        
-        # self.inp_inject = nn.Linear(2*config.n_dim, config.n_dim, bias=False)
-
-        # self.ln_f = RMSNorm(config.n_dim)
         self.interpreter = Interpreter(config)
         self.state_agg = StateAggregator(config)
 
