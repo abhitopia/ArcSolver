@@ -24,6 +24,7 @@
 - [x] setting attn_mask to None has no effect on StateAggregator. (This is expected in the kv_cached forwardx model because due to caching, the past tokens
 don't access future tokens making it causal by default)
 - [x] Implement return kv_cache in the forward of the model
+- [ ] Non-grid tokens should have no rope2d applied. Currently it applies (0, 0) which is incorrect!!
 - [ ] implement forwardx in the model
 - [ ] Port greedy search to the new model
 - [ ] Port beam search to the new model
