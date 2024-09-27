@@ -44,8 +44,6 @@ def create_test_inp(bs=10, inp_seq_len=10, out_seq_len=5, prog_vocab_size=15, pe
 
 
 # %%
-
-
 @dataclass
 class REPLConfig:
     prog_vocab_size: int # number of program tokens
@@ -91,8 +89,6 @@ class REPLConfig:
     @staticmethod
     def from_dict(data: dict) -> "REPLConfig":
         return REPLConfig(**data)
-
-
 
 # %%
 
@@ -192,7 +188,6 @@ class TransformerBlock(nn.Module):
         x = x + self.dropout(self.normed_mlp(x))
         return x, new_kv_cache
 
-
 class StateAggregator(nn.Module):
     def __init__(self, config: REPLConfig) -> None:
         super().__init__()
@@ -268,7 +263,6 @@ class StateAggregator(nn.Module):
         output = self.rms_out(output)
         return output, updated_kv_caches
 
-
 class Interpreter(nn.Module):
     def __init__(self, config: REPLConfig) -> None:
         super().__init__()
@@ -334,15 +328,14 @@ class REPL(nn.Module):
         )
 
         # color + array + program + inp_grid + pad + out_grid
-        self.type_emb = nn.Embedding(6, config.n_dim)
+        self.type_emb = nn.Embedding(5, config.n_dim)
 
         dummy_idx = torch.ones((1, 1), dtype=torch.long, requires_grad=False)
         self.register_buffer('prog_type_idx', (0 * dummy_idx.clone()))
         self.register_buffer('color_type_idx', (1 * dummy_idx.clone()))
         self.register_buffer('tform_type_idx', (2 * dummy_idx.clone()))
         self.register_buffer('inp_grid_type_idx', (3 * dummy_idx.clone()))
-        self.register_buffer('pad_type_idx', (4 * dummy_idx.clone()))
-        self.register_buffer('out_grid_type_idx', (5 * dummy_idx.clone()))
+        self.register_buffer('out_grid_type_idx', (4 * dummy_idx.clone()))
 
 
         # rope_2d = Rope2D(config.n_dim // config.n_head, max_height=60, max_width=60)
@@ -392,47 +385,36 @@ class REPL(nn.Module):
         inp_grid = inp_grid + inp_grid_type
 
         grid_valid_mask = x.grid != self.PAD_IDX
+        grid_indices = x.grid_indices
+
         pca_valid_mask = torch.ones((x.grid.size(0), 3), dtype=torch.bool, device=x.grid.device)
+        pca_indices = torch.full((x.grid.size(0), 3, 2), -1, dtype=grid_indices.dtype)
+
         enc_valid_mask = torch.cat([pca_valid_mask, grid_valid_mask], dim=1)
+        enc_indices = torch.cat([pca_indices, grid_indices], dim=1)
+
         enc_inp = torch.cat([program, color_permutation, array_transform, inp_grid], dim=1)
-        return enc_inp, enc_valid_mask
+        return enc_inp, enc_valid_mask, enc_indices
 
     def contruct_decoder_input(self, y: MODEL_OUTPUT):
         bs = y.grid.size(0)
 
-        pad = torch.full((bs, 1), self.PAD_IDX, dtype=y.grid.dtype, device=y.grid.device)
-        pad = self.gte(pad)
-        pad_type = self.type_emb(self.pad_type_idx)
-        pad = pad + pad_type
-
         out_grid = self.gte(y.grid)
         out_grid_type = self.type_emb(self.out_grid_type_idx)
-        out_grid = out_grid + out_grid_type
-
-        # Right shift the output grid by one position (Causal Decoder)
-        dec_inp = torch.cat([pad, out_grid[:, 1:]], dim=1)
-
-        dec_valid_mask = torch.ones((bs, dec_inp.size(1)), dtype=torch.bool, device=y.grid.device)
-        dec_valid_mask[:, 1:] = y.grid[:, 1:] != self.PAD_IDX
-
-        return dec_inp, dec_valid_mask
-    
-    def get_enc_dec_indices(self, x: MODEL_INPUT, y: MODEL_OUTPUT):
-        enc_indices = x.grid_indices
+        dec_inp = out_grid + out_grid_type
+        dec_valid_mask = y.grid != self.PAD_IDX
         dec_indices = y.grid_indices
-
+        return dec_inp, dec_valid_mask, dec_indices
+    
+    def get_enc_indices(self, x: MODEL_INPUT):
+        enc_indices = x.grid_indices
         bs = enc_indices.size(0)
         inp_len = enc_indices.size(1)
-        out_len = 1 + max(dec_indices.size(1)-1, 0)
         prefix_len = 3
-        indices = torch.full((bs, prefix_len+inp_len+out_len, 2), -1, dtype=torch.int64)
-        indices[:, prefix_len:prefix_len+inp_len, :] = enc_indices
-        print("Indices", indices.size(), prefix_len, inp_len, out_len, dec_indices.size())
-        if out_len > 1:
-            indices[:, prefix_len+inp_len+1:, :] = dec_indices[:, 1:, :]
-        else:
-            print(indices)
+        indices = torch.full((bs, prefix_len+inp_len, 2), -1, dtype=enc_indices.dtype)
+        indices[:, prefix_len:, :] = enc_indices
         return indices
+
     
     def forwardb(self, x: MODEL_INPUT, y: MODEL_OUTPUT, iters: int = 1):
         enc_inp, enc_valid_mask = self.contruct_encoder_input(x)
@@ -458,7 +440,6 @@ class REPL(nn.Module):
             # print(logits_i.size())
         return logits
     
-
     def forward(self, x: MODEL_INPUT,
             y: Optional[MODEL_OUTPUT] = None, 
             iters: int = 1, 
@@ -469,18 +450,19 @@ class REPL(nn.Module):
             bs = x.grid.size(0)
             y = MODEL_OUTPUT(
                     grid=torch.zeros((bs, 0), dtype=x.grid.dtype, device=x.grid.device),
-                    grid_indices=torch.zeros((bs, 0), dtype=x.grid_indices.dtype, device=x.grid.device))
+                    grid_indices=torch.zeros((bs, 0, 2), dtype=x.grid_indices.dtype, device=x.grid.device))
                                                  
-        enc_inp, enc_valid_mask = self.contruct_encoder_input(x)
-        dec_inp, dec_valid_mask = self.contruct_decoder_input(y)
-        indices = self.get_enc_dec_indices(x, y)
+        enc_inp, enc_valid_mask, enc_indices = self.contruct_encoder_input(x)
+        dec_inp, dec_valid_mask, dec_indices = self.contruct_decoder_input(y)
+
         attn_mask = create_enc_dec_mask(enc_valid_mask, dec_valid_mask).unsqueeze(1)
 
         dec_start_idx = enc_inp.size(1)
-        enc_dec_inp = torch.cat([enc_inp, dec_inp], dim=1)
 
-        print("Enc-Dec", enc_dec_inp.size(), attn_mask.size(), indices.size())
-        print("Mask", attn_mask)
+        enc_dec_inp = torch.cat([enc_inp, dec_inp], dim=1)
+        print("Indices", enc_indices.shape, dec_indices.shape)
+        indices = torch.cat([enc_indices, dec_indices], dim=1)
+
         logits = []
         iter_states = [enc_dec_inp]
 
@@ -502,6 +484,16 @@ class REPL(nn.Module):
                 updated_kv_caches.append(iter_kv_cache)
             # print(logits_i.size())
         return logits, updated_kv_caches
+
+
+    def forward_inc(self,
+            next_y: Optional[MODEL_OUTPUT], 
+            caches: List[List[Tuple[Tensor, Tensor]]],
+            iters: int = 1, 
+        ) -> Tuple[List[Tensor], Optional[List[List[Tuple[Tensor, Tensor]]]]]:
+                   
+        dec_inp, dec_valid_mask = self.contruct_decoder_input(y)
+        print("Dec Input", dec_inp.size(), dec_valid_mask.size())
 
 
 
@@ -534,12 +526,17 @@ x.grid, x.grid_indices, y.grid, y.grid_indices
 valid_mask = torch.cat([(x.grid != 0), (y.grid != 0)], dim=1)
 print("Valid Mask", valid_mask)
 model = REPL(config)
+
+#%%
 logits, cache = model(x, None, iters=4, return_caches=True)
+logits[-1][:, :, 0], y.grid.shape
+#%%
+logits_next = model.forward_inc(y, cache, iters=4)
+
 #%%
 global_nan_value = 0.0
 logits, cache = model(x, y, iters=4, return_caches=True)# %%
 logits[-1][:, :, 0]
-
 # logitsx[0]
 # %%
 global_nan_value = 0.0
@@ -550,6 +547,6 @@ logits[-1][:, :, 0]
 len(cache[0][0]), cache[0][0][1].size()
 # %%
 # %%
-%
+
 
 # %%
