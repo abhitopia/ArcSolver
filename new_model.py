@@ -486,7 +486,7 @@ class REPL(nn.Module):
         logits = []
         iter_states = [dec_inp]
 
-        updated_kv_caches: List[List[Tuple[Tensor, Tensor]]] = []
+        updated_kv_cache: List[List[Tuple[Tensor, Tensor]]] = []
         current_state, states_kv_cache = self.state_agg(iter_states, None)
 
         for i in range(iters):
@@ -503,9 +503,10 @@ class REPL(nn.Module):
             logits.append(logits_i)
 
             # Store the updated kv-cache for this loop iteration
-            updated_kv_caches.append(iter_kv_cache)
+            updated_kv_cache.append(iter_kv_cache)
 
-        return logits, updated_kv_caches
+        cache = (updated_kv_cache, past_enc_valid_mask, dec_valid_mask)
+        return logits, cache
 
     def compute_loss(self, logits: List[Tensor], y: MODEL_OUTPUT) -> Tensor:
         loss = self.loss(logits, y.target_grid)
@@ -541,6 +542,31 @@ print("Valid Mask", valid_mask)
 model = REPL(config)
 
 #%%
+def incremental_forward(model, x, y, iters=4):
+    _, cache = model(x, None, iters=iters, return_cache=True)
+
+    len_dec = y.grid.size(1)
+
+    logits_out = [[] for _ in range(iters)]
+    for i in range(len_dec):
+        y_i = MODEL_OUTPUT(grid=y.grid[:, i:i+1], grid_indices=y.grid_indices[:, i:i+1], target_grid=None)
+        logits, cache = model.forward_inc(y_i, cache, iters=iters)
+        for j in range(iters):
+            logits_out[j].append(logits[j])
+
+    logits_out = [torch.cat(i, dim=1) for i in logits_out]
+    loss = model.compute_loss(logits_out, y)
+    return logits_out, loss
+
+
+logits_inc, loss = incremental_forward(model, x, y, iters=4)
+logits_inc[-1][:, :, 0], loss
+
+#%%
+logits, cache = model(x, y, iters=4, return_cache=True)
+loss = model.compute_loss(logits, y)
+logits[-1][:, :, 0], loss
+#%%
 logits, cache = model(x, None, iters=4, return_cache=True)
 logits[-1][:, :, 0], y.grid.shape
 
@@ -550,9 +576,7 @@ logits_next, cache_next = model.forward_inc(y, cache, iters=4)
 loss_next = model.compute_loss(logits_next, y)
 logits_next[-1][:, :, 0], y.grid.shape, loss_next
 #%%
-logits, cache = model(x, y, iters=4, return_cache=True)
-loss = model.compute_loss(logits, y)
-logits[-1][:, :, 0], loss
+
 #%%
 global_nan_value = 0.0
 logits, cache = model(x, y, iters=4, return_cache=True)# %%

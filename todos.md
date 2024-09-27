@@ -28,7 +28,7 @@ don't access future tokens making it causal by default)
 - [x] Non-grid tokens should have no rope2d applied. Currently it applies (0, 0) which is incorrect!! (There is restoring of original embedding. Tested OK!)
 - [x] implement forwardx in the model
 
-
+- [x] Test Incremental Decoding
 - [ ] Port greedy search to the new model
 - [ ] Port beam search to the new model
 - [ ] Make model scriptable
