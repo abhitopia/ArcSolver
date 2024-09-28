@@ -1,26 +1,40 @@
-#%%
+from typing import List, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-#%%
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 
-def exp_spacing(n, rate=1, min_val=0.4, max_val=1.0):
+def exp_spacing(
+    n: int,
+    rate: float = 1.0,
+    min_val: float = 0.4,
+    max_val: float = 1.0
+) -> torch.Tensor:
+    """
+    Generates exponentially spaced intervals between min_val and max_val.
+
+    Args:
+        n (int): Number of intervals. Must be greater than 0.
+        rate (float, optional): Rate parameter for exponential spacing. Default is 1.0.
+        min_val (float, optional): Minimum value of the interval. Default is 0.4.
+        max_val (float, optional): Maximum value of the interval. Default is 1.0.
+
+    Returns:
+        torch.Tensor: A tensor containing the spaced intervals.
+    """
     assert n > 0, "n must be greater than 0"
     if n == 1:
-        spaced_intervals = np.array([max_val])
-    elif rate == 0:
-        spaced_intervals = np.linspace(min_val, max_val, n)
+        spaced_intervals = torch.tensor([max_val], dtype=torch.float32)
+    elif rate == 0.0:
+        spaced_intervals = torch.linspace(min_val, max_val, n)
     else:
-        exponents = np.linspace(0, rate, n)
-        values = 1 - np.exp(-exponents)
-        spaced_intervals = min_val + (values / np.max(values)) * (max_val - min_val)
+        exponents = torch.linspace(0.0, rate, n, dtype=torch.float32)
+        values = 1.0 - torch.exp(-exponents)
+        values_max = torch.max(values)
+        spaced_intervals = min_val + (values / values_max) * (max_val - min_val)
     return spaced_intervals
+
 
 
 class MultiLevelLoss(nn.Module):
@@ -131,8 +145,15 @@ class MultiLevelLoss(nn.Module):
         selected_mask[selected_batch_indices, selected_position_indices] = True
 
         return selected_mask
+    
 
-    def compute_loss_for_level(self, logits_i, targets, selected_mask, valid_mask):
+    def compute_loss_for_level(
+            self,
+            logits_i: torch.Tensor,
+            targets: torch.Tensor,
+            selected_mask: torch.Tensor,
+            valid_mask: torch.Tensor
+            ) -> Tuple[torch.Tensor, int]:
         """
         Computes cross-entropy loss for the current level over selected positions.
 
@@ -143,18 +164,19 @@ class MultiLevelLoss(nn.Module):
             valid_mask (torch.Tensor): Mask of valid positions, shape (B, T).
 
         Returns:
-            loss_level (torch.Tensor): Loss value for the current level.
-            num_tokens_level (int): Number of tokens used in the loss computation at this level.
+            Tuple[torch.Tensor, int]: Loss value for the current level and the number of tokens used in the loss computation at this level.
         """
-        selected_positions = selected_mask & valid_mask  # Ensure only valid positions are considered
+        # Ensure only valid positions are considered
+        selected_positions: torch.Tensor = selected_mask & valid_mask
 
-        num_tokens_level = selected_positions.sum().item()
+        num_tokens_level = int(selected_positions.sum().item())
         if num_tokens_level == 0:
-            return 0.0, 0
+            loss_level = torch.tensor(0.0, device=logits_i.device)
+            return loss_level, 0
 
         # Extract logits and targets for selected positions
-        logits_selected = logits_i[selected_positions]  # shape (Total_Selected_Positions, D)
-        targets_selected = targets[selected_positions]  # shape (Total_Selected_Positions,)
+        logits_selected = logits_i[selected_positions]  # Shape: (Total_Selected_Positions, D)
+        targets_selected = targets[selected_positions]  # Shape: (Total_Selected_Positions,)
 
         # Compute cross-entropy loss with 'sum' reduction
         loss_level = F.cross_entropy(logits_selected, targets_selected, reduction='sum')
@@ -185,7 +207,9 @@ class MultiLevelLoss(nn.Module):
         # Initialize selected indices mask for each sequence
         selected_mask = torch.zeros(B, T, dtype=torch.bool, device=device)
 
-        total_loss = 0.0
+        # total_loss = 0.0
+        total_loss: torch.Tensor = torch.tensor(0.0, device=device)
+
         total_tokens = 0
 
         for level_i in range(N):

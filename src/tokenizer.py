@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import re
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 from collections import namedtuple
 import json
 import numpy as np
@@ -140,24 +140,21 @@ class ArrayTransformTokenizer(Tokenizer):
         idx2token = {idx: token for idx, token in enumerate(tokens)}
         super().__init__(token2idx=token2idx, idx2token=idx2token, frozen=True)
 
-@dataclass
-class MODEL_INPUT:
-    color_permutation: Union[List[int], torch.Tensor]
-    array_transform: Union[List[int], torch.Tensor]
-    program: Union[List[int], torch.Tensor]
-    grid: Union[List[int], torch.Tensor]
-    grid_indices: Union[List[Tuple[int, int]], torch.Tensor]
-    meta: Union[dict, List[dict]]
 
-@dataclass
-class MODEL_OUTPUT:
-    grid: Union[List[int], torch.Tensor]
-    grid_indices: Union[List[Tuple[int, int]], torch.Tensor]
-    target_grid: Union[List[int], torch.Tensor]
+class MODEL_INPUT(NamedTuple):
+    color_permutation: torch.Tensor
+    array_transform: torch.Tensor
+    program: torch.Tensor
+    grid: torch.Tensor
+    grid_indices: torch.Tensor
+    meta: Optional[List[Dict[str, str]]]
 
 
-# MODEL_INPUT = namedtuple('MODEL_INPUT', ['color_permutation', 'array_transform', 'program', 'input', 'meta'])
-# MODEL_OUTPUT = namedtuple('MODEL_OUTPUT', ['output'])
+class MODEL_OUTPUT(NamedTuple):
+    grid: torch.Tensor
+    grid_indices: torch.Tensor
+    target_grid: Optional[torch.Tensor]
+
 
 class ArcTokenizer:
     def __init__(self) -> None:
