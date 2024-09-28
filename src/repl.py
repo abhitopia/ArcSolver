@@ -1,5 +1,6 @@
 #%%
 from dataclasses import dataclass
+import re
 from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
@@ -701,3 +702,89 @@ class REPL(nn.Module):
         optimizer = LazyAdamW(optim_groups, lr=model_lr, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
         return optimizer
 
+
+    def load_state_dict(self, state_dict, strict: bool=True, assign: bool=False):
+
+        if strict:
+            return super().load_state_dict(state_dict, strict=strict, assign=assign)
+
+        pte_w_key = 'pte.0.weight'
+        src_sd = self.state_dict()
+        trg_sd = state_dict
+        
+        if self.state_dict()[pte_w_key].shape != state_dict[pte_w_key].shape:
+            logger.warning(f"WARNING: Skipping loading Program Embeddings as they differ in shape in the target model. ")
+            trg_sd = {k: v for k, v in state_dict.items() if k != pte_w_key}
+            trg_sd[pte_w_key] = self.state_dict()[pte_w_key]
+
+
+        def get_num_blocks(state_dict, prefix):
+            max_block_id = 0
+
+            for key in state_dict.keys():
+                # Use regex to match the pattern
+                match = re.match(rf'{prefix}\.blocks\.(\d+)\.', key)
+                if match:
+                    block_number = int(match.group(1))
+                    max_block_id = max(max_block_id, block_number)
+
+            return max_block_id + 1
+
+        @torch.no_grad()
+        def copy_(prefix, idx_mapping=None, src_prefix=None):
+            for name, t in trg_sd.items():
+                if name.startswith(prefix):
+                    suffix = name[len(prefix):]
+                    src_name = src_prefix + suffix if src_prefix is not None else name
+                    s = src_sd[src_name]
+                    trg_ptr_b4 = t.data_ptr()
+                    if idx_mapping is None:
+                        t.data.copy_(s)
+                    else:
+                        for trg_idx, src_idx in idx_mapping.items():
+                            t.data[trg_idx].copy_(s.data[src_idx])
+
+                    trg_ptr_after = t.data_ptr()
+                    assert trg_ptr_b4 == trg_ptr_after, f"Data pointer changed for {prefix}"
+
+        missing_keys, unexpected_keys = super().load_state_dict(trg_sd, strict=strict, assign=assign)
+
+        for k in missing_keys + unexpected_keys:
+            assert k.startswith('interpreter.') or k.startswith('state_agg.'), f"Unexpected key: {k}"
+
+        def deal_with_blocks(prefix):
+            num_trg_blocks = get_num_blocks(self.state_dict(), prefix)
+            num_src_blocks = get_num_blocks(trg_sd, prefix)
+            num_params_per_block = 7
+
+            prefix_missing_keys = [k for k in missing_keys if k.startswith(f'{prefix}.blocks')]    
+            prefix_unexpected_keys = [k for k in unexpected_keys if k.startswith(f'{prefix}.blocks')]
+
+            if num_trg_blocks > num_src_blocks:
+                logger.warning(f"WARNING: Target model has more {prefix} blocks than the source model")
+                assert len(prefix_unexpected_keys) == 0, f"Missing keys: {prefix_unexpected_keys}"
+                assert len(prefix_missing_keys) == num_params_per_block * (num_trg_blocks - num_src_blocks), f"Unexpected keys: {prefix_missing_keys}"
+
+                # This is the case where we do block expansion
+                for trg_block_id in range(num_src_blocks, num_trg_blocks):
+                    trg_block_key = f'{prefix}.blocks.{trg_block_id}'
+                    src_block_idx = max(trg_block_id - (num_trg_blocks - num_src_blocks), 0)
+                    src_block_key = f'{prefix}.blocks.{src_block_idx}'
+                    copy_(f'{trg_block_key}.', src_prefix=f'{src_block_key}.')
+
+                    with torch.no_grad():
+                        module = self.interpreter if prefix == 'interpreter' else self.state_agg
+                        # Set the SwiGLUFFN output multiplication close to zero
+                        module.blocks[trg_block_id].normed_mlp[1].w3.weight.normal_(mean=0, std=0.0001)
+                        # Set the value project close to zero!
+                        module.blocks[trg_block_id].attn.c_attn.weight[self.n_dim * 2:, :].normal_(mean=0, std=0.0001)
+
+                    logger.warning(f"WARNING: Copying {prefix} block idx: {trg_block_id} from the block idx: {src_block_idx} of the source model and made it identity block")
+
+            elif num_trg_blocks < num_src_blocks:
+                logger.warning(f"WARNING: Target model has less {prefix} blocks than the source model. Copy only the first {num_trg_blocks} blocks")
+                assert len(prefix_missing_keys) == 0, f"Unexpected keys: {prefix_missing_keys}"
+                assert len(prefix_unexpected_keys) == num_params_per_block * (num_src_blocks - num_trg_blocks), f"Missing keys: {prefix_unexpected_keys}"
+
+        deal_with_blocks('interpreter')
+        deal_with_blocks('state_agg')
