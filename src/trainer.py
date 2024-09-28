@@ -136,6 +136,9 @@ class Hparams:
     def init_model(self)-> nn.Module:
         raise NotImplementedError('init_model method must be implemented')
     
+    def init_loss_fn(self)-> nn.Module:
+        raise NotImplementedError('init_loss_fn method must be implemented')
+    
     def init_optimizer(self, model)-> optim.Optimizer:
         raise NotImplementedError('init_optimizer method must be implemented')
     

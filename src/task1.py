@@ -95,13 +95,13 @@ class Example:
                        is_test=example_dict['is_test'])
 
     def compute_complexity(self):
-        size = max(len(self.input), len(self.output))
-        scale = max(len(self.input)/len(self.output), len(self.output)/len(self.input))
+        size = max(len(self.input), len(self.output))/(30*30)
+        scale = max(len(self.input)/len(self.output), len(self.output)/len(self.input))/(30*30)
         hist_inp, _ = np.histogram(self.input.flatten(), bins=np.arange(11), density=True)
         hist_out, _ = np.histogram(self.output.flatten(), bins=np.arange(11), density=True)
         color_var = np.sqrt(np.square(hist_inp - hist_out).sum())
         complexity = size*4 + scale*2 + color_var
-        complexity = np.log(complexity + 1)/2
+        complexity = np.log(complexity + 1)
         return complexity
 
     @property
@@ -282,7 +282,7 @@ class ArcTasksLoader:
         return len(self.tasks)
 
 
-class ProgramDataset:
+class ArcTrainingDataset:
     def __init__(self, loaders: List[ArcTasksLoader]):
         self.loaders = loaders
         self._train = defaultdict(list)
@@ -417,7 +417,7 @@ ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dat
 ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
 
 
-TRAIN_COLLECTION = ProgramDataset([
+TRAIN_ONLY_COLLECTION = ArcTrainingDataset([
     ARC_TRAIN,
     ARC_1D,
     ARC_REARC_EASY,
@@ -433,3 +433,20 @@ TRAIN_COLLECTION = ProgramDataset([
     ARC_SYNTH_RIDDLES, 
     ARC_TAMA])
 
+
+TRAIN_EVAL_COLLECTION = ArcTrainingDataset([
+    ARC_TRAIN,
+    ARC_1D,
+    ARC_REARC_EASY,
+    ARC_REARC_HARD, 
+    ARC_COMMUNITY, 
+    ARC_DIVA, 
+    ARC_CONCEPT, 
+    ARC_DBIGHAM, 
+    ARC_MINI, 
+    ARC_NOSOUND, 
+    ARC_PQA, 
+    ARC_SEQUENCE, 
+    ARC_SYNTH_RIDDLES, 
+    ARC_TAMA,
+    ARC_EVAL])
