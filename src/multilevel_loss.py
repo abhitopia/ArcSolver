@@ -1,6 +1,7 @@
 from typing import List, Tuple
 import numpy as np
 import torch
+from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -183,7 +184,7 @@ class MultiLevelLoss(nn.Module):
 
         return loss_level, num_tokens_level
 
-    def forward(self, logits_list, targets):
+    def forward(self, logits_list: List[Tensor], targets: Tensor) -> Tensor:
         """
         Computes the progressive loss over multiple levels.
 

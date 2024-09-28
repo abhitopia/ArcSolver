@@ -544,8 +544,11 @@ class REPL(nn.Module):
         cache = (updated_kv_cache, past_enc_valid_mask, dec_valid_mask)
         return logits, cache
 
+    @torch.jit.export
     def compute_loss(self, logits: List[Tensor], y: MODEL_OUTPUT) -> Tensor:
-        loss = self.loss(logits, y.target_grid)
+        target = y.target_grid
+        assert target is not None  # Just to make tocuhscript happy
+        loss = self.loss(logits, target)
         return loss
     
     def greedy_search(self, 
