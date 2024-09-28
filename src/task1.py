@@ -308,7 +308,7 @@ class ArcTrainingDataset:
         num_progs = len(self.train)
         num_train = sum([len(v) for v in self._train.values()])
         num_test = sum([len(v) for v in self._test.values()])
-        logger.info(f"\n\nTraining Data Stats: {self.name}")
+        logger.info(f"\n\nTraining Data Stats:")
         logger.info(f"Number of programs: {num_progs}")
         logger.info(f"Number of train examples: {num_train}")
         logger.info(f"Number of test examples: {num_test}")
