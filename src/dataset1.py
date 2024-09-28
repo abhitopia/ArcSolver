@@ -91,6 +91,7 @@ class TargetTokenCountBatchSampler(BatchSampler):
 
 
     def reduce_num_batches(self, batches, batch_token_counts, batch_widths):
+        # print("Reducing number of batches")
         mean_util = np.mean([self.batch_utilisation(batch) for batch in batches])
 
         score = mean_util/len(batches)
@@ -98,7 +99,7 @@ class TargetTokenCountBatchSampler(BatchSampler):
             new_batches, new_batch_token_counts, new_batch_widths = self.merge_batches(batches, batch_token_counts, batch_widths)
             mean_util = np.mean([self.batch_utilisation(batch) for batch in new_batches])
             new_score = mean_util/len(new_batches)
-            print(new_score, len(new_batches))
+            # print(new_score, len(new_batches))
             if new_score > score:
                 batches = new_batches
                 batch_token_counts = new_batch_token_counts
@@ -107,7 +108,7 @@ class TargetTokenCountBatchSampler(BatchSampler):
             else:
                 break
 
-        return batches, batch_token_counts, batch_widths
+        return new_batches
 
 
 
@@ -168,7 +169,7 @@ class TargetTokenCountBatchSampler(BatchSampler):
             batch_token_counts.append(batch_token_count)
             batch_widths.append(max_batch_inp_len + max_batch_out_len + 3)
 
-        self.reduce_num_batches(batches, batch_token_counts, batch_widths)
+        batches = self.reduce_num_batches(batches, batch_token_counts, batch_widths)
 
         return batches
 
@@ -228,6 +229,7 @@ class TargetTokenCountBatchSampler(BatchSampler):
             
 
         print("Number of Batches: ", len(self.batches))
+        print("Number of Examples: ", sum(batch_lens))
 
         def print_stats(name, data):
             print(f"-"*50)
@@ -298,6 +300,8 @@ class ArcExamplesDataset(Dataset):
         inp_indices = torch.tensor(inp_indices, dtype=torch.long).to(device, non_blocking=True)
         out_indices = torch.tensor(out_indices, dtype=torch.long).to(device, non_blocking=True)
 
+        target_grid = torch.cat([out_grids[:, 1:], torch.full((out_grids.size(0), 1), pad_idx, dtype=out_grids.dtype)], dim=1)
+
         x = MODEL_INPUT(
             color_permutation=cps,
             array_transform=ats,
@@ -309,7 +313,8 @@ class ArcExamplesDataset(Dataset):
 
         y = MODEL_OUTPUT(
             grid=out_grids,
-            grid_indices=out_indices
+            grid_indices=out_indices,
+            target_grid=target_grid
         )
 
         return x, y
