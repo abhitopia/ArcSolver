@@ -106,8 +106,10 @@ class Hparams:
         assert self.grok_lambda >= 0, 'grok_lambda must be zero or a positive'
         assert self.grok_alpha == 0 or self.grok_lambda > 0, 'grok_lambda must be provided if grok_alpha is provided'
         assert self.grok_lambda == 0 or self.grok_alpha > 0, 'grok_alpha must be provided if grok_lambda is provideds'
-
         self._state = {}
+
+    def build_state(self):
+        raise NotImplementedError('build_state method must be implemented')
 
     def add_params(self, prefix='', **kwargs):
         if len(prefix) > 0:
@@ -159,14 +161,12 @@ class Hparams:
     def from_dict(cls, hparams_dict):
         args = {k: v for k, v in hparams_dict.items() if not isinstance(v, dict)} 
 
-        # TODO: Remove this ugly code.
-        if 'called_once' in args:
-            del args['called_once']
-
         hparams = cls(**args)
         for k, v in hparams_dict.items():
             if isinstance(v, dict):
                 hparams.add_params(k, **v)
+        hparams.build_state()
+
         return hparams
 
 
@@ -220,6 +220,7 @@ class TrainerBase:
         self._scheduler = None
         self._train_dl = None
         self._eval_dl = None
+        self._loss_fn = None
         
 
         self.train_metrics = MetricLogger()
@@ -262,6 +263,13 @@ class TrainerBase:
             self._model = self.hparams.init_model()
             self._model.to(self.device)
         return self._model
+    
+    @property
+    def loss_fn(self):
+        if self._loss_fn is None:
+            self._loss_fn = self.hparams.init_loss_fn()
+            self._loss_fn.to(self.device)
+        return self._loss_fn
     
     @property
     def optimizer(self):

@@ -29,7 +29,7 @@ class REPLConfig:
     grid_vocab_size: int = len(GridTokenizer()) # number of array element tokens (one extra for niceness)
     perm_vocab_size: int = len(ColorPermutationTokenizer())
     tform_vocab_size: int = len(ArrayTransformTokenizer())
-    max_iters: int = 64 # maximum number of iterations
+    num_iters: int = 8 # number of iterations
     n_state_layer: int = 1 # number of transformer blocks / layers for state aggregation    
     pad_idx: int = GridTokenizer().PAD_IDX
     max_grid_height: int = 60
@@ -58,10 +58,8 @@ class REPLConfig:
             'grid_vocab_size': self.grid_vocab_size,
             'perm_vocab_size': self.perm_vocab_size,
             'tform_vocab_size': self.tform_vocab_size,
-            'max_iters': self.max_iters,
+            'num_iters': self.num_iters,
             'n_state_layer': self.n_state_layer,
-            'edr': self.edr,
-            'mctp': self.mctp,
             'pad_idx': self.pad_idx,
             'max_grid_height': self.max_grid_height,
             'max_grid_width': self.max_grid_width
@@ -246,7 +244,7 @@ class StateAggregator(nn.Module):
         super().__init__()
         self.config = config
         self.n_state_layer = config.n_state_layer
-        self.pos_emb = nn.Embedding(config.max_iters, config.n_dim)
+        self.pos_emb = nn.Embedding(config.num_iters+1, config.n_dim)
         self.blocks = nn.ModuleList([TransformerBlock(config, rope=None) for _ in range(self.n_state_layer)])
         self.rms_out = RMSNorm(config.n_dim)
 
@@ -278,7 +276,6 @@ class StateAggregator(nn.Module):
         output = self.rms_out(output)
         return output
     
-
     def forward(self, x: List[torch.Tensor], kv_caches: Optional[List[Tuple[Tensor, Tensor]]] = None):
         B, T, D = x[-1].size()
         past_iters = 0 if kv_caches is None else kv_caches[0][0].size(2)
@@ -322,7 +319,6 @@ class Interpreter(nn.Module):
                         max_height=config.max_grid_height,
                         max_width=config.max_grid_width)
         self.blocks = nn.ModuleList([TransformerBlock(config, rope=rope_2d) for _ in range(config.n_layer)])
-        
         self.rms_out = RMSNorm(config.n_dim)
 
 
@@ -358,6 +354,7 @@ class REPL(nn.Module):
         self.config = config
         self.n_dim = config.n_dim
         self.n_layer = config.n_layer
+        self.num_iters = config.num_iters
         self.pnorm = config.pnorm
         self.PAD_IDX = config.pad_idx
 
@@ -452,8 +449,7 @@ class REPL(nn.Module):
         return dec_inp, dec_valid_mask, dec_indices
     
     def forward(self, x: MODEL_INPUT,
-            y: Optional[MODEL_OUTPUT] = None, 
-            iters: int = 1, 
+            y: Optional[MODEL_OUTPUT] = None,
             return_cache: bool = False
         )-> Tuple[List[Tensor], Optional[Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]]:
 
@@ -480,7 +476,7 @@ class REPL(nn.Module):
         updated_kv_cache: List[List[Tuple[Tensor, Tensor]]] = [] 
 
         current_state, states_kv_cache = self.state_agg(iter_states, None)
-        for i in range(iters):
+        for i in range(self.num_iters):
             new_state, iter_kv_cache = self.interpreter(
                                             x=current_state,
                                             attn_mask=attn_mask,
@@ -503,7 +499,6 @@ class REPL(nn.Module):
     def forward_inc(self,
             next_y: MODEL_OUTPUT, 
             cache: Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor],
-            iters: int = 1, 
         ) -> Tuple[List[Tensor], Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]:
                    
         dec_inp, dec_valid_mask, dec_indices = self.contruct_decoder_input(next_y)
@@ -523,7 +518,7 @@ class REPL(nn.Module):
         updated_kv_cache: List[List[Tuple[Tensor, Tensor]]] = []
         current_state, states_kv_cache = self.state_agg(iter_states, None)
 
-        for i in range(iters):
+        for i in range(self.num_iters):
             new_state, iter_kv_cache = self.interpreter(
                                             x=current_state,
                                             attn_mask=attn_mask,
@@ -554,7 +549,6 @@ class REPL(nn.Module):
             prog_idx: int,
             input_grid: List[int],
             input_indices: List[Tuple[int, int]],
-            iters: int, 
             color_perm_idx: int = 0,
             array_tform_idx: int = 0,
             max_length: int = 30*30,
@@ -583,7 +577,6 @@ class REPL(nn.Module):
         _, cache = self.forward(
                 x=x,
                 y=None,
-                iters=iters,
                 return_cache=True
         )
 
@@ -608,8 +601,7 @@ class REPL(nn.Module):
 
             logits_iters, cache = self.forward_inc(
                 next_y=next_y,
-                cache=cache,
-                iters=iters
+                cache=cache
             )
 
             # Get the logits from the last iteration

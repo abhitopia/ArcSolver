@@ -6,7 +6,10 @@ import torch
 from torch.utils.data import Dataset, BatchSampler, DataLoader
 from .task1 import Example
 from .tokenizer import ArcTokenizer, MODEL_OUTPUT, MODEL_INPUT
+from .utils import get_logger
+#%%
 
+logger = get_logger()
 
 class TargetTokenCountBatchSampler(BatchSampler):
     def __init__(self, dataset: Dataset, approx_token_count: int, min_util: float = 0.80, shuffle: bool = True):
@@ -107,10 +110,7 @@ class TargetTokenCountBatchSampler(BatchSampler):
                 score = new_score
             else:
                 break
-
         return new_batches
-
-
 
     def create_batches(self):
         indices = list(range(len(self.dataset)))
@@ -228,16 +228,16 @@ class TargetTokenCountBatchSampler(BatchSampler):
             token_counts.append(seq_len * len(batch))
             
 
-        print("Number of Batches: ", len(self.batches))
-        print("Number of Examples: ", sum(batch_lens))
+        logger.info(f"Number of Batches: {len(self.batches)}")
+        logger.info(f"Number of Examples: {sum(batch_lens)}")
 
         def print_stats(name, data):
-            print(f"-"*50)
-            print(f"{name} Mean: {np.mean(data)}")
-            print(f"{name} Median: {np.median(data)}")
-            print(f"{name} Max: {np.max(data)}")
-            print(f"{name} Min: {np.min(data)}")
-            print(f"{name} Std: {np.std(data)}")
+            logger.info(f"-"*50)
+            logger.info(f"{name} Mean: {np.mean(data)}")
+            logger.info(f"{name} Median: {np.median(data)}")
+            logger.info(f"{name} Max: {np.max(data)}")
+            logger.info(f"{name} Min: {np.min(data)}")
+            logger.info(f"{name} Std: {np.std(data)}")
         
         print_stats("Utilisation", utils)
         print_stats("Batch Size", batch_lens)

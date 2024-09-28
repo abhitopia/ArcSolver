@@ -6,8 +6,10 @@ from pathlib import Path
 import random
 from typing import List
 import numpy as np
-
+from .utils import get_logger
 #%%
+
+logger = get_logger()
 
 class ColorPermutation(Enum):
     CPID = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]  # Identity
@@ -237,13 +239,13 @@ class ArcTasksLoader:
         return examples
 
     def stats(self):
-        print(f"Dataset: {self.name}")
-        print(f"Number of programs: {len(set([task.prog_id for task in self.tasks]))}")
-        print(f"Number of tasks: {len(self.tasks)}")
-        print(f"Number of train examples: {len(self.train)}")
-        print(f"Number of test examples: {len(self.test)}")
-        print(f"Average train examples per task: {len(self.train)/len(self.tasks)}")
-        print(f"Average test examples per task: {len(self.test)/len(self.tasks)}")
+        logger.info(f"\n\nDataset: {self.name}")
+        logger.info(f"Number of programs: {len(set([task.prog_id for task in self.tasks]))}")
+        logger.info(f"Number of tasks: {len(self.tasks)}")
+        logger.info(f"Number of train examples: {len(self.train)}")
+        logger.info(f"Number of test examples: {len(self.test)}")
+        logger.info(f"Average train examples per task: {len(self.train)/len(self.tasks)}")
+        logger.info(f"Average test examples per task: {len(self.test)/len(self.tasks)}")
     
     def load(self) -> None:
         json_files = [json for json in Path(self.path).glob("**/*.json")]
@@ -306,11 +308,12 @@ class ArcTrainingDataset:
         num_progs = len(self.train)
         num_train = sum([len(v) for v in self._train.values()])
         num_test = sum([len(v) for v in self._test.values()])
-        print(f"Number of programs: {num_progs}")
-        print(f"Number of train examples: {num_train}")
-        print(f"Number of test examples: {num_test}")
-        print(f"Average train examples per task: {num_train/num_progs}")
-        print(f"Average test examples per task: {num_test/num_progs}")
+        logger.info(f"\n\nTraining Data Stats: {self.name}")
+        logger.info(f"Number of programs: {num_progs}")
+        logger.info(f"Number of train examples: {num_train}")
+        logger.info(f"Number of test examples: {num_test}")
+        logger.info(f"Average train examples per task: {num_train/num_progs}")
+        logger.info(f"Average test examples per task: {num_test/num_progs}")
 
 
         ## Print color permutation and transformation distribution
@@ -328,13 +331,13 @@ class ArcTrainingDataset:
                 color_permutations[example.color_perm] += 1
                 transformations[example.transform] += 1
 
-        print("Color Permutations:")
+        logger.info("Color Permutations:")
         for k, v in sorted(color_permutations.items(), key=lambda x: x[1], reverse=True):
-            print(f"\t{k}: {v}")
+            logger.info(f"\t{k}: {v}")
 
-        print("Transformations:")
+        logger.info("Transformations:")
         for k, v in sorted(transformations.items(), key=lambda x: x[1], reverse=True):
-            print(f"\t{k}: {v}")
+            logger.info(f"\t{k}: {v}")
 
 
     @property
