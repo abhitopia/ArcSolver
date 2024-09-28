@@ -2,8 +2,10 @@
 - [x] Push the current code to V6
 - [x] Introduct Concept of Example
 - [x] Change augmentation to be based on the example, as opposed to the task
+- [x] Synthetic data needs to have uniform embeddings (This is important. Do this for SYNTH/REARC + Tama)
 - [x] Create tokeniser.py and add interpreter tokenizer
 - [x] Create new dataset.py to handle new ProgramDataset
+- [x] Add Tama dataset
 - [x] Fix encoder attention (Seems to throw no nans anymore magically)
 - [x] Encoder-Decoder Attention Should be different
 - [x] Add loop_heads
@@ -20,6 +22,7 @@
 - [x] Make padding as the zeroth token always
 - [x] enc_dec_mask is incorrect. It should include all the input tokens (including non-grid tokens)
 - [x] Change model forward to take predicted output (which is shifted by one inside the model)
+- [x] Seprate out program embedding from invariant transformation
 - [x] Add type embeddings to the tokens
 - [x] setting attn_mask to None has no effect on StateAggregator. (This is expected in the kv_cached forwardx model because due to caching, the past tokens
 don't access future tokens making it causal by default)
@@ -27,6 +30,7 @@ don't access future tokens making it causal by default)
 - [x] Add multi-level loss to the model
 - [x] Non-grid tokens should have no rope2d applied. Currently it applies (0, 0) which is incorrect!! (There is restoring of original embedding. Tested OK!)
 - [x] implement forwardx in the model
+- [x] Make loop encoder incremental
 
 - [x] Test Incremental Decoding
 - [x] Port greedy search to the new model
@@ -34,28 +38,25 @@ don't access future tokens making it causal by default)
 - [x] Verify Rope2D is working
 - [x] Test and add multilevel loss with/to repl model
 
-- [ ] Add training only methods to the model
+- [x] Add training only methods to the model
+- [ ] Add copy program embedding from source to target method
 - [ ] Update ArcTrainer
 - [ ] Update Solver
+- [ ] Add synthetic tasks
+- [ ] Add loop level token/sample accuracy
+- [ ] Add difficulty based metric
+- [ ] Consider replacing MSE to KL Divergence?? (No need. Remove this metric tracking altogether)
+- [ ] Add the abiltiy to specify eval batch size
+- [ ] Remove any samples with > max_seq_len input or output
+- [ ] L2 regularisation despite setting the norm to 1.0
 - [ ] Let the training beging
 
 - [ ] Port beam search to the new model
-
-
-- [ ] Make loop encoder incremental
-- [ ] Remove any samples with > max_seq_len input or output
-- [ ] Add loop level token/sample accuracy
-- [ ] Consider replacing MSE to KL Divergence??
-- [ ] Top-K progressive loss + exponential weighted?
-- [ ] Add the abiltiy to specify eval batch size
-- [ ] Synthetic data needs to have uniform embeddings (This is important. Do this for SYNTH/REARC + Tama)
-- [ ] Seprate out program embedding from invariant transformation
-- [ ] Implement separate handling of the program embedding. Different input injection + may be different QKV transformation
-- [ ] Add the augmentation scale to different datasets
-- [ ] Ability to specify step size?
-- [ ] L2 regularisation despite setting the norm to 1.0
-- [ ] Add Tama dataset
 - [ ] Use ARC verifiers to generate novel valid programs
+
+- [ ] Ability to specify start step?
+- [x] (Top-K progressive loss + exponential weighted?) Implemented MultiLevelLoss
+- [x] Add the augmentation scale to different datasets (Archived in favour of num of examples per task)
 
 
 
