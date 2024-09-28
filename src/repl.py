@@ -458,7 +458,7 @@ class REPL(nn.Module):
             y: Optional[MODEL_OUTPUT] = None, 
             iters: int = 1, 
             return_cache: bool = False
-        )-> Tuple[List[Tensor], Optional[Tuple[Optional[List[List[Tuple[Tensor, Tensor]]]], Tensor, Tensor]]]:
+        )-> Tuple[List[Tensor], Optional[Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]]:
 
         if y is None:
             bs = x.grid.size(0)
@@ -480,7 +480,7 @@ class REPL(nn.Module):
         logits = []
         iter_states = [enc_dec_inp]
 
-        updated_kv_cache: Optional[List[List[Tuple[Tensor, Tensor]]]] = [] if return_cache else None
+        updated_kv_cache: List[List[Tuple[Tensor, Tensor]]] = [] 
 
         current_state, states_kv_cache = self.state_agg(iter_states, None)
         for i in range(iters):
@@ -495,7 +495,7 @@ class REPL(nn.Module):
             logits_i = self.lm_head(current_state[:, dec_start_idx:, :])
             logits.append(logits_i)
 
-            if updated_kv_cache is not None:
+            if iter_kv_cache is not None:
                 updated_kv_cache.append(iter_kv_cache)
 
         cache = (updated_kv_cache, enc_valid_mask, dec_valid_mask) if return_cache else None
@@ -552,6 +552,7 @@ class REPL(nn.Module):
         loss = self.loss(logits, target)
         return loss
     
+    @torch.jit.export
     def greedy_search(self, 
             prog_idx: int,
             input_grid: List[int],
@@ -570,12 +571,15 @@ class REPL(nn.Module):
         torch.set_grad_enabled(False)
         device = self.type_emb.weight.device  # Get the device from the embedding layer (assuming it's available)
 
+        # Convert input_indices to a list of lists to make torchscript happy
+        input_indices_list = [list(t) for t in input_indices]
+
         x = MODEL_INPUT(
             program=torch.tensor([[prog_idx]], dtype=torch.long, device=device),
             color_permutation=torch.tensor([[color_perm_idx]], dtype=torch.long, device=device),
             array_transform=torch.tensor([[array_tform_idx]], dtype=torch.long, device=device),
             grid=torch.tensor([input_grid], dtype=torch.long, device=device),
-            grid_indices=torch.tensor([input_indices], dtype=torch.long, device=device),
+            grid_indices=torch.tensor([input_indices_list], dtype=torch.long, device=device),  # Fixed line
             meta=None
         )
 
@@ -585,6 +589,8 @@ class REPL(nn.Module):
                 iters=iters,
                 return_cache=True
         )
+
+        assert cache is not None, "Cache must be returned for greedy search"
 
         # First token is BOS token always to start the generation
         last_token = bos_idx
@@ -599,7 +605,7 @@ class REPL(nn.Module):
         for t in range(max_length):
             next_y = MODEL_OUTPUT(
                 grid=torch.tensor([[last_token]], dtype=torch.long, device=device),  # Shape: (1, 1),
-                grid_indices=torch.tensor([[(last_token_r, last_token_c)]], dtype=torch.long, device=device),  # Shape: (1, 1, 2)
+                grid_indices=torch.tensor([[[last_token_r, last_token_c]]], dtype=torch.long, device=device),  # Shape: (1, 1, 2)
                 target_grid=None
             )
 
