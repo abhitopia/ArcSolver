@@ -210,7 +210,13 @@ class ArcTokenizer:
 
         return example
     
-    
+    def __eq__(self, value: object) -> bool:
+        assert isinstance(value, ArcTokenizer), 'value must be an instance of Tokenizer'
+        return self.grid_tokenizer == value.grid_tokenizer and \
+            self.program_tokenizer == value.program_tokenizer and \
+            self.color_permutation_tokenizer == value.color_permutation_tokenizer and \
+            self.array_transform_tokenizer == value.array_transform_tokenizer
+
     def to_dict(self):
         assert self.program_tokenizer.frozen, 'ProgramTokenizer must be frozen before saving.'
         return {

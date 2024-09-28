@@ -8,6 +8,7 @@ sys.path.append(src_path)  # replace "/path/to/src" with the actual path to the 
 
 import random
 from src.tokenizer import ArcTokenizer
+from src.repl import REPL, REPLConfig
 import time
 import pandas as pd
 import wandb
@@ -219,38 +220,31 @@ class ArcTrainer(TrainerBase):
 
     def state_dict(self):
         state_dict = super().state_dict()
-        state_dict['tokenizer'] = self.tokenizer.to_dict()
         state_dict['model_config'] = self.model.config.to_dict()
+        state_dict['tokenizer'] = self.hparams.state['tokenizer'].to_dict()
         return state_dict
     
-    # def load_state_dict(self, state_dict, load_model=True, load_optim=True, strict=True):
-    #     prog_tokenizer = ProgramTokenizer.from_dict(state_dict['tokenizers']['program_tokenizer'])
-    #     grid_tokenizer = GridTokenizer.from_dict(state_dict['tokenizers']['grid_tokenizer'])
-    #     model_config = InterpreterConfig.from_dict(state_dict['model_config'])
+    def load_state_dict(self, state_dict, load_model=True, load_optim=True, strict=True):
+        tokenizer = ArcTokenizer.from_dict(state_dict['tokenizer'])
+        model_config = REPLConfig.from_dict(state_dict['model_config'])
 
-    #     if strict:
-    #         assert model_config == self.model.config, "Model Configs do not match!"
-    #         assert prog_tokenizer == self.model.prog_tokenizer, "Program Tokenizers do not match!"
-    #         assert grid_tokenizer == self.model.grid_tokenizer, "Grid Tokenizers do not match!"
+        
+        if strict:
+            assert model_config == self.model.config, "Model Configs do not match!"
+            assert tokenizer == self.hparams.state['tokenizer'], "Tokenizers do not match!"
 
-    #     super().load_state_dict(state_dict, load_model=False, load_optim=load_optim, strict=strict)
+        super().load_state_dict(state_dict, load_model=True, load_optim=load_optim, strict=strict)
 
-    #     # After default model statedict is loaded, load the model from with special method
-    #     if load_model:
-    #         checkpoint_model = Interpreter(model_config, prog_tokenizer, grid_tokenizer)
-    #         checkpoint_model.load_state_dict(state_dict['model_state_dict'])
-    #         checkpoint_model.to(self.device)
-
-    #         self.info("Loading model from checkpoint using load_from_model method")
-    #         self.model.load_from_model(checkpoint_model, strict=strict)
-
-    #         del checkpoint_model
-
-    #         if prog_tokenizer != self.model.prog_tokenizer or grid_tokenizer != self.model.grid_tokenizer:
-    #             self.warning("Loaded model has different tokenizers than the current model. Loading anyway as the models are compatible.")
-    #             self.warning("If this is not intened, stop and re-evaluate the situation.")
-                
-    #     self._eval_at_start = True
+        if load_model:
+            self.info("Copying program embeddings from the loaded model.")
+            src_sd = state_dict['model_state_dict']
+            trg_prog_token2idx = self.hparams.state['tokenizer'].program_tokenizer.token2idx
+            src_prog_token2idx = tokenizer.program_tokenizer.token2idx
+            self.model.load_prog_embeddings(trg_prog_token2idx, src_sd, src_prog_token2idx)
+            if self.hparams.state['tokenizer'] != tokenizer:
+                self.warning("Loaded model has different tokenizers than the current model. Loading anyway as the models are compatible.")
+                self.warning("If this is not intened, stop and re-evaluate the situation.")
+        self._eval_at_start = True
 
 trainer = ArcTrainer(
     hparams=hparams,
@@ -260,14 +254,17 @@ trainer = ArcTrainer(
     disable_checkpointing_and_logging=True
 )
 
-trainer.at_training_start()
-train_dl, eval_dl = trainer.train_dl, trainer.eval_dl
+trainer_sd = trainer.state_dict()
+trainer.load_state_dict(trainer_sd, load_model=True, load_optim=True, strict=True)
+
+# trainer.at_training_start()
+# train_dl, eval_dl = trainer.train_dl, trainer.eval_dl
 
 
-batch = next(iter(train_dl))
-trainer.train_step(batch)
+# batch = next(iter(train_dl))
+# trainer.train_step(batch)
 #%%
-trainer.state_dict()
+# print(trainer.state_dict())
 
 
 # %%

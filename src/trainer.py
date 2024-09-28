@@ -746,9 +746,6 @@ class TrainerBase:
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
         state_dict = torch.load(checkpoint_path, map_location=self.device.type)
 
-        # TODO: Migrate hparams to new format
-        state_dict['hparams'] = migrate_hparam_dict(state_dict['hparams'])
-
         self.info(f"Initialising model from checkpoint: {checkpoint_path}")
         self.load_state_dict(state_dict, load_model=load_model, load_optim=load_optim, strict=strict) # Prevent loading optimizer and scheduler state
 
@@ -758,6 +755,5 @@ class TrainerBase:
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
         state_dict = torch.load(checkpoint_path, map_location='cpu')
         hparams_dict = state_dict['hparams']
-
         return hparams_dict 
 #%%
