@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from .dataset1 import ArcExamplesDataset
 from .multilevel_loss import MultiLevelLoss, exp_spacing
 from .repl import REPL, REPLConfig
-from .task1 import TRAIN_EVAL_COLLECTION
+from .task1 import TRAIN_EVAL_COLLECTION, TRAIN_ONLY_COLLECTION
 from .tokenizer import ArcTokenizer
 from .trainer import Hparams
 
@@ -66,8 +66,8 @@ def get_alt_schedulers(num_steps_in_epoch):
 
 class ArcHparams(Hparams):
 
-    def init_dataloaders(self)-> Tuple[DataLoader, DataLoader]:
-
+    def build_state(self):
+        self.reset_state()
         training_data = TRAIN_EVAL_COLLECTION if self.data.include_eval else TRAIN_ONLY_COLLECTION 
 
         training_data.augment(
@@ -97,18 +97,15 @@ class ArcHparams(Hparams):
                                          shuffle=False,
                                          min_util=optim_config.batch_min_util)
         
-
+        self.state['train_dl'] = train_dl
+        self.state['eval_dl'] = eval_dl
         self.state['tokenizer'] = tokenizer
-
         print("\n\nTraining Data Loader Stats:")
         train_dl.batch_sampler.stats()
         print("\n\nEvaluation Data Loader Stats:")
         eval_dl.batch_sampler.stats()
 
-        return train_dl, eval_dl
-    
-
-    def init_model(self)-> nn.Module:
+        ## MODEL
         config = REPLConfig(
             prog_vocab_size=len(self.state['tokenizer'].program_tokenizer),
             n_dim=self.model.n_dim,
@@ -116,23 +113,42 @@ class ArcHparams(Hparams):
             n_head=self.model.n_head,
             n_layer=self.model.n_layer, 
             n_state_layer=self.model.n_state_layer,
+            num_iters=self.model.num_iters,
             pnorm=self.model.pnorm, 
             dropout=self.optim.dropout
         )
 
-        model = REPL(config)
-        return model
+        self.state['model'] = REPL(config)
 
-
-    def init_loss_fn(self) -> nn.Module:
+        ## LOSS
         loss = MultiLevelLoss(
                     pad_idx=self.state['tokenizer'].grid_tokenizer.PAD_IDX,
                     edr=self.optim.edr,
                     min_pct=self.optim.mctp)
         
-        spacing = exp_spacing(self.optim.num_iters, self.optim.edr, self.optim.mctp)
-        print(f"Loss Error Rate per Iteration: {spacing.tolist()}")
-        return loss
+        spacing = exp_spacing(self.model.num_iters, self.optim.edr, self.optim.mctp)
+        print(f"\nLoss Error Rate per Iteration: {[f'{c:.2f}' for c in spacing.tolist()]}")
+
+        self.state['loss'] = loss
+
+
+    def init_dataloaders(self)-> Tuple[DataLoader, DataLoader]:
+        if 'train_dl' not in self.state:
+            self.build_state()
+
+        train_dl = self.state['train_dl']
+        eval_dl = self.state['eval_dl']
+        return train_dl, eval_dl
+    
+    def init_model(self)-> nn.Module:
+        if 'model' not in self.state:
+            self.build_state()
+        return self.state['model']
+
+    def init_loss_fn(self) -> nn.Module:
+        if 'loss' not in self.state:
+            self.build_state()
+        return self.state['loss']
     
 
     def init_optimizer(self, model: REPL)-> optim.Optimizer:
@@ -149,12 +165,10 @@ class ArcHparams(Hparams):
                                     prog_l1=config.l1_prog,
                                     device_type=self.device,
                                 )
-
         return optimizer
     
     def init_scheduler(self, optimizer)-> optim.lr_scheduler.LambdaLR:
         config = self.optim
-
         warmup_steps = config.lr_warmup_steps
         max_steps = config.lr_warmup_steps +  config.lr_decay_steps
         if config.lr_schedule == 'noam': 

@@ -201,7 +201,6 @@ class MultiLevelLoss(nn.Module):
         device = targets.device
 
         pct_indices_per_level = exp_spacing(N, self.edr, self.min_pct, self.max_pct)
-        print("pct_indices_per_level", pct_indices_per_level)
 
         # Compute valid_mask and number of valid tokens per sequence
         valid_mask, num_valid_tokens_per_seq = self.compute_valid_mask(targets)

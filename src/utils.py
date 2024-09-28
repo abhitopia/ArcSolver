@@ -181,7 +181,6 @@ def get_logger(name: str = None):
         stream_handler.setFormatter(stream_format)
         logger.addHandler(stream_handler)
 
-
     return logger
 
 def add_logging_funcs(obj, logger=None):
