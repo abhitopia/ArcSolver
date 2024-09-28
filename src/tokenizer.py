@@ -178,7 +178,10 @@ class ArcTokenizer:
             program = program_encoded,
             grid = input_grid_encoded,
             grid_indices = input_indices,
-            meta={'task_id': example.task_id, 'example_id': example.idx, 'dataset': example.dataset}
+            meta={'task_id': example.task_id, 
+                  'example_id': example.idx, 
+                  'complexity': example.complexity,
+                  'dataset': example.dataset}
         )
         y = MODEL_OUTPUT(
             grid = output_grid_encoded,

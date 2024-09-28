@@ -39,7 +39,8 @@ don't access future tokens making it causal by default)
 - [x] Test and add multilevel loss with/to repl model
 
 - [x] Add training only methods to the model
-- [ ] Add copy program embedding from source to target method
+- [x] Add copy program embedding from source to target method
+- [x] Migrate Hparams to the new model
 - [ ] Update ArcTrainer
 - [ ] Update Solver
 - [ ] Add synthetic tasks

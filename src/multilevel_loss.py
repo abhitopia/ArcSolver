@@ -183,6 +183,7 @@ class MultiLevelLoss(nn.Module):
         loss_level = F.cross_entropy(logits_selected, targets_selected, reduction='sum')
 
         return loss_level, num_tokens_level
+    
 
     def forward(self, logits_list: List[Tensor], targets: Tensor) -> Tensor:
         """

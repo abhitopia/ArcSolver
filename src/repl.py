@@ -31,8 +31,6 @@ class REPLConfig:
     tform_vocab_size: int = len(ArrayTransformTokenizer())
     max_iters: int = 64 # maximum number of iterations
     n_state_layer: int = 1 # number of transformer blocks / layers for state aggregation    
-    edr: float = 2.0 # exponential error decay rate per loop, 0.0 means uniform dep rate
-    mctp: float = 0.4 # minimum correct token percentage for loss computation
     pad_idx: int = GridTokenizer().PAD_IDX
     max_grid_height: int = 60
     max_grid_width: int = 60
@@ -398,11 +396,6 @@ class REPL(nn.Module):
 
         self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
                 
-
-        self.loss = MultiLevelLoss(
-                            pad_idx=self.PAD_IDX,
-                            edr=config.edr,
-                            min_pct=config.mctp)
         # weight sharing scheme. Transformer++ (Llama architecture does not tie weights)
         # Reference: https://youtu.be/pRM_P6UfdIc?t=1500
         # self.wte.weight = self.lm_head.weight
