@@ -9,9 +9,9 @@ from .task1 import ArrayTransform, ColorPermutation, Example
 
 
 class Tokenizer:
-    def __init__(self, token2idx={}, idx2token={}, frozen=True) -> None:
-        self.token2idx = token2idx
-        self.idx2token = idx2token
+    def __init__(self, token2idx=None, idx2token=None, frozen=True) -> None:
+        self.token2idx = token2idx if token2idx is not None else {}
+        self.idx2token = idx2token if idx2token is not None else {}
         self.frozen = frozen
     
     def add_token(self, token):

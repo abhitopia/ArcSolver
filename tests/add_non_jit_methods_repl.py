@@ -1,4 +1,5 @@
 #%%
+import random
 import sys
 from collections import OrderedDict
 
@@ -9,7 +10,7 @@ sys.path.append(src_path)  # replace "/path/to/src" with the actual path to the 
 from src.lazy_adamw import LazyAdamW
 import numpy as np
 import torch
-from src.tokenizer import MODEL_INPUT, MODEL_OUTPUT
+from src.tokenizer import MODEL_INPUT, MODEL_OUTPUT, ProgramTokenizer
 from src.repl import REPLConfig, REPL
 
 def create_test_inp(bs=10, inp_seq_len=10, out_seq_len=5, prog_vocab_size=15, perm_vocab_size=10, tform_vocab_size=11, grid_vocab_size=16, pad_idx=0, seed=42):
@@ -35,10 +36,8 @@ def create_test_inp(bs=10, inp_seq_len=10, out_seq_len=5, prog_vocab_size=15, pe
         output_grid[b, out_len:] = pad_idx
         out_indices[b, :out_len, :] = torch.tensor(random_indices(out_len), dtype=torch.long)
 
-
     target_grid = torch.cat([output_grid[:, 1:],
                             torch.full((bs, 1), pad_idx, dtype=output_grid.dtype)], dim=1)
-
 
     x = MODEL_INPUT(program=program,
                 color_permutation=color_permutation,
@@ -51,13 +50,71 @@ def create_test_inp(bs=10, inp_seq_len=10, out_seq_len=5, prog_vocab_size=15, pe
                 target_grid=target_grid
                 )
     return x, y
-# %%
+
+
+# def load_prog_embeddings(self, trg_token2idx, src_state_dict, src_token2idx):
+#     src_sd = src_state_dict
+#     trg_sd = self.state_dict()
+
+#     @torch.no_grad()
+#     def copy_(prefix, idx_mapping=None, src_prefix=None):
+#         for name, t in trg_sd.items():
+#             if name.startswith(prefix):
+#                 suffix = name[len(prefix):]
+#                 src_name = src_prefix + suffix if src_prefix is not None else name
+#                 s = src_sd[src_name]
+#                 trg_ptr_b4 = t.data_ptr()
+#                 if idx_mapping is None:
+#                     t.data.copy_(s)
+#                 else:
+#                     for trg_idx, src_idx in idx_mapping.items():
+#                         t.data[trg_idx].copy_(s.data[src_idx])
+
+#                 trg_ptr_after = t.data_ptr()
+#                 assert trg_ptr_b4 == trg_ptr_after, f"Data pointer changed for {prefix}"
+
+#     @torch.no_grad()
+#     def copy_embedding_weights(key, trg_token2idx, src_token2idx):
+#         common_tokens = set(trg_token2idx.keys()).intersection(set(src_token2idx.keys()))
+
+#         if set(trg_token2idx.keys()) != set(src_token2idx.keys()):
+#             logger.warning(f"WARNING: Tokens for {key} are not the same. Source has {len(src_token2idx)} tokens and target has {len(trg_token2idx)} tokens. Copying {len(common_tokens)} common tokens.")
+
+#         token_idx_mapping = {trg_token2idx[token]: src_token2idx[token] for token in common_tokens}
+#         copy_(key, token_idx_mapping)
+
+
+#     copy_embedding_weights('pte.0.', trg_token2idx, src_token2idx)
+
+#%%
 
 import logging
 logger = logging.getLogger(__name__)
 
+
+prog_vocab_size = 15
+
+prog_tokens = ['prog_{}'.format(i) for i in range(prog_vocab_size)]
+
+random.shuffle(prog_tokens)
+prog_tokens_src = prog_tokens 
+# print(prog_tokens_src)
+
+random.shuffle(prog_tokens)
+prog_tokens_trg = prog_tokens + ['dont_use']
+
+print(prog_tokens_trg)
+tokenizer_trg = ProgramTokenizer()
+tokenizer_trg.build(prog_tokens_trg)
+
+print(prog_tokens_src)
+tokenizer_src = ProgramTokenizer()
+tokenizer_src.build(prog_tokens_src)
+
+tokenizer_trg.token2idx, tokenizer_src.token2idx
+#%%
 src_config = REPLConfig(
-        prog_vocab_size=15,
+        prog_vocab_size=len(prog_tokens_src),
         n_dim=128,
         n_embd=16, 
         n_head=8,
@@ -70,7 +127,7 @@ src_config = REPLConfig(
 src_model = REPL(src_config)
 
 trg_config = REPLConfig(
-        prog_vocab_size=15,
+        prog_vocab_size=len(prog_tokens_trg),
         n_dim=128,
         n_embd=16, 
         n_head=8,
@@ -94,6 +151,23 @@ x, y = create_test_inp(
 
 x.grid, x.grid_indices, y.grid, y.grid_indices
 
+#%%
+logits, cache = src_model(x, y, iters=4, return_cache=True)
+loss = src_model.compute_loss(logits, y)
+logits[-1][:, :, 0], loss
+
+#%%
+
+trg_model.load_state_dict(src_model.state_dict(), strict=False)
+trg_model.load_prog_embeddings( tokenizer_trg.token2idx, src_model.state_dict(), tokenizer_src.token2idx)
+
+logits, cache = trg_model(x, y, iters=4, return_cache=False)
+loss = trg_model.compute_loss(logits, y)
+logits[-1][:, :, 0], loss
+# %%
+
+
+
 logits, cache = trg_model(x, y, iters=4, return_cache=True)
 loss = trg_model.compute_loss(logits, y)
 logits[-1][:, :, 0], loss
@@ -111,4 +185,8 @@ trg_model.load_state_dict(src_model.state_dict(), strict=False)
 logits, cache = trg_model(x, y, iters=4, return_cache=False)
 loss = trg_model.compute_loss(logits, y)
 logits[-1][:, :, 0], loss
+# %%
+
+
+
 # %%

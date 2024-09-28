@@ -788,3 +788,38 @@ class REPL(nn.Module):
 
         deal_with_blocks('interpreter')
         deal_with_blocks('state_agg')
+
+
+    def load_prog_embeddings(self, trg_token2idx, src_state_dict, src_token2idx):
+        src_sd = src_state_dict
+        trg_sd = self.state_dict()
+
+        @torch.no_grad()
+        def copy_(prefix, idx_mapping=None, src_prefix=None):
+            for name, t in trg_sd.items():
+                if name.startswith(prefix):
+                    suffix = name[len(prefix):]
+                    src_name = src_prefix + suffix if src_prefix is not None else name
+                    s = src_sd[src_name]
+                    trg_ptr_b4 = t.data_ptr()
+                    if idx_mapping is None:
+                        t.data.copy_(s)
+                    else:
+                        for trg_idx, src_idx in idx_mapping.items():
+                            t.data[trg_idx].copy_(s.data[src_idx])
+
+                    trg_ptr_after = t.data_ptr()
+                    assert trg_ptr_b4 == trg_ptr_after, f"Data pointer changed for {prefix}"
+
+        @torch.no_grad()
+        def copy_embedding_weights(key, trg_token2idx, src_token2idx):
+            common_tokens = set(trg_token2idx.keys()).intersection(set(src_token2idx.keys()))
+
+            if set(trg_token2idx.keys()) != set(src_token2idx.keys()):
+                logger.warning(f"WARNING: Tokens for {key} are not the same. Source has {len(src_token2idx)} tokens and target has {len(trg_token2idx)} tokens. Copying {len(common_tokens)} common tokens.")
+
+            token_idx_mapping = {trg_token2idx[token]: src_token2idx[token] for token in common_tokens}
+            copy_(key, token_idx_mapping)
+
+
+        copy_embedding_weights('pte.0.', trg_token2idx, src_token2idx)
