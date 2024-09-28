@@ -4,6 +4,7 @@ import math
 import torch
 import torch.nn as nn
 import math
+from torch import Tensor
 from torch.cuda.amp import autocast
 
 
@@ -83,22 +84,22 @@ class Rope2D(nn.Module):
 
         return combined_freqs  # [dim1, dim2, ..., h_dim]
 
-    @staticmethod
-    def rotate_half(x):
+    def rotate_half(self, x: Tensor):
         """
         Rotates the last two dimensions of the input tensor.
 
         Args:
-            x (Tensor): Tensor of shape [..., rot_dim].
+            x (Tensor): Tensor of shape [BS, NH, T, rot_dim].
 
         Returns:
             Tensor: Rotated tensor of the same shape.
         """
         # Ensure rot_dim is even
-        assert x.shape[-1] % 2 == 0, "rot_dim must be even for rotation."
+        BS, NH, T, rot_dim = x.shape
+        assert rot_dim % 2 == 0, "rot_dim must be even for rotation."
 
         # Reshape to separate pairs: [..., rot_dim//2, 2]
-        x = x.view(*x.shape[:-1], -1, 2)
+        x = x.view(BS, NH, T, -1, 2)
 
         # Unbind the last dimension
         x1, x2 = x.unbind(-1)
@@ -109,9 +110,8 @@ class Rope2D(nn.Module):
         # Flatten back to original shape: [..., rot_dim]
         return x_rotated.flatten(-2)
 
-    @staticmethod
     @autocast( enabled=False)
-    def apply_rotary_emb(x, cos, sin):
+    def apply_rotary_emb(self, x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
         """
         Applies rotary embeddings to the input tensor.
 
@@ -125,7 +125,7 @@ class Rope2D(nn.Module):
         """
         x_fp = x.float() # ensure full precision computation
         # Apply rotary embeddings
-        rotated_x_fp = Rope2D.rotate_half(x_fp)  # Rotate the first half
+        rotated_x_fp = self.rotate_half(x_fp)  # Rotate the first half
         x_rotated_fp = (x_fp * cos) + (rotated_x_fp * sin)
         return x_rotated_fp.type(x.dtype) # Cast back if needed
 

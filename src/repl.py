@@ -167,7 +167,7 @@ class SelfAttention(nn.Module):
 
     def forward(self,
             x: Tensor, 
-            attn_mask: Tensor,
+            attn_mask: Optional[Tensor],
             positions: Optional[Tensor] = None,
             kv_cache: Optional[Tuple[Tensor, Tensor]] = None, 
             return_kv_cache: bool = False) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
@@ -182,7 +182,7 @@ class SelfAttention(nn.Module):
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  
 
         # Apply Rope2D to q and k
-        if self.rope is not None:
+        if self.rope is not None and positions is not None:
             k = self.rope(k, positions)
             q = self.rope(q, positions)
 
@@ -229,7 +229,7 @@ class TransformerBlock(nn.Module):
                             SwiGLUFFN(config.n_dim, 4 * config.n_dim))
 
     def forward(self, x: Tensor, 
-            attn_mask: Tensor, 
+            attn_mask: Optional[Tensor], 
             positions: Optional[Tensor] = None,
             kv_cache: Optional[Tuple[Tensor, Tensor]] = None, 
             return_kv_cache: bool = False) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
@@ -277,7 +277,7 @@ class StateAggregator(nn.Module):
         return output
     
 
-    def forward(self, x: List[torch.Tensor], kv_caches: Optional[List[Tuple[Tensor, Tensor]]]=None):
+    def forward(self, x: List[torch.Tensor], kv_caches: Optional[List[Tuple[Tensor, Tensor]]] = None):
         B, T, D = x[-1].size()
         past_iters = 0 if kv_caches is None else kv_caches[0][0].size(2)
         n_iters = len(x)
@@ -292,22 +292,19 @@ class StateAggregator(nn.Module):
         # NOTE: In incremental setting, even if attn_mask is None, (full non-causal attention)
         # The fact that previous states are cached and don't access the future states means that
         # the model is still causal.
-        attn_mask = None
+        attn_mask: Optional[Tensor] = None
 
-        if kv_caches is None:
-            kv_caches = [None] * self.n_state_layer
 
         updated_kv_caches: List[Tuple[Tensor, Tensor]] = []
         for idx, block in enumerate(self.blocks):
-            # print("Block", idx, x_cat.size())
             x_cat, kv_cache = block(
                                 x_cat,
                                 attn_mask=attn_mask,
                                 positions=None,
-                                kv_cache=kv_caches[idx],
+                                kv_cache=kv_caches[idx] if kv_caches is not None else None,
                                 return_kv_cache=True)
-            # print("Mask", attn_mask.shape)
-            updated_kv_caches.append(kv_cache)
+            if kv_cache is not None:
+                updated_kv_caches.append(kv_cache)
 
         # Reshape back to (B, T, C)
         output = x_cat[:, -1, :].reshape(B, T, D)
@@ -461,7 +458,7 @@ class REPL(nn.Module):
             y: Optional[MODEL_OUTPUT] = None, 
             iters: int = 1, 
             return_cache: bool = False
-        )-> Tuple[List[Tensor], Optional[Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]]:
+        )-> Tuple[List[Tensor], Optional[Tuple[Optional[List[List[Tuple[Tensor, Tensor]]]], Tensor, Tensor]]]:
 
         if y is None:
             bs = x.grid.size(0)
@@ -503,6 +500,7 @@ class REPL(nn.Module):
 
         cache = (updated_kv_cache, enc_valid_mask, dec_valid_mask) if return_cache else None
         return logits, cache
+
 
     def forward_inc(self,
             next_y: MODEL_OUTPUT, 
