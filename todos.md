@@ -29,18 +29,19 @@ don't access future tokens making it causal by default)
 - [x] implement forwardx in the model
 
 - [x] Test Incremental Decoding
-- [ ] Port greedy search to the new model
-- [ ] Port beam search to the new model
-- [ ] Make model scriptable
+- [x] Port greedy search to the new model
+- [x] Make model scriptable
+- [x] Verify Rope2D is working
+- [x] Test and add multilevel loss with/to repl model
+
 - [ ] Add training only methods to the model
 - [ ] Update ArcTrainer
 - [ ] Update Solver
 - [ ] Let the training beging
-- [ ] Verify Rope2D is working
 
-- [ ] default causal_mask is broken
-- [ ] Decoder enc_dec mask is broken. It should non-causal in second transformer block.
-- [ ] Test and add multilevel loss with/to repl model
+- [ ] Port beam search to the new model
+
+
 - [ ] Make loop encoder incremental
 - [ ] Remove any samples with > max_seq_len input or output
 - [ ] Add loop level token/sample accuracy
