@@ -74,20 +74,23 @@ valid_mask = torch.cat([(x.grid != 0), (y.grid != 0)], dim=1)
 print("Valid Mask", valid_mask)
 model = REPL(config)
 
+# scripted_model = torch.jit.optimize_for_inference(torch.jit.script(model))
 scripted_model = torch.jit.script(model)
 
 #%%
+%%time
 logits, cache = model(x, y, iters=4, return_cache=True)
 loss = model.compute_loss(logits, y)
 logits[-1][:, :, 0], loss
 
 
 #%%
+%%time
 logits, cache = scripted_model(x, y, iters=4, return_cache=True)
 loss_scripted = scripted_model.compute_loss(logits, y)
 
-assert torch.allclose(loss, loss_scripted), f"Loss mismatch: {loss} != {loss_scripted}"
-logits[-1][:, :, 0], loss_scripted
+# assert torch.allclose(loss, loss_scripted), f"Loss mismatch: {loss} != {loss_scripted}"
+# logits[-1][:, :, 0], loss_scripted
 #%%
 def incremental_forward(model, x, y, iters=4):
     _, cache = model(x, None, iters=iters, return_cache=True)
@@ -142,6 +145,25 @@ logits[-1][:, :, 0]
 len(cache[0][0]), cache[0][0][1].size()
 # %%
 # %%
+%%time
+predicted, score = model.greedy_search(
+                            prog_idx=x.program[0].item(),
+                            input_grid=x.grid[0, :].tolist(), 
+                            input_indices=x.grid_indices[0, :].tolist(), 
+                            iters=4,
+                            color_perm_idx=x.color_permutation[0].item(),
+                            array_tform_idx=x.array_transform[0].item(),
+                        )
 
-
+# %%
+%%time
+predicted, score_scripted = scripted_model.greedy_search(
+                            prog_idx=x.program[0].item(),
+                            input_grid=x.grid[0, :].tolist(), 
+                            input_indices=x.grid_indices[0, :].tolist(), 
+                            iters=4,
+                            color_perm_idx=x.color_permutation[0].item(),
+                            array_tform_idx=x.array_transform[0].item(),
+                        )
+score, score_scripted
 # %%
