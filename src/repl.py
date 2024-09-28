@@ -502,11 +502,12 @@ class REPL(nn.Module):
         return logits, cache
 
 
+    @torch.jit.export
     def forward_inc(self,
             next_y: MODEL_OUTPUT, 
             cache: Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor],
             iters: int = 1, 
-        ) -> Tuple[List[Tensor], Optional[List[List[Tuple[Tensor, Tensor]]]]]:
+        ) -> Tuple[List[Tensor], Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]:
                    
         dec_inp, dec_valid_mask, dec_indices = self.contruct_decoder_input(next_y)
         seq_len = dec_inp.size(1)

@@ -4,8 +4,9 @@ import torch
 from src.tokenizer import MODEL_INPUT, MODEL_OUTPUT
 from src.repl import REPLConfig, REPL
 
-def create_test_inp(bs=10, inp_seq_len=10, out_seq_len=5, prog_vocab_size=15, perm_vocab_size=10, tform_vocab_size=11, grid_vocab_size=16, pad_idx=0):
-
+def create_test_inp(bs=10, inp_seq_len=10, out_seq_len=5, prog_vocab_size=15, perm_vocab_size=10, tform_vocab_size=11, grid_vocab_size=16, pad_idx=0, seed=42):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
     program = torch.randint(0, prog_vocab_size, (bs, 1))
     color_permutation = torch.randint(0, perm_vocab_size, (bs, 1))
     array_transform = torch.randint(0, tform_vocab_size, (bs, 1))
@@ -73,17 +74,20 @@ valid_mask = torch.cat([(x.grid != 0), (y.grid != 0)], dim=1)
 print("Valid Mask", valid_mask)
 model = REPL(config)
 
-predicted, score = model.greedy_search(
-                            prog_idx=x.program[0].item(),
-                            input_grid=x.grid[0, :].tolist(), 
-                            input_indices=x.grid_indices[0, :].tolist(), 
-                            iters=4,
-                            color_perm_idx=x.color_permutation[0].item(),
-                            array_tform_idx=x.array_transform[0].item(),
-                        )
+scripted_model = torch.jit.script(model)
+
 #%%
+logits, cache = model(x, y, iters=4, return_cache=True)
+loss = model.compute_loss(logits, y)
+logits[-1][:, :, 0], loss
 
 
+#%%
+logits, cache = scripted_model(x, y, iters=4, return_cache=True)
+loss_scripted = scripted_model.compute_loss(logits, y)
+
+assert torch.allclose(loss, loss_scripted), f"Loss mismatch: {loss} != {loss_scripted}"
+logits[-1][:, :, 0], loss_scripted
 #%%
 def incremental_forward(model, x, y, iters=4):
     _, cache = model(x, None, iters=iters, return_cache=True)
@@ -106,6 +110,10 @@ logits_inc, loss = incremental_forward(model, x, y, iters=4)
 logits_inc[-1][:, :, 0], loss
 
 #%%
+logits_inc, loss_scripted = incremental_forward(scripted_model, x, y, iters=4)
+logits_inc[-1][:, :, 0], loss_scripted
+#%%
+
 logits, cache = model(x, y, iters=4, return_cache=True)
 loss = model.compute_loss(logits, y)
 logits[-1][:, :, 0], loss
