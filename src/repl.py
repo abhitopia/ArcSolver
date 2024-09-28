@@ -5,11 +5,15 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.nn import functional as F
+
+from .lazy_adamw import LazyAdamW
 from .rope_2d import Rope2D
-from .interpreter import RMSNorm, SwiGLUFFN
 from .tokenizer import MODEL_INPUT, MODEL_OUTPUT, ArrayTransformTokenizer, ColorPermutationTokenizer, GridTokenizer
 from .mask_utils import create_enc_dec_mask
 from .multilevel_loss import MultiLevelLoss
+from .utils import get_logger
+
+logger = get_logger()
 
 # %%
 @dataclass
@@ -141,7 +145,6 @@ class RMSNorm(nn.Module):
             x_fp32 * torch.rsqrt(x_fp32.pow(2).mean(-1, keepdim=True) + self.eps)
         ).type_as(x)
         return x_normed * self.scale
-
 
 
 
@@ -647,3 +650,54 @@ class REPL(nn.Module):
         output_list: List[int] = output_sequence.tolist()  # Use .tolist() now since it's supported in TorchScript
         torch.set_grad_enabled(True)
         return output_list, output_log_prob
+    
+    @torch.jit.ignore
+    def get_optimizer(
+            self, 
+            model_lr,
+            prog_lr,
+            model_wd,
+            prog_wd=0.0,
+            prog_l1=0.0,
+            device_type=None
+        ):
+
+        # Freeze model params if model_lr is 0, needed for finetuning
+        if model_lr == 0.0:
+            logger.warning("Freezing model parameters. Only Program embedding parameters will be trained.")
+            logger.warning("This setting should only be used for training without resuming/forkin (with optimizer state load disabled)")
+
+            for n, p in self.named_parameters():
+                if 'pte.0' not in n:
+                    p.requires_grad = False
+
+        # Separate the embedding parameters
+        program_params = [p for n, p in self.named_parameters() if 'pte.0' in n and p.requires_grad]
+        model_params = [p for n, p in self.named_parameters() if 'pte.0' not in n and p.requires_grad]
+
+        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
+        # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
+        decay_params = [p for p in model_params if p.dim() >= 2]
+        nodecay_params = [p for p in model_params if p.dim() < 2]
+        optim_groups = [
+            {'params': program_params,
+                'lr': prog_lr,
+                'weight_decay': prog_wd,
+                'l1_coeff': prog_l1},
+            {'params': decay_params,
+                'lr': model_lr,
+                'weight_decay': model_wd,
+                'l1_coeff': 0.0},
+            {'params': nodecay_params,
+                'lr': model_lr,
+                'weight_decay': 0.0,
+                'l1_coeff': 0.0}]
+        # Create AdamW optimizer and use the fused version if it is available
+        use_fused = False
+        if torch.cuda.is_available() and (device_type is None or device_type == 'cuda'):
+            use_fused = True
+            print(f"Using fused AdamW: {use_fused}")
+            
+        optimizer = LazyAdamW(optim_groups, lr=model_lr, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
+        return optimizer
+
