@@ -12,7 +12,7 @@ from src.multilevel_loss import MultiLevelLoss
 from src.task1 import TRAIN_COLLECTION, ColorPermutation, ArrayTransform, Example
 from src.tokenizer import ArcTokenizer, ArrayTransformTokenizer, ColorPermutationTokenizer, GridTokenizer
 from src.tokenizer import ArcTokenizer, MODEL_OUTPUT, MODEL_INPUT
-
+from src.utils import debug_context, debug_print
 # %%
 train_examples = TRAIN_COLLECTION.train_examples
 test_examples = TRAIN_COLLECTION.test_examples
@@ -134,16 +134,24 @@ class SelfAttention(nn.Module):
         k = self.c_attn_k(k)
         v = self.c_attn_v(v)
 
+        debug_print(f"Q shape: {q.shape}, K shape: {k.shape}, V shape: {v.shape}")
+
         # Reshape for multi-head attention, but do not transpose yet!
         q = q.view(B, qT, self.n_head, C // self.n_head)  # (B, T, n_head, head_dim)
         k = k.view(B, kT, self.n_head, C // self.n_head)
         v = v.view(B, kT, self.n_head, C // self.n_head).transpose(1, 2)  # (B, n_head, T, head_dim)
 
         # If kv_cache is present, concatenate past keys and values BEFORE applying RoPE
-        if kv_cache is not None and torch.jit.isinstance(kv_cache, Tuple[Tensor, Tensor]):
+        if kv_cache is not None:
             past_k, past_v = kv_cache  # K: (B, T_past, n_head, head_dim), V: (B, n_head, T_past, head_dim)
             k = torch.cat([past_k, k], dim=1)  # Concatenate along sequence length dimension
             v = torch.cat([past_v, v], dim=2)
+            # debug_print(f"Found kv_cache: {k[~torch.isnan(k)].sum()}")
+            # debug_print(f"Found kv_cache: {v[~torch.isnan(v)].sum()}")
+        else:
+            # debug_print(f"No found kv_cache: {k[~torch.isnan(k)].sum()}")
+            # debug_print(f"No found kv_cache: {v[~torch.isnan(v)].sum()}")
+            pass
 
         # Update new_kv_cache
         new_kv_cache: Optional[Tuple[Tensor, Tensor]] = (k, v) if return_kv_cache else None
@@ -152,18 +160,19 @@ class SelfAttention(nn.Module):
         # # TODO: Below logic is utterly wrong for encoder-decoder architecture
 
         # # Generate position indices for the concatenated sequence
-        # total_seq_len = k.size(1)  # k now contains both past and current
-        # position_ids = torch.arange(total_seq_len, dtype=torch.long, device=q.device)
-        # position_ids = position_ids.unsqueeze(0).unsqueeze(0).expand(B, 1, total_seq_len)
+        total_seq_len = k.size(1)  # k now contains both past and current
+        position_ids = torch.arange(total_seq_len, dtype=torch.long, device=q.device)
+        position_ids = position_ids.unsqueeze(0).unsqueeze(0).expand(B, 1, total_seq_len)
 
         # # Apply RoPE to q and k before transposing for attention
         # # For q, we use positions corresponding to the current tokens (last T positions)
-        # q_positions = position_ids[:, :, -qT:]  # Shape: (B, 1, T)
-        q = self.rope(q)
+        q_positions = position_ids[:, :, -qT:]  # Shape: (B, 1, T)
+        q = self.rope(q, q_positions)
 
         # # For k, we use positions for the entire sequence (past + current)
-        # k_positions = position_ids  # Shape: (B, 1, total_seq_len)
-        k = self.rope(k)
+        k_positions = position_ids  # Shape: (B, 1, total_seq_len)
+        k = self.rope(k, k_positions)
+        # debug_print(f"RoPE: {k[~torch.isnan(k)].sum()}")
 
         # Now transpose q and k for attention computation
         q = q.transpose(1, 2)  # (B, n_head, T, head_dim)
@@ -172,19 +181,46 @@ class SelfAttention(nn.Module):
         # Compute attention
         dropout_p = self.dropout if self.training else 0.0
 
+        # debug_print(f"Attention input: {q[~torch.isnan(q)].sum(), k[~torch.isnan(k)].sum(), v[~torch.isnan(v)].sum()}")
+
+        # last_q = q[:, :, -1, :]
+        # debug_print(f"Attention inp Last Q: {last_q[~torch.isnan(last_q)].sum()}")
         # default scale (1/sqrt(D)) is applied inside scaled_dot_product_attention
+        # debug_print(f"Attention mask: {attn_mask.shape if attn_mask is not None else None}")
+
+        # Default Causal Mask is broken :(, need to create my own
         attn_output = F.scaled_dot_product_attention(q, k, v, 
                                                     attn_mask=attn_mask,
                                                     is_causal=attn_mask is None, # default to causal if attn_mask is None
                                                     dropout_p=dropout_p)
 
+        last_output = attn_output[:, :, -1, :].unsqueeze(2)
+        debug_print(f"Last output shape {last_output.shape}")
+        debug_print(f"Attention output (after attention): {last_output[~torch.isnan(last_output)].sum()}")
+        if q.size(2) == 2:
+            last_q = q[:, :, -1, :].unsqueeze(2)
+            debug_print(f"Inside: Attention inp Last Q: {last_q[~torch.isnan(last_q)].sum()}")
+            attn_output_last = F.scaled_dot_product_attention(last_q, k, v, 
+                                                attn_mask=attn_mask,
+                                                is_causal=attn_mask is None, # default to causal if attn_mask is None
+                                                dropout_p=dropout_p)
+            debug_print(f"Attn output shape {attn_output_last.shape}")
+            debug_print(f"Inside: Attention output: {attn_output_last[~torch.isnan(attn_output_last)].sum()}")
+
         # attn_output: (B, n_head, T, head_dim)
         # Reshape back to (B, T, C)
+
+        # debug_print(f"Output shape before: {attn_output.shape}, {B, qT, C, kT}")
         attn_output = attn_output.transpose(1, 2).contiguous().view(B, qT, C)
+        # debug_print(f"Output shape after: {attn_output.shape}")
 
+        last_output = attn_output[:, -1, :]
+        # debug_print(f"Attention output (before proj): {last_output[~torch.isnan(last_output)].sum()}")
         # Output projection
-        y = self.c_proj(attn_output)
-
+        y = self.c_proj(attn_output) # (B, T, C)
+        # debug_print(f"y shape: {y.shape}")
+        last_output = y[:, -1, :]
+        # debug_print(f"Attention output (after proj): {last_output[~torch.isnan(last_output)].sum()}")
         return y, new_kv_cache
 
 
@@ -211,7 +247,6 @@ class EncoderBlock(nn.Module):
         x = x + self.dropout(attn_output)
         x = x + self.dropout(self.normed_mlp(x))
         return x, new_kv_cache
-
 
 
 class Encoder(nn.Module):
@@ -306,7 +341,7 @@ class Decoder(nn.Module):
         return x, updated_kv_caches
     
 
-class LoopEncoder(nn.Module):
+class IterativeEncoder(nn.Module):
     def __init__(self, config: REPLConfig, n_layer):
         super().__init__()
         self.config = config
@@ -329,9 +364,10 @@ class LoopEncoder(nn.Module):
         x_cat = torch.stack(x_reshape, dim=0).permute(1, 0, 2)
 
 
-        for block in self.enc_blocks:
+        for idx, block in enumerate(self.enc_blocks):
             # attn_mask is None defaulting to causal mask
-            x_cat, _ = block(x_cat, attn_mask=None, return_kv_cache=False)
+            with debug_context(f"Block {idx}", enabled=True):
+                x_cat, _ = block(x_cat, attn_mask=None, return_kv_cache=False)
 
         # Reshape back to (B, T, C)
         output = x_cat[:, -1, :].reshape(B, T, C)
@@ -356,11 +392,14 @@ class LoopEncoder(nn.Module):
 
         for idx, block in enumerate(self.enc_blocks):
             # attn_mask is None defaulting to causal mask
-            x_cat, kv_cache = block(x_cat, attn_mask=None, kv_cache=kv_caches[idx], return_kv_cache=True)
-            if kv_cache is not None:
-                updated_kv_caches.append(kv_cache)
+            with debug_context(f"Block {idx}", enabled=True):
+                x_cat, kv_cache = block(x_cat, attn_mask=None, kv_cache=kv_caches[idx], return_kv_cache=True)
+
+            # if kv_cache is not None:
+            updated_kv_caches.append(kv_cache)
 
         # Reshape back to (B, T, C)
+
         output = x_cat[:, -1, :].reshape(B, T, C)
         output = self.rms_out(output)
         return output, updated_kv_caches
@@ -402,8 +441,8 @@ class REPL(nn.Module):
         
         self.encoder = Encoder(config)
         self.decoder = Decoder(config)
-        self.inp_collate = LoopEncoder(config, n_layer=config.n_lecn_layer)
-        self.out_collate = LoopEncoder(config, n_layer=config.n_ldec_layer)
+        self.inp_collate = IterativeEncoder(config, n_layer=config.n_lecn_layer)
+        self.out_collate = IterativeEncoder(config, n_layer=config.n_ldec_layer)
 
   
 
@@ -411,7 +450,7 @@ class REPL(nn.Module):
         
         self._untrained_block_ids = []
 
-        self.loss = MultiLevelLoss(PAD_IDX=self.PAD_IDX,
+        self.loss = MultiLevelLoss(pad_odx=self.PAD_IDX,
                                 edr=config.edr,
                                 min_pct=config.mctp)
         
@@ -479,14 +518,18 @@ class REPL(nn.Module):
         loop_enc_inps = []
         loop_dec_inps = []
         loop_logits = []
-        for _ in range(n_loops):
-            enc_inp, enc_kv_cache = self.encoder(enc_inp, enc_mask=enc_mask)
-            loop_enc_inps.append(enc_inp)
-            enc_inp = self.inp_collate(loop_enc_inps)
+        for l in range(n_loops):
+            with debug_context(f"Loop {l}", enabled=False):
+                enc_inp, enc_kv_cache = self.encoder(enc_inp, enc_mask=enc_mask)
+                loop_enc_inps.append(enc_inp)
+            with debug_context(f"Loop {l}", enabled=l==1):
+                enc_inp = self.inp_collate(loop_enc_inps)
 
-            dec_inp, dec_kv_cache = self.decoder(enc_inp, dec_inp, enc_mask=dec_enc_mask, dec_mask=dec_mask)
-            loop_dec_inps.append(dec_inp)
-            dec_inp = self.out_collate(loop_dec_inps)
+            with debug_context(f"Loop {l}", enabled=False):
+                dec_inp, dec_kv_cache = self.decoder(enc_inp, dec_inp, enc_mask=dec_enc_mask, dec_mask=dec_mask)
+                loop_dec_inps.append(dec_inp)
+                dec_inp = self.out_collate(loop_dec_inps)
+
 
             logits = self.lm_head(dec_inp)
             loop_logits.append(logits)
@@ -512,23 +555,25 @@ class REPL(nn.Module):
         enc_inp = torch.cat([program, color_permutation, array_transform, inp_grid], dim=1)
         dec_inp = self.gte(output_grid)
 
-        print(enc_inp.size(), dec_inp.size())
         loop_enc_inps = []
         loop_dec_inps = []
         loop_logits = []
 
         inp_kv_caches = None
+        out_kv_caches = None
 
-        for _ in range(n_loops):
-            enc_inp, enc_kv_cache = self.encoder(enc_inp, enc_mask=enc_mask)
-            loop_enc_inps.append(enc_inp)
-            enc_inp, inp_kv_caches = self.inp_collate.forwardx(loop_enc_inps, kv_caches=inp_kv_caches)
+        for l in range(n_loops):
+            with debug_context(f"Loop {l}", enabled=False):
+                enc_inp, enc_kv_cache = self.encoder(enc_inp, enc_mask=enc_mask)
+                loop_enc_inps.append(enc_inp)
+            with debug_context(f"Inc Loop {l}", enabled=l==1 and False):
+                enc_inp, inp_kv_caches = self.inp_collate.forwardx(loop_enc_inps, kv_caches=inp_kv_caches)
 
-            print(inp_kv_caches)
-            dec_inp, dec_kv_cache = self.decoder(enc_inp, dec_inp, enc_mask=dec_enc_mask, dec_mask=dec_mask)
-            loop_dec_inps.append(dec_inp)
-            dec_inp = self.out_collate(loop_dec_inps)
-            
+            with debug_context(f"Loop {l}", enabled=False):
+                dec_inp, dec_kv_cache = self.decoder(enc_inp, dec_inp, enc_mask=dec_enc_mask, dec_mask=dec_mask)
+                loop_dec_inps.append(dec_inp)
+                dec_inp, out_kv_caches = self.out_collate.forwardx(loop_dec_inps, kv_caches=out_kv_caches)
+                
             logits = self.lm_head(dec_inp)
             loop_logits.append(logits)
 
@@ -545,8 +590,8 @@ config = REPLConfig(
     n_head=4,
     n_embd=8,
     n_enc_layer=1,
-    n_dec_layer=2,
-    n_lecn_layer=2,
+    n_dec_layer=1,
+    n_lecn_layer=1,
     n_ldec_layer=1,
     max_seq_len=2048,
     pnorm=1.0,
@@ -554,17 +599,17 @@ config = REPLConfig(
 )
 
 interpreter = REPL(config)
-num_loops = 6
+num_loops = 2
 
 #%%
 loop_logits = interpreter(x, num_loops)
-
-loss = interpreter.compute_loss(loop_logits, y.output)
-loss
-# %%
 loop_logits2 = interpreter.forwardx(x, num_loops)
-loss2 = interpreter.compute_loss(loop_logits2, y.output)
-loss2
+
+# loss = interpreter.compute_loss(loop_logits, y.output)
+# loss
+# %%
+# loss2 = interpreter.compute_loss(loop_logits2, y.output)
+# loss2
 # %%
 loss = interpreter.compute_loss(loop_logits, y.output)
 
@@ -613,4 +658,6 @@ x.input
 # %%
 x.causal_output
 # %%
-interpreter(x, 1)
+torch.ones(1, 2, 1, dtype=torch.bool).tril(diagonal=0)
+
+# %%
