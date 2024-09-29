@@ -67,16 +67,16 @@ class ArcTrainer(TrainerBase):
                     grad = prog_embedding.weight.grad  # Dense gradient
                     # Identify the embeddings that were updated (non-zero gradients)
                     mask = grad.abs().sum(dim=1) != 0
-                    indices = mask.nonzero(as_tuple=False).squeeze()
+                    # indices = mask.nonzero(as_tuple=False).squeeze()
+                    indices = mask.nonzero(as_tuple=True)[0]  # Ensure indices is 1D
+
 
                     if indices.numel() > 0:
                         weights = prog_embedding.weight.data[indices]  # Get the updated embedding vectors
-
                         # Normalize the L2 norm of each updated embedding vector
                         norm = weights.norm(p=2, dim=1, keepdim=True)
                         scaling_factor = target_norm / norm
                         prog_embedding.weight.data[indices] = weights * scaling_factor  # Rescale the weights
-
 
     def pre_eval_step(self, batch):
         self.__eval_batch_time_start = time.time()
@@ -113,12 +113,12 @@ class ArcTrainer(TrainerBase):
         for i, logits in enumerate(iter_logits):
             correct_tokens_mask, correct_samples_mask = self._accuracy(logits, y.target_grid)
             metrics_obj.add_metric(
-                    f'TokenAcc/I{i+1}_TokenAcc',
+                    f'TokenAcc/I{i+1}',
                     correct_tokens_mask.sum().item(),
                     y.grid.numel())
             
             metrics_obj.add_metric(
-                    f'SampleAcc/I{i+1}_SampleAcc',
+                    f'SampleAcc/I{i+1}',
                     correct_samples_mask.sum().item(), 
                     y.grid.size(0))
             
@@ -128,7 +128,7 @@ class ArcTrainer(TrainerBase):
                 num_correct = correct_samples_in_level.sum().item()
                 total_samples = len(indices)
                 metrics_obj.add_metric(
-                    f'LevelAcc/I{i+1}_SampleAcc_{level}',
+                    f'LevelAcc/I{i+1}_{level}',
                     num_correct,
                     total_samples)
                 
@@ -141,11 +141,22 @@ class ArcTrainer(TrainerBase):
                     f'{dataset}/I{i+1}_{level}',
                     num_correct,
                     total_samples)
-
             
             if i == len(iter_logits) - 1:
                 metrics_obj.add_metric('TokenAcc(%)', correct_tokens_mask.sum().item() * 100, y.grid.numel())
                 metrics_obj.add_metric('SampleAcc(%)', correct_samples_mask.sum() * 100, y.grid.size(0) )
+
+                for dataset, indices in dataset_indices.items():
+                    if not indices:
+                        continue  # Skip if there are no samples for this dataset
+                    correct_samples_in_dataset = correct_samples_mask[indices]
+                    num_correct = correct_samples_in_dataset.sum().item()
+                    total_samples = len(indices)
+                    metrics_obj.add_metric(
+                        f'{dataset}/Accuracy(%)',
+                        num_correct * 100,
+                        total_samples 
+                    )
 
         metrics_obj.add_metric('BatchSize(#Tokens)', y.grid.numel())
         metrics_obj.add_metric('#Samples', y.grid.size(0))
