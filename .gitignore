@@ -171,4 +171,4 @@ lambda/
 wandb/
 
 runs_v1/
-*.json
+scripts/**/*.json 
