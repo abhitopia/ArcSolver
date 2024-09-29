@@ -4,6 +4,9 @@ import time
 import numpy as np
 import torch
 import wandb
+
+from .repl import REPLConfig
+from .tokenizer import ArcTokenizer
 from .trainer import TrainerBase
 
 
@@ -37,9 +40,6 @@ class ArcTrainer(TrainerBase):
             # Log params every 10 epochs
             wandb.watch(self.model, log='all', log_freq=max(len(self.train_dl)*10, 500)) 
 
-    def at_epoch_start(self):
-        self.train_stats.epoch_reset()
-
     def at_epoch_end(self):
         self.clear_gpu_cache()
 
@@ -51,14 +51,8 @@ class ArcTrainer(TrainerBase):
         sparsity = (self.model.pte[0].weight.abs() < threshold).float().mean().item()
         wandb.log({'Sparsity/Program': sparsity}, step =self.step, commit=False)
 
-
-    def at_eval_start(self):
-        self.eval_stats.epoch_reset()
-    
     def at_eval_end(self):
         self.clear_gpu_cache()
-        if self.disable_checkpointing_and_logging:
-            return
 
     def pre_train_step(self, batch):
         self.__train_batch_time_start = time.time()

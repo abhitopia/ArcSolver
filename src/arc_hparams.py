@@ -11,6 +11,9 @@ from .repl import REPL, REPLConfig
 from .task1 import TRAIN_EVAL_COLLECTION, TRAIN_ONLY_COLLECTION
 from .tokenizer import ArcTokenizer
 from .trainer import Hparams
+from .utils import get_logger
+
+logger = get_logger()
 
 
 def noam_schedule(step, warmup_steps, max_steps, min_lr_scale=0.1):
@@ -100,9 +103,9 @@ class ArcHparams(Hparams):
         self.state['train_dl'] = train_dl
         self.state['eval_dl'] = eval_dl
         self.state['tokenizer'] = tokenizer
-        print("\n\nTraining Data Loader Stats:")
+        logger.info("\n\nTraining Data Loader Stats:")
         train_dl.batch_sampler.stats()
-        print("\n\nEvaluation Data Loader Stats:")
+        logger.info("\n\nEvaluation Data Loader Stats:")
         eval_dl.batch_sampler.stats()
 
         ## MODEL
@@ -113,7 +116,7 @@ class ArcHparams(Hparams):
             n_head=self.model.n_head,
             n_layer=self.model.n_layer, 
             n_state_layer=self.model.n_state_layer,
-            num_iters=self.model.num_iters,
+            n_iter=self.model.n_iter,
             pnorm=self.model.pnorm, 
             dropout=self.optim.dropout
         )
@@ -126,8 +129,8 @@ class ArcHparams(Hparams):
                     edr=self.optim.edr,
                     min_pct=self.optim.mctp)
         
-        spacing = exp_spacing(self.model.num_iters, self.optim.edr, self.optim.mctp)
-        print(f"\nLoss Error Rate per Iteration: {[f'{c:.2f}' for c in spacing.tolist()]}")
+        spacing = exp_spacing(self.model.n_iter, self.optim.edr, self.optim.mctp)
+        logger.info(f"\nLoss Error Rate per Iteration: {[f'{c:.2f}' for c in spacing.tolist()]}")
 
         self.state['loss'] = loss
 
