@@ -49,11 +49,15 @@ don't access future tokens making it causal by default)
 - [x] L2 regularisation despite setting the norm to 1.0
 - [x] Update Solver
 - [x] Add synthetic tasks
-- [ ] Remove any samples with > max_seq_len input or output
-- [ ] Let the training begin
+- [x] Remove any samples with > max_seq_len input or output
+- [x] Let the training begin
 
-- [ ] Port beam search to the new model
+- [x] Add fork support and resume the previous training (with export CUDA_LAUNCH_BLOCKING=1)
+- [ ] Cache data for training
+- [ ] Test torch scripted model for training
+
 - [ ] Use ARC verifiers to generate novel valid programs
+- [ ] Port beam search to the new model
 
 - [ ] Ability to specify start step?
 - [x] (Top-K progressive loss + exponential weighted?) Implemented MultiLevelLoss
