@@ -405,67 +405,67 @@ class ArcTasksLoader:
 # generate_synth_scale_data()
 
 
-# Training Tasks
-ARC_1D = ArcTasksLoader(name='ARC_1D', path='data/arc_dataset_collection/dataset/1D-ARC/data')
-ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
-# ARC_SYTH_EXTEND = ArcTasksLoader(name='ARC_SYTH_EXTEND', path='data/arc_dataset_collection/dataset/ARC_synthetic_extend/data')
+# # Training Tasks
+# ARC_1D = ArcTasksLoader(name='ARC_1D', path='data/arc_dataset_collection/dataset/1D-ARC/data')
+# ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
+# # ARC_SYTH_EXTEND = ArcTasksLoader(name='ARC_SYTH_EXTEND', path='data/arc_dataset_collection/dataset/ARC_synthetic_extend/data')
 
-ARC_COMMUNITY = ArcTasksLoader(name='ARC_COMMUNITY', path='data/arc_dataset_collection/dataset/arc-community/data')
-# They seem to be bad quality tasks
-ARC_DIVA = ArcTasksLoader(name='ARC_DIVA', path='data/arc_dataset_collection/dataset/arc-dataset-diva/data', max_tasks=100)
-ARC_CONCEPT = ArcTasksLoader(name='ARC_CONCEPT', path='data/arc_dataset_collection/dataset/ConceptARC/data')
-ARC_DBIGHAM = ArcTasksLoader(name='ARC_DBIGHAM', path='data/arc_dataset_collection/dataset/dbigham/data')
-ARC_MINI = ArcTasksLoader(name='ARC_MINI', path='data/arc_dataset_collection/dataset/Mini-ARC/data')
-ARC_NOSOUND = ArcTasksLoader(name='ARC_NOSOUND', path='data/arc_dataset_collection/dataset/nosound/data')
-ARC_PQA = ArcTasksLoader(name='ARC_PQA', path='data/arc_dataset_collection/dataset/PQA/data')
-ARC_REARC_EASY = ArcTasksLoader(name='ARC_REARC_EASY', path='data/arc_dataset_collection/dataset/RE-ARC/data/easy')
-ARC_REARC_HARD = ArcTasksLoader(name='ARC_REARC_HARD', path='data/arc_dataset_collection/dataset/RE-ARC/data/hard')
-ARC_SEQUENCE = ArcTasksLoader(name='ARC_SEQUENCE', path='data/arc_dataset_collection/dataset/Sequence_ARC/data')
-ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_dataset_collection/dataset/synth_riddles/data')
-ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dataset/ARC/data/evaluation')
+# ARC_COMMUNITY = ArcTasksLoader(name='ARC_COMMUNITY', path='data/arc_dataset_collection/dataset/arc-community/data')
+# # They seem to be bad quality tasks
+# ARC_DIVA = ArcTasksLoader(name='ARC_DIVA', path='data/arc_dataset_collection/dataset/arc-dataset-diva/data', max_tasks=100)
+# ARC_CONCEPT = ArcTasksLoader(name='ARC_CONCEPT', path='data/arc_dataset_collection/dataset/ConceptARC/data')
+# ARC_DBIGHAM = ArcTasksLoader(name='ARC_DBIGHAM', path='data/arc_dataset_collection/dataset/dbigham/data')
+# ARC_MINI = ArcTasksLoader(name='ARC_MINI', path='data/arc_dataset_collection/dataset/Mini-ARC/data')
+# ARC_NOSOUND = ArcTasksLoader(name='ARC_NOSOUND', path='data/arc_dataset_collection/dataset/nosound/data')
+# ARC_PQA = ArcTasksLoader(name='ARC_PQA', path='data/arc_dataset_collection/dataset/PQA/data')
+# ARC_REARC_EASY = ArcTasksLoader(name='ARC_REARC_EASY', path='data/arc_dataset_collection/dataset/RE-ARC/data/easy')
+# ARC_REARC_HARD = ArcTasksLoader(name='ARC_REARC_HARD', path='data/arc_dataset_collection/dataset/RE-ARC/data/hard')
+# ARC_SEQUENCE = ArcTasksLoader(name='ARC_SEQUENCE', path='data/arc_dataset_collection/dataset/Sequence_ARC/data')
+# ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_dataset_collection/dataset/synth_riddles/data')
+# ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dataset/ARC/data/evaluation')
 
-# Synthetic tasks
-ARC_SYNTH_IDENT = ArcTasksLoader(name='ARC_SYNTH_IDENT', path='data/synthetic/synth-IDENT', max_tasks=100)
-ARC_SYNTH_RT090 = ArcTasksLoader(name='ARC_SYNTH_RT090', path='data/synthetic/synth-RT090', max_tasks=100)
-ARC_SYNTH_RT180 = ArcTasksLoader(name='ARC_SYNTH_RT180', path='data/synthetic/synth-RT180', max_tasks=100)
-ARC_SYNTH_RT270 = ArcTasksLoader(name='ARC_SYNTH_RT270', path='data/synthetic/synth-RT270', max_tasks=100)
-ARC_SYNTH_FLPLR = ArcTasksLoader(name='ARC_SYNTH_FLPLR', path='data/synthetic/synth-FLPLR', max_tasks=100)
-ARC_SYNTH_FLPUD = ArcTasksLoader(name='ARC_SYNTH_FLPUD', path='data/synthetic/synth-FLPUD', max_tasks=100)
-ARC_SYNTH_FLPDG = ArcTasksLoader(name='ARC_SYNTH_FLPDG', path='data/synthetic/synth-FLPDG', max_tasks=100)
-ARC_SYNTH_FLPAD = ArcTasksLoader(name='ARC_SYNTH_FLPAD', path='data/synthetic/synth-FLPAD', max_tasks=100)
-ARC_SYNTH_CLRPM = ArcTasksLoader(name='ARC_SYNTH_CLRPM', path='data/synthetic/synth-CLRPM', max_tasks=100)
-ARC_SYNTH_SCLDN = ArcTasksLoader(name='ARC_SYNTH_SCLDN', path='data/synthetic/synth-SCLDN', max_tasks=100)
-ARC_SYNTH_SCLUP = ArcTasksLoader(name='ARC_SYNTH_SCLUP', path='data/synthetic/synth-SCLUP', max_tasks=100)
+# # Synthetic tasks
+# ARC_SYNTH_IDENT = ArcTasksLoader(name='ARC_SYNTH_IDENT', path='data/synthetic/synth-IDENT', max_tasks=100)
+# ARC_SYNTH_RT090 = ArcTasksLoader(name='ARC_SYNTH_RT090', path='data/synthetic/synth-RT090', max_tasks=100)
+# ARC_SYNTH_RT180 = ArcTasksLoader(name='ARC_SYNTH_RT180', path='data/synthetic/synth-RT180', max_tasks=100)
+# ARC_SYNTH_RT270 = ArcTasksLoader(name='ARC_SYNTH_RT270', path='data/synthetic/synth-RT270', max_tasks=100)
+# ARC_SYNTH_FLPLR = ArcTasksLoader(name='ARC_SYNTH_FLPLR', path='data/synthetic/synth-FLPLR', max_tasks=100)
+# ARC_SYNTH_FLPUD = ArcTasksLoader(name='ARC_SYNTH_FLPUD', path='data/synthetic/synth-FLPUD', max_tasks=100)
+# ARC_SYNTH_FLPDG = ArcTasksLoader(name='ARC_SYNTH_FLPDG', path='data/synthetic/synth-FLPDG', max_tasks=100)
+# ARC_SYNTH_FLPAD = ArcTasksLoader(name='ARC_SYNTH_FLPAD', path='data/synthetic/synth-FLPAD', max_tasks=100)
+# ARC_SYNTH_CLRPM = ArcTasksLoader(name='ARC_SYNTH_CLRPM', path='data/synthetic/synth-CLRPM', max_tasks=100)
+# ARC_SYNTH_SCLDN = ArcTasksLoader(name='ARC_SYNTH_SCLDN', path='data/synthetic/synth-SCLDN', max_tasks=100)
+# ARC_SYNTH_SCLUP = ArcTasksLoader(name='ARC_SYNTH_SCLUP', path='data/synthetic/synth-SCLUP', max_tasks=100)
 
-TRAINING_TASKLOADER = ARC_TRAIN
-EVALUATION_TASKLOADER = ARC_EVAL
+# TRAINING_TASKLOADER = ARC_TRAIN
+# EVALUATION_TASKLOADER = ARC_EVAL
 
-AUXILIARY_TASKLOADERS = [
-    ARC_1D,
-    # ARC_SYTH_EXTEND,
-    ARC_COMMUNITY,
-    ARC_DIVA,
-    ARC_CONCEPT,
-    ARC_DBIGHAM,
-    ARC_MINI,
-    ARC_NOSOUND,
-    ARC_PQA,
-    ARC_REARC_EASY,
-    ARC_REARC_HARD,
-    ARC_SEQUENCE,
-    ARC_SYNTH_RIDDLES,
-    ARC_SYNTH_IDENT,
-    ARC_SYNTH_RT090,
-    ARC_SYNTH_RT180,
-    ARC_SYNTH_RT270,
-    ARC_SYNTH_FLPLR,
-    ARC_SYNTH_FLPUD,
-    ARC_SYNTH_FLPDG,
-    ARC_SYNTH_FLPAD,
-    ARC_SYNTH_CLRPM,
-    ARC_SYNTH_SCLDN,
-    ARC_SYNTH_SCLUP,
-]
+# AUXILIARY_TASKLOADERS = [
+#     ARC_1D,
+#     # ARC_SYTH_EXTEND,
+#     ARC_COMMUNITY,
+#     ARC_DIVA,
+#     ARC_CONCEPT,
+#     ARC_DBIGHAM,
+#     ARC_MINI,
+#     ARC_NOSOUND,
+#     ARC_PQA,
+#     ARC_REARC_EASY,
+#     ARC_REARC_HARD,
+#     ARC_SEQUENCE,
+#     ARC_SYNTH_RIDDLES,
+#     ARC_SYNTH_IDENT,
+#     ARC_SYNTH_RT090,
+#     ARC_SYNTH_RT180,
+#     ARC_SYNTH_RT270,
+#     ARC_SYNTH_FLPLR,
+#     ARC_SYNTH_FLPUD,
+#     ARC_SYNTH_FLPDG,
+#     ARC_SYNTH_FLPAD,
+#     ARC_SYNTH_CLRPM,
+#     ARC_SYNTH_SCLDN,
+#     ARC_SYNTH_SCLUP,
+# ]
 
 
 # Evaluation Tasks
