@@ -304,7 +304,6 @@ class ArcTrainingDataset:
         assert len(self._train) == len(self._test), 'Number of programs in train and test should be the same'
 
     def stats(self):
-
         num_progs = len(self.train)
         num_train = sum([len(v) for v in self._train.values()])
         num_test = sum([len(v) for v in self._test.values()])
@@ -366,6 +365,33 @@ class ArcTrainingDataset:
 
     def __len__(self):
         return len(self._train)
+    
+    def filter(self, max_height=45, max_width=45):
+        new_train = defaultdict(list)
+        new_test = defaultdict(list)
+
+        def is_valid(example, max_height, max_width):
+            inp_height, inp_width = example.input.shape
+            out_height, out_width = example.output.shape
+            return inp_height <= max_height and inp_width <= max_width and out_height <= max_height and out_width <= max_width
+
+        for prog_id in self.train.keys():
+            train_exampled_kept = []
+            test_examples_kept = []
+            for example in self.train[prog_id]:
+                if is_valid(example, max_height, max_width):
+                    train_exampled_kept.append(example)
+
+            for example in self.test[prog_id]:
+                if is_valid(example, max_height, max_width):
+                    test_examples_kept.append(example)
+
+            if len(train_exampled_kept) > 0 and len(test_examples_kept) > 0:
+                new_train[prog_id] = train_exampled_kept
+                new_test[prog_id] = test_examples_kept
+
+        self._train = new_train
+        self._test = new_test
     
     def augment(self, num_train_per_prog=100, max_test_per_prog=2):
         new_train = defaultdict(list)

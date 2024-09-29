@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from .dataset1 import ArcExamplesDataset
 from .multilevel_loss import MultiLevelLoss, exp_spacing
 from .repl import REPL, REPLConfig
-from .task1 import TRAIN_EVAL_COLLECTION, TRAIN_ONLY_COLLECTION
+from .task1 import TRAIN_EVAL_COLLECTION, TRAIN_ONLY_COLLECTION, ArcTrainingDataset
 from .tokenizer import ArcTokenizer
 from .trainer import Hparams
 from .utils import get_logger
@@ -71,8 +71,8 @@ class ArcHparams(Hparams):
 
     def build_state(self):
         self.reset_state()
-        training_data = TRAIN_EVAL_COLLECTION if self.data.include_eval else TRAIN_ONLY_COLLECTION 
-
+        training_data: ArcTrainingDataset = TRAIN_EVAL_COLLECTION if self.data.include_eval else TRAIN_ONLY_COLLECTION 
+        training_data.filter(max_height=45, max_width=45)
         training_data.augment(
                             num_train_per_prog=self.data.num_train_per_program,
                             max_test_per_prog=self.data.max_test_per_program)
