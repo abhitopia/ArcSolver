@@ -749,7 +749,7 @@ class TrainerBase:
     def initialise_from_checkpoint(self, checkpoint_path: Union[str, Path], strict=True, load_model=True, load_optim=False):
         checkpoint_path = Path(checkpoint_path)
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
-        state_dict = torch.load(checkpoint_path, map_location=self.device.type)
+        state_dict = torch.load(checkpoint_path, map_location=self.device.type, weights_only=False)
 
         self.info(f"Initialising model from checkpoint: {checkpoint_path}")
         self.load_state_dict(state_dict, load_model=load_model, load_optim=load_optim, strict=strict) # Prevent loading optimizer and scheduler state
@@ -758,7 +758,7 @@ class TrainerBase:
     def load_hparams_dict(checkpoint_path: Union[str, Path]):
         checkpoint_path = Path(checkpoint_path)
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
-        state_dict = torch.load(checkpoint_path, map_location='cpu')
+        state_dict = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
         hparams_dict = state_dict['hparams']
         return hparams_dict 
 #%%

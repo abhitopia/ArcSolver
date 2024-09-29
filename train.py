@@ -298,7 +298,7 @@ def fork(
         existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
         assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
     else:
-        trainer.info("Attemping to resume {experiment}/{run}")
+        trainer.info(f"Attemping to resume {experiment}/{run}")
 
     trainer.initialise_from_checkpoint(checkpoint, strict=False, load_model=True, load_optim=True)    # Fork start from the beginning 
 
