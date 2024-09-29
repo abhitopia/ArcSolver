@@ -6,7 +6,7 @@ from typing import List, Union
 import numpy as np
 
 from src.task import ArcTask
-from src.task1 import ArrayTransform, ColorPermutation
+from src.task import ArrayTransform, ColorPermutation
 #%%
 
 
