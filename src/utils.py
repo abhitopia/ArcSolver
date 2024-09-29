@@ -154,6 +154,10 @@ def map_to_tensors(nested, func):
     elif isinstance(nested, dict):
         # Recursively apply the function to each value in the dictionary
         return {key: map_to_tensors(value, func) for key, value in nested.items()}
+    elif isinstance(nested, tuple) and hasattr(nested, '_fields'):
+        # It's a NamedTuple
+        # Map to each field and reconstruct the NamedTuple
+        return type(nested)(*(map_to_tensors(getattr(nested, field), func) for field in nested._fields))
     elif isinstance(nested, (list, tuple)):
         # Recursively apply the function to each element in the list or tuple
         # Use the type of the original container to preserve the structure
@@ -161,8 +165,6 @@ def map_to_tensors(nested, func):
     else:
         # If the item is not a tensor or a nested structure, return it as is
         return nested
-    
-
 def get_logger(name: str = None):
     logger = logging.getLogger("ArcSolver" if name is None else name)
 

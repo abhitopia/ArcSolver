@@ -29,7 +29,7 @@ class REPLConfig:
     grid_vocab_size: int = len(GridTokenizer()) # number of array element tokens (one extra for niceness)
     perm_vocab_size: int = len(ColorPermutationTokenizer())
     tform_vocab_size: int = len(ArrayTransformTokenizer())
-    num_iters: int = 8 # number of iterations
+    n_iter: int = 8 # number of iterations
     n_state_layer: int = 1 # number of transformer blocks / layers for state aggregation    
     pad_idx: int = GridTokenizer().PAD_IDX
     max_grid_height: int = 60
@@ -58,7 +58,7 @@ class REPLConfig:
             'grid_vocab_size': self.grid_vocab_size,
             'perm_vocab_size': self.perm_vocab_size,
             'tform_vocab_size': self.tform_vocab_size,
-            'num_iters': self.num_iters,
+            'n_iter': self.n_iter,
             'n_state_layer': self.n_state_layer,
             'pad_idx': self.pad_idx,
             'max_grid_height': self.max_grid_height,
@@ -244,7 +244,7 @@ class StateAggregator(nn.Module):
         super().__init__()
         self.config = config
         self.n_state_layer = config.n_state_layer
-        self.pos_emb = nn.Embedding(config.num_iters+1, config.n_dim)
+        self.pos_emb = nn.Embedding(config.n_iter+1, config.n_dim)
         self.blocks = nn.ModuleList([TransformerBlock(config, rope=None) for _ in range(self.n_state_layer)])
         self.rms_out = RMSNorm(config.n_dim)
 
@@ -354,7 +354,7 @@ class REPL(nn.Module):
         self.config = config
         self.n_dim = config.n_dim
         self.n_layer = config.n_layer
-        self.num_iters = config.num_iters
+        self.num_iters = config.n_iter
         self.pnorm = config.pnorm
         self.PAD_IDX = config.pad_idx
 
@@ -537,12 +537,6 @@ class REPL(nn.Module):
         cache = (updated_kv_cache, past_enc_valid_mask, dec_valid_mask)
         return logits, cache
 
-    @torch.jit.export
-    def compute_loss(self, logits: List[Tensor], y: MODEL_OUTPUT) -> Tensor:
-        target = y.target_grid
-        assert target is not None  # Just to make tocuhscript happy
-        loss = self.loss(logits, target)
-        return loss
     
     @torch.jit.export
     def greedy_search(self, 
