@@ -721,13 +721,18 @@ class TrainerBase:
 
                     self.step = step  # Set the step instead of incrementing it. This ensures that self._epoch_end as 
 
-                    # In case train_dl has different number of batches per epoch
-                    eval_now = (epoch_step == len(self.train_dl) - 1) if self.eval_interval is None else (self.step > 0 and self.step % eval_interval == 0)
-                    if run_eval_at_start or eval_now:
-                        self._eval_loop(save_checkpoint=False if run_eval_at_start else True)
+                    if run_eval_at_start:
+                        self._eval_loop(save_checkpoint=False)
                         run_eval_at_start = False
 
-                    self._train_step(batch)                    
+                    self._train_step(batch)
+
+                    # In case train_dl has different number of batches per epoch
+                    eval_now = (epoch_step == len(self.train_dl) - 1) if self.eval_interval is None else (self.step > 0 and self.step % eval_interval == 0)
+                    if eval_now:
+                        self._eval_loop(save_checkpoint=True)
+
+
                     self.epoch_step = epoch_step
 
                 self._at_epoch_end()
