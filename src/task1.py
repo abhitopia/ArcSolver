@@ -418,7 +418,7 @@ ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_data
 ARC_TAMA = ArcTasksLoader(name='ARC_TAMA', path='data/arc_dataset_collection/dataset/arc-dataset-tama/data')
 ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dataset/ARC/data/evaluation')
 ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
-
+ARC_SYNTH = ArcTasksLoader(name='ARC_SYNTH', path='data/synthetic/', identical_task_per_folder=True)
 
 TRAIN_ONLY_COLLECTION = ArcTrainingDataset([
     ARC_TRAIN,
@@ -434,7 +434,8 @@ TRAIN_ONLY_COLLECTION = ArcTrainingDataset([
     ARC_PQA, 
     ARC_SEQUENCE, 
     ARC_SYNTH_RIDDLES, 
-    ARC_TAMA])
+    ARC_TAMA,
+    ARC_SYNTH])
 
 
 TRAIN_EVAL_COLLECTION = ArcTrainingDataset([
@@ -452,4 +453,5 @@ TRAIN_EVAL_COLLECTION = ArcTrainingDataset([
     ARC_SEQUENCE, 
     ARC_SYNTH_RIDDLES, 
     ARC_TAMA,
+    ARC_SYNTH,
     ARC_EVAL])

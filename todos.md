@@ -48,8 +48,8 @@ don't access future tokens making it causal by default)
 - [x] Add the abiltiy to specify eval batch size
 - [x] L2 regularisation despite setting the norm to 1.0
 - [x] Update Solver
+- [x] Add synthetic tasks
 - [ ] Remove any samples with > max_seq_len input or output
-- [ ] Add synthetic tasks
 - [ ] Let the training begin
 
 - [ ] Port beam search to the new model
