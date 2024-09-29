@@ -105,7 +105,7 @@ class ArcTrainer(TrainerBase):
         level_dataset_indices = defaultdict(list)
         for idx, (dataset, level) in enumerate(zip(datasets, levels)):
             dataset_indices[dataset].append(idx)
-            level_name = f"Level_{level+1}"
+            level_name = f"L{level+1}"
             level_indices[level_name].append(idx)
             level_dataset_indices[(level_name, dataset)].append(idx)
 
@@ -113,12 +113,12 @@ class ArcTrainer(TrainerBase):
         for i, logits in enumerate(iter_logits):
             correct_tokens_mask, correct_samples_mask = self._accuracy(logits, y.target_grid)
             metrics_obj.add_metric(
-                    f'{i+1}_TokenAcc',
+                    f'TokenAcc/I{i+1}_TokenAcc',
                     correct_tokens_mask.sum().item(),
                     y.grid.numel())
             
             metrics_obj.add_metric(
-                    f'{i+1}_SampleAcc',
+                    f'SampleAcc/I{i+1}_SampleAcc',
                     correct_samples_mask.sum().item(), 
                     y.grid.size(0))
             
@@ -128,7 +128,7 @@ class ArcTrainer(TrainerBase):
                 num_correct = correct_samples_in_level.sum().item()
                 total_samples = len(indices)
                 metrics_obj.add_metric(
-                    f'{i+1}_SampleAcc_{level}',
+                    f'LevelAcc/I{i+1}_SampleAcc_{level}',
                     num_correct,
                     total_samples)
                 
@@ -138,7 +138,7 @@ class ArcTrainer(TrainerBase):
                 num_correct = correct_samples_in_group.sum().item()
                 total_samples = len(indices)
                 metrics_obj.add_metric(
-                    f'{i+1}_SampleAcc_{dataset}_{level}',
+                    f'{dataset}/I{i+1}_{level}',
                     num_correct,
                     total_samples)
 
