@@ -4,7 +4,7 @@ import random
 import numpy as np
 import torch
 from torch.utils.data import Dataset, BatchSampler, DataLoader
-from .task1 import Example
+from .task import Example
 from .tokenizer import ArcTokenizer, MODEL_OUTPUT, MODEL_INPUT
 from .utils import get_logger
 #%%
