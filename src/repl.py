@@ -359,7 +359,7 @@ class REPL(nn.Module):
         self.PAD_IDX = config.pad_idx
 
         self.pte = nn.Sequential(
-            nn.Embedding(config.prog_vocab_size, config.n_embd, sparse=True),
+            nn.Embedding(config.prog_vocab_size, config.n_embd),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 

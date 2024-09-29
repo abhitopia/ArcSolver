@@ -41,13 +41,13 @@ don't access future tokens making it causal by default)
 - [x] Add training only methods to the model
 - [x] Add copy program embedding from source to target method
 - [x] Migrate Hparams to the new model
-- [ ] Update ArcTrainer
+- [x] Update ArcTrainer
+- [x] Add loop level token/sample accuracy
+- [x] Add difficulty based metric
+- [x] Consider replacing MSE to KL Divergence?? (No need. Remove this metric tracking altogether)
+- [x] Add the abiltiy to specify eval batch size
 - [ ] Update Solver
 - [ ] Add synthetic tasks
-- [ ] Add loop level token/sample accuracy
-- [ ] Add difficulty based metric
-- [ ] Consider replacing MSE to KL Divergence?? (No need. Remove this metric tracking altogether)
-- [ ] Add the abiltiy to specify eval batch size
 - [ ] Remove any samples with > max_seq_len input or output
 - [ ] L2 regularisation despite setting the norm to 1.0
 - [ ] Let the training beging
@@ -176,6 +176,7 @@ don't access future tokens making it causal by default)
 - [ ] Change in data breaks forked training. Need to fix that
 
 ## Future Work
+- [ ] More data https://github.com/mxgmn/WaveFunctionCollapse
 - [ ] Can the current problem be formulated as a RL problem? The inverse loss being the reward
 - [x] Implement faster kv-cached version of the model
 - [ ] Visualise attention to make sure that program embedding is referenced across the loops
