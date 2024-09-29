@@ -2,7 +2,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional, Tuple
 import typer
-from src.arc_trainer1 import ArcTrainer
+from src.arc_trainer import ArcTrainer
 from src.arc_hparams import ArcHparams
 from rich import print
 from src.utils import get_logger
