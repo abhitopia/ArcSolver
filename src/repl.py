@@ -432,7 +432,7 @@ class REPL(nn.Module):
         grid_indices = x.grid_indices
 
         pca_valid_mask = torch.ones((x.grid.size(0), 3), dtype=torch.bool, device=x.grid.device)
-        pca_indices = torch.full((x.grid.size(0), 3, 2), -1, dtype=grid_indices.dtype)
+        pca_indices = torch.full((x.grid.size(0), 3, 2), -1, dtype=grid_indices.dtype, device=x.grid.device)
 
         enc_valid_mask = torch.cat([pca_valid_mask, grid_valid_mask], dim=1)
         enc_indices = torch.cat([pca_indices, grid_indices], dim=1)

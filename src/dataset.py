@@ -300,7 +300,7 @@ class ArcExamplesDataset(Dataset):
         inp_indices = torch.tensor(inp_indices, dtype=torch.long).to(device, non_blocking=True)
         out_indices = torch.tensor(out_indices, dtype=torch.long).to(device, non_blocking=True)
 
-        target_grid = torch.cat([out_grids[:, 1:], torch.full((out_grids.size(0), 1), pad_idx, dtype=out_grids.dtype)], dim=1)
+        target_grid = torch.cat([out_grids[:, 1:], torch.full((out_grids.size(0), 1), pad_idx, dtype=out_grids.dtype, device=device)], dim=1)
 
         x = MODEL_INPUT(
             color_permutation=cps,
@@ -339,10 +339,10 @@ class ArcExamplesDataset(Dataset):
 
         batch_sampler = TargetTokenCountBatchSampler(self, approx_token_count=token_count, min_util=min_util, shuffle=shuffle)
         dl = DataLoader(dataset=self,
-                                batch_sampler=batch_sampler,
-                                collate_fn=lambda b: self.collate_fn(b, pad_idx, device=device),
-                                pin_memory=pin_memory,
-                                drop_last=False)
+                        batch_sampler=batch_sampler,
+                        collate_fn=lambda b: self.collate_fn(b, pad_idx, device=device),
+                        pin_memory=pin_memory,
+                        drop_last=False)
 
         return dl
     
