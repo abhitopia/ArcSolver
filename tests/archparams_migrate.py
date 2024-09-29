@@ -7,7 +7,7 @@ sys.path.append(src_path)  # replace "/path/to/src" with the actual path to the 
 from typing import Tuple
 import torch.nn as nn
 import torch.optim as optim
-from src.arc_trainer import const_schedule, get_alt_schedulers, lin_decay_schedule, noam_schedule
+from src.arc_trainer1 import const_schedule, get_alt_schedulers, lin_decay_schedule, noam_schedule
 from src.multilevel_loss import MultiLevelLoss, exp_spacing
 from torch.utils.data import DataLoader
 from src.trainer import Hparams
