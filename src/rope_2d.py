@@ -5,8 +5,6 @@ import torch
 import torch.nn as nn
 import math
 from torch import Tensor
-from torch.cuda.amp import autocast
-
 
 import torch
 import torch.nn as nn
@@ -43,7 +41,7 @@ class Rope2D(nn.Module):
         self.register_buffer('cos_freqs', cos_freqs, persistent=False)
         self.register_buffer('sin_freqs', sin_freqs, persistent=False)
 
-    @autocast(enabled=False)
+    @torch.amp.autocast('cuda', enabled=False)
     def get_axial_freqs_pytorch(self, *dims):
         """
         Computes axial frequencies for given dimensions without using `einops`.
@@ -110,7 +108,7 @@ class Rope2D(nn.Module):
         # Flatten back to original shape: [..., rot_dim]
         return x_rotated.flatten(-2)
 
-    @autocast( enabled=False)
+    @torch.amp.autocast('cuda', enabled=False)
     def apply_rotary_emb(self, x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
         """
         Applies rotary embeddings to the input tensor.
