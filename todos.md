@@ -46,11 +46,11 @@ don't access future tokens making it causal by default)
 - [x] Add difficulty based metric
 - [x] Consider replacing MSE to KL Divergence?? (No need. Remove this metric tracking altogether)
 - [x] Add the abiltiy to specify eval batch size
-- [ ] Update Solver
-- [ ] Add synthetic tasks
+- [x] L2 regularisation despite setting the norm to 1.0
+- [x] Update Solver
 - [ ] Remove any samples with > max_seq_len input or output
-- [ ] L2 regularisation despite setting the norm to 1.0
-- [ ] Let the training beging
+- [ ] Add synthetic tasks
+- [ ] Let the training begin
 
 - [ ] Port beam search to the new model
 - [ ] Use ARC verifiers to generate novel valid programs

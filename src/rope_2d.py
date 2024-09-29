@@ -166,7 +166,7 @@ class Rope2D(nn.Module):
         sin_freqs = sin_freqs.unsqueeze(1)
 
         # Apply rotary embeddings
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast('cuda', enabled=False):
             x_rotated = self.apply_rotary_emb(x, cos_freqs, sin_freqs)  # [batch_size, n_head, S, h_dim]
 
         # For invalid positions, retain the original x without rotation
