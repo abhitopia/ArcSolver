@@ -3,7 +3,7 @@ from typing import Dict, List, NamedTuple, Optional, Tuple
 import json
 import numpy as np
 import torch
-from .task import ArrayTransform, ColorPermutation, Example
+from .task1 import ArrayTransform, ColorPermutation, Example
 
 
 class Tokenizer:

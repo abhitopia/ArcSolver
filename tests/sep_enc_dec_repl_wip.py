@@ -6,10 +6,10 @@ from torch.nn import functional as F
 import numpy as np
 import torch
 from torch import Tensor
-from src.dataset import ArcExamplesDataset
+from src.dataset1 import ArcExamplesDataset
 from src.interpreter import RMSNorm, RotaryPositionalEmbeddings, SwiGLUFFN
 from src.multilevel_loss import MultiLevelLoss
-from src.task import TRAIN_COLLECTION, ColorPermutation, ArrayTransform, Example
+from src.task1 import TRAIN_COLLECTION, ColorPermutation, ArrayTransform, Example
 from src.tokenizer import ArcTokenizer, ArrayTransformTokenizer, ColorPermutationTokenizer, GridTokenizer
 from src.tokenizer import ArcTokenizer, MODEL_OUTPUT, MODEL_INPUT
 from src.utils import debug_context, debug_print

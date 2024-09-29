@@ -5,10 +5,10 @@ import torch.nn as nn
 import math
 from torch.utils.data import DataLoader
 
-from .dataset import ArcExamplesDataset
+from .dataset1 import ArcExamplesDataset
 from .multilevel_loss import MultiLevelLoss, exp_spacing
 from .repl import REPL, REPLConfig
-from .task import TRAIN_EVAL_COLLECTION, TRAIN_ONLY_COLLECTION, ArcTrainingDataset
+from .task1 import TRAIN_EVAL_COLLECTION, TRAIN_ONLY_COLLECTION, ArcTrainingDataset
 from .tokenizer import ArcTokenizer
 from .trainer import Hparams
 from .utils import get_logger

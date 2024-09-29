@@ -9,7 +9,7 @@ src_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver'
 sys.path.append(src_path)  # replace "/path/to/src" with the actual path to the src directory
 #%%
 
-from src.arc_trainer import ArcTrainer
+from src.arc_trainer1 import ArcTrainer
 import random
 from src.tokenizer import ArcTokenizer
 from src.repl import REPL, REPLConfig
