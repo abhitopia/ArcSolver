@@ -1,4 +1,11 @@
 #%%
+import sys
+
+src_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver'
+sys.path.append(src_path)  # replace "/path/to/src" with the actual path to the src directory
+
+
+from src.multilevel_loss import MultiLevelLoss
 import numpy as np
 import torch
 from src.tokenizer import MODEL_INPUT, MODEL_OUTPUT
@@ -75,14 +82,23 @@ print("Valid Mask", valid_mask)
 model = REPL(config)
 
 # scripted_model = torch.jit.optimize_for_inference(torch.jit.script(model))
-scripted_model = torch.jit.script(model)
-
+# scripted_model = torch.jit.script(model)
+loss_fn = MultiLevelLoss(
+    pad_idx=0,
+    edr=2,
+    min_pct=0.4
+)
 #%%
-%%time
-logits, cache = model(x, y, iters=4, return_cache=True)
-loss = model.compute_loss(logits, y)
+logits, cache = model(x, y, return_cache=True)
+loss = loss_fn(logits, y.target_grid)
 logits[-1][:, :, 0], loss
 
+loss.backward()
+
+for n, p in model.named_parameters():
+    if p.grad is not None:
+        if p.grad.isnan().any():
+            print(n, p.grad)
 
 #%%
 %%time

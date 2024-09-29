@@ -23,7 +23,7 @@ class ArcTrainer(TrainerBase):
     def at_training_start(self):
         self.tokenizer = self.hparams.state['tokenizer']
         self.checkpoint_metric = 'SampleAcc(%)'
-        self.console_metrics = self.console_metrics.union({'SampleAcc(%)', 'TokenAcc(%)', '#Loops', 'ΔT(ms)', '#TokensPerSec'})
+        self.console_metrics = self.console_metrics.union({'SampleAcc(%)', 'TokenAcc(%)', 'ΔT(ms)', '#TokensPerSec'})
         self.checkpoint_metric_increases = True
 
 
