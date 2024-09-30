@@ -219,6 +219,7 @@ def fork(
         include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
 
         # Misc Config
+        eval_int: Optional[int] = typer.Option(None, help="Number of steps between evaluations. None means evaluation at the end of each epoch"),
         lr_find: bool = typer.Option(False, help="Run learning rate finder in debug mode"),
         debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved"),
     ):
@@ -237,6 +238,7 @@ def fork(
         "seed": seed,
         "grok_alpha": grok_alpha,
         "grok_lambda": grok_lambda,
+        "eval_interval": eval_int
     }
 
     data_config = {
