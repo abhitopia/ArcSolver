@@ -343,7 +343,7 @@ class ArcExamplesDataset(Dataset):
                         batch_sampler=batch_sampler,
                         collate_fn=lambda b: self.collate_fn(b, pad_idx, device=device),
                         pin_memory=pin_memory,
-                        num_workers=4,
+                        num_workers=num_workers,
                         drop_last=False)
 
         return dl
