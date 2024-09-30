@@ -158,15 +158,17 @@ class Hparams:
         return flat_dict
     
     @classmethod
-    def from_dict(cls, hparams_dict):
+    def from_dict(cls, hparams_dict, build_state=True):
         args = {k: v for k, v in hparams_dict.items() if not isinstance(v, dict)} 
 
         hparams = cls(**args)
         for k, v in hparams_dict.items():
             if isinstance(v, dict):
                 hparams.add_params(k, **v)
-        hparams.build_state()
 
+        if build_state:
+            hparams.build_state()
+            
         return hparams
 
 

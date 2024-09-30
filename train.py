@@ -225,7 +225,7 @@ def fork(
     ):
 
     hparams_dict = ArcTrainer.load_hparams_dict(checkpoint)
-    hparams = ArcHparams.from_dict(hparams_dict)
+    hparams = ArcHparams.from_dict(hparams_dict, build_state=False)
 
     prev_exp = f"{hparams.experiment}_{hparams.run}"
     new_exp = f"{experiment}_{run}"
@@ -253,7 +253,7 @@ def fork(
     optimizer_config = {
         # Batch Size
         "train_batch_token_count": tbs,
-        "eval_batch_token_count": ebs if ebs is not None else tbs,
+        "eval_batch_token_count": ebs,
         "batch_min_util": bmu,
 
         # Regularization / Weight Decay
@@ -269,7 +269,7 @@ def fork(
         # Learning Rate
         "lr_model": mlr if not lr_find else 1,
         "lr_prog": plr if not lr_find else 1,
-        "lr_schedule": lr_schedule.value if isinstance(lr_schedule, LRSchedule) else lr_schedule,
+        "lr_schedule": lr_schedule.value if isinstance(lr_schedule, LRSchedule) else None,
         "lr_warmup_steps": lr_warmup,
         "lr_decay_steps": lr_decay,
     }
