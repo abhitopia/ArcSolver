@@ -184,7 +184,7 @@ def fork(
         bmu: Optional[float] = typer.Option(None, min=0.0, max=1.0, help="Batch Min Utilization"),
 
         # Misc Config
-        n_steps: Optional[int] = typer.Option(None, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
+        n_steps: Optional[int] = typer.Option(1000_000, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
         seed: Optional[int] = typer.Option(None, min=0, help="Random seed for the data and experiment"),
 
         # Batch Config
@@ -303,6 +303,7 @@ def fork(
         trainer.info(f"Attemping to resume {experiment}/{run}")
 
     trainer.initialise_from_checkpoint(checkpoint, strict=False, load_model=True, load_optim=True)    # Fork start from the beginning 
+
 
     if lr_find:
         trainer.find_lr()
