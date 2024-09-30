@@ -213,7 +213,7 @@ class SelfAttention(nn.Module):
 
         # Zero out NaN values, so they don't affect future computations
         # I have also verified that the it doesn't matter what the nan values are set to
-        y = torch.nan_to_num(y, nan=0.0)
+        # y = torch.nan_to_num(y, nan=0.0)
 
         return y, new_kv_cache
 
