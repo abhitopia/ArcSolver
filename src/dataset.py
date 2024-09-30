@@ -326,6 +326,7 @@ class ArcExamplesDataset(Dataset):
                     pin_memory: bool=True, 
                     shuffle: bool=True,
                     min_util: float=0.70,
+                    num_workers: int = 4,
                     ) -> DataLoader:
         """
         batch_size: The batch size for the dataloader. 

@@ -24,7 +24,7 @@ class REPLConfig:
     n_embd: int # embedding dimension
     n_head: int # number of heads within each self-attention block
     n_layer: int = 1 # number of transformer blocks / layers
-    pnorm: float = None
+    pnorm: Optional[float] = None
     dropout: float = 0.0 # dropout probability
     grid_vocab_size: int = len(GridTokenizer()) # number of array element tokens (one extra for niceness)
     perm_vocab_size: int = len(ColorPermutationTokenizer())
