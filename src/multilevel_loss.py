@@ -185,19 +185,19 @@ class MultiLevelLoss(nn.Module):
         return loss_level, num_tokens_level
     
 
-    def forward(self, logits_list: List[Tensor], targets: Tensor) -> Tensor:
+    def forward(self, logits: Tensor, targets: Tensor) -> Tensor:
         """
         Computes the progressive loss over multiple levels.
 
         Args:
-            logits_list (list of torch.Tensor): List of N logits tensors, each of shape (B, T, D).
+            logits (torch.Tensor): logits tensors combined into a single (N, B, T, D).
             targets (torch.Tensor): Target tensor, shape (B, T).
 
         Returns:
             total_loss (torch.Tensor): The computed total loss.
         """
         B, T = targets.shape
-        N = len(logits_list)  # Number of levels
+        N = logits.size(0)  # Number of levels
         device = targets.device
 
         pct_indices_per_level = exp_spacing(N, self.edr, self.min_pct, self.max_pct)
@@ -214,7 +214,7 @@ class MultiLevelLoss(nn.Module):
         total_tokens = 0
 
         for level_i in range(N):
-            logits_i = logits_list[level_i]  # shape (B, T, D)
+            logits_i = logits[level_i]  # shape (B, T, D)
             pct_i = pct_indices_per_level[level_i]
 
             # Compute N_i for each sequence
