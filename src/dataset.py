@@ -1,4 +1,5 @@
 #%%
+import functools
 from typing import List, Tuple
 import random
 import numpy as np
@@ -12,13 +13,12 @@ from .utils import get_logger
 logger = get_logger()
 
 class TargetTokenCountBatchSampler(BatchSampler):
-    def __init__(self, dataset: Dataset, approx_token_count: int, min_util: float = 0.80, shuffle: bool = True):
+    def __init__(self, dataset: Dataset, approx_token_count: int, shuffle: bool = True):
         self.dataset = dataset
         self.approx_token_count = approx_token_count
         assert approx_token_count >= 2000, f"target_token_count: {approx_token_count} must be greater than 3+900+900"
 
         self.shuffle = shuffle
-        self.min_util = min_util
         self.batches = self.create_batches()
         self.shuffle_batches()
 
@@ -82,20 +82,6 @@ class TargetTokenCountBatchSampler(BatchSampler):
         return self.batches
 
     
-    def __iter__(self):
-        # Shuffle the buckets and data within buckets if necessary
-        if self.shuffle:
-            self.shuffle_batches()
-
-        for batch in self.batches:
-            yield batch
-
-
-    def __len__(self):
-        # Experimentally this is only called when len(dataloader) is called
-        return len(self.batches)
-    
-        
     def __iter__(self):
         # Shuffle the buckets and data within buckets if necessary
         if self.shuffle:
@@ -247,7 +233,6 @@ class ArcExamplesDataset(Dataset):
                     device=torch.device('cpu'), 
                     pin_memory: bool=True, 
                     shuffle: bool=True,
-                    min_util: float=0.70,
                     num_workers: int = 4,
                     ) -> DataLoader:
         """
@@ -260,10 +245,13 @@ class ArcExamplesDataset(Dataset):
 
         pad_idx = self.tokenizer.grid_tokenizer.PAD_IDX
 
-        batch_sampler = TargetTokenCountBatchSampler(self, approx_token_count=token_count, min_util=min_util, shuffle=shuffle)
+
+        collate_fn = functools.partial(self.collate_fn, pad_idx=pad_idx, device=device)
+
+        batch_sampler = TargetTokenCountBatchSampler(self, approx_token_count=token_count, shuffle=shuffle)
         dl = DataLoader(dataset=self,
                         batch_sampler=batch_sampler,
-                        collate_fn=lambda b: self.collate_fn(b, pad_idx, device=device),
+                        collate_fn=collate_fn,
                         pin_memory=pin_memory,
                         num_workers=num_workers,
                         drop_last=False)

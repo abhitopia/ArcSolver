@@ -44,7 +44,6 @@ def train(
         # Batch Config
         tbs: int = typer.Option(10_000, min=1, help="Train Batch Size (in tokens)"),
         ebs: Optional[int] = typer.Option(None, min=1, help="Eval Batch Size (in tokens)"),
-        bmu: Optional[float] = typer.Option(0.7, min=0.0, max=1.0, help="Batch Min Utilization"),
 
         # Model Config
         n_dim: int = typer.Option(128, min=4, max=512, help="Dimension of the model"),
@@ -127,7 +126,6 @@ def train(
         # Batch Size
         "train_batch_token_count": tbs,
         "eval_batch_token_count": ebs if ebs is not None else tbs,
-        "batch_min_util": bmu,    
 
         # Regularization / Weight Decay
         "wd_model": mwd,
@@ -184,7 +182,6 @@ def fork(
         # Batch Config
         tbs: Optional[int] = typer.Option(None, min=1, help="Train Batch Size (in tokens)"),
         ebs: Optional[int] = typer.Option(None, min=1, help="Eval Batch Size (in tokens)"),
-        bmu: Optional[float] = typer.Option(None, min=0.0, max=1.0, help="Batch Min Utilization"),
 
         # Loss Config
         n_iter: Optional[int] = typer.Option(None, min=2, help="Number of iterations for the model"),
@@ -258,7 +255,6 @@ def fork(
         # Batch Size
         "train_batch_token_count": tbs,
         "eval_batch_token_count": ebs,
-        "batch_min_util": bmu,
 
         # Regularization / Weight Decay
         "wd_model": mwd,
