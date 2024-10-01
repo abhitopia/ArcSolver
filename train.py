@@ -78,8 +78,8 @@ def train(
         # Data Config
         min_train_pp: Optional[int] = typer.Option(50, help="Minimum number of Train Examples Per Program"),
         max_train_pp: Optional[int] = typer.Option(None, help="Maximum number of Train Examples Per Program"),
-        min_test_pp: Optional[int] = typer.Option(3, help="Minimum number of Test Examples Per Program"),
-        max_test_pp: Optional[int] = typer.Option(None, help="Maximum number of Test Examples Per Program"),
+        min_test_pp: Optional[int] = typer.Option(1, help="Minimum number of Test Examples Per Program"),
+        max_test_pp: Optional[int] = typer.Option(3, help="Maximum number of Test Examples Per Program"),
         include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
 
         # Misc Config
@@ -109,10 +109,10 @@ def train(
     
     data_config = {
         'include_eval': include_eval,
-        'min_train_per_program': min_train_pp,
-        'max_train_per_program': max_train_pp if max_train_pp is not None else min_train_pp,
-        'min_test_per_program': min_test_pp,
-        'max_test_per_program': max_test_pp if max_test_pp is not None else min_test_pp,
+        'min_train_pp': min_train_pp,
+        'max_train_pp': max_train_pp if max_train_pp is not None else min_train_pp,
+        'min_test_pp': min_test_pp,
+        'max_test_pp': max_test_pp if max_test_pp is not None else min_test_pp,
     }
 
     model_config = {
@@ -245,10 +245,10 @@ def fork(
 
     data_config = {
         'include_eval': include_eval,
-        'min_train_per_program': min_train_pp,
-        'max_train_per_program': max_train_pp,
-        'min_test_per_program': min_test_pp,
-        'max_test_per_program': max_test_pp,
+        'min_train_pp': min_train_pp,
+        'max_train_pp': max_train_pp,
+        'min_test_pp': min_test_pp,
+        'max_test_pp': max_test_pp,
     }
 
     model_config = {
