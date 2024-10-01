@@ -93,11 +93,13 @@ class ArcHparams(Hparams):
         train_dl = train_ds.get_dataloader(token_count=optim_config.train_batch_token_count,
                                            pin_memory=True,
                                            shuffle=True,
+                                           num_workers=0,
                                            min_util=optim_config.batch_min_util)
         
         eval_dl = eval_ds.get_dataloader(token_count=optim_config.eval_batch_token_count,
                                          pin_memory=True,
                                          shuffle=False,
+                                         num_workers=0,
                                          min_util=optim_config.batch_min_util)
         
         self.state['train_dl'] = train_dl
@@ -127,7 +129,7 @@ class ArcHparams(Hparams):
                     edr=self.optim.edr,
                     min_pct=self.optim.mctp)
         
-        spacing = exp_spacing(self.model.n_iter, self.optim.edr, self.optim.mctp)
+        spacing = exp_spacing(self.optim.n_iter, self.optim.edr, self.optim.mctp)
         logger.info(f"\nLoss Error Rate per Iteration: {[f'{c:.2f}' for c in spacing.tolist()]}")
 
         self.state['loss'] = loss

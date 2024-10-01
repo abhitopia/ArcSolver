@@ -326,7 +326,6 @@ class REPL(nn.Module):
         self.config = config
         self.n_dim = config.n_dim
         self.n_layer = config.n_layer
-        self.num_iters = config.n_iter
         self.pnorm = config.pnorm
         self.PAD_IDX = config.pad_idx
 
@@ -471,6 +470,7 @@ class REPL(nn.Module):
     def forward_inc(self,
             next_y: MODEL_OUTPUT, 
             cache: Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor],
+            num_iters: int = 8,
         ) -> Tuple[List[Tensor], Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]:
                    
         dec_inp, dec_valid_mask, dec_indices = self.contruct_decoder_input(next_y)
@@ -490,7 +490,7 @@ class REPL(nn.Module):
         updated_kv_cache: List[List[Tuple[Tensor, Tensor]]] = []
         current_state, states_kv_cache = self.state_agg(iter_states, None)
 
-        for i in range(self.num_iters):
+        for i in range(num_iters):
             new_state, iter_kv_cache = self.interpreter(
                                             x=current_state,
                                             attn_mask=attn_mask,
