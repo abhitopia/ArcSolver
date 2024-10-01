@@ -25,11 +25,23 @@ class TargetTokenCountBatchSampler(BatchSampler):
     def shuffle_batches(self):
         if not self.shuffle:
             return
-        # Shuffle the order of the data within each batch
-        for batch in self.batches:
-            random.shuffle(batch)
+        
         # Shuffle the order of the batches
         random.shuffle(self.batches)
+
+
+    def __iter__(self):
+        # Shuffle the buckets and data within buckets if necessary
+        if self.shuffle:
+            self.shuffle_batches()
+
+        for batch in self.batches:
+            yield batch
+
+    def __len__(self):
+        # Experimentally this is only called when len(dataloader) is called
+        return len(self.batches)
+
 
     @staticmethod
     def example_len(example: Example):
@@ -82,18 +94,6 @@ class TargetTokenCountBatchSampler(BatchSampler):
         return self.batches
 
     
-    def __iter__(self):
-        # Shuffle the buckets and data within buckets if necessary
-        if self.shuffle:
-            self.shuffle_batches()
-
-        for batch in self.batches:
-            yield batch
-
-
-    def __len__(self):
-        # Experimentally this is only called when len(dataloader) is called
-        return len(self.batches)
 
 
     def batch_utilisation(self, batch):
@@ -156,7 +156,6 @@ class TargetTokenCountBatchSampler(BatchSampler):
 
 class ArcExamplesDataset(Dataset):
     def __init__(self, examples: List[Example], tokenizer: ArcTokenizer):
-
         # DO NOT SHUFFLE THE EXAMPLES
         # Or the sampler will break
         self.examples = examples
@@ -179,7 +178,10 @@ class ArcExamplesDataset(Dataset):
         indices = list(range(num_examples))
         return ArcExamplesDataset([self.examples[i] for i in indices], self.tokenizer)
     
-    def collate_fn(self, batch: List[Example], pad_idx: int, device=torch.device('cpu'))-> Tuple[MODEL_INPUT, MODEL_OUTPUT]:
+    def collate_fn(self, batch: List[Example], pad_idx: int, permute: False, device=torch.device('cpu'))-> Tuple[MODEL_INPUT, MODEL_OUTPUT]:
+        if permute:
+            batch = [ex if ex.is_original else ex.permute() for ex in batch]
+
         x, y = zip(*[self.tokenizer.encode(ex) for ex in batch])
 
         cps = [xi.color_permutation for xi in x]
@@ -234,19 +236,15 @@ class ArcExamplesDataset(Dataset):
                     pin_memory: bool=True, 
                     shuffle: bool=True,
                     num_workers: int = 4,
+                    permute: bool = False
                     ) -> DataLoader:
         """
-        batch_size: The batch size for the dataloader. 
-        seq_len: If > 0, the input and output sequences will be padded to this length.
-                 If <= 0, the input and output sequences will be padded to the maximum length in the dataset.
-                 If None, the batches will be variable sequence length per batch.
-        batch_by_token_count: If True, the dataloader will batch examples by target token count = batch_size * seq_len.
+        Returns a DataLoader for the dataset
         """
 
         pad_idx = self.tokenizer.grid_tokenizer.PAD_IDX
 
-
-        collate_fn = functools.partial(self.collate_fn, pad_idx=pad_idx, device=device)
+        collate_fn = functools.partial(self.collate_fn, pad_idx=pad_idx, device=device, permute=permute)
 
         batch_sampler = TargetTokenCountBatchSampler(self, approx_token_count=token_count, shuffle=shuffle)
         dl = DataLoader(dataset=self,
@@ -258,4 +256,5 @@ class ArcExamplesDataset(Dataset):
 
         return dl
     
+# %%
 # %%

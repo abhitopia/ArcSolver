@@ -98,11 +98,13 @@ class ArcHparams(Hparams):
         train_dl = train_ds.get_dataloader(token_count=optim_config.train_batch_token_count,
                                            pin_memory=True,
                                            shuffle=True,
+                                           permute=self.data.permute,
                                            num_workers=4)
         
         eval_dl = eval_ds.get_dataloader(token_count=optim_config.eval_batch_token_count,
                                          pin_memory=True,
                                          shuffle=False,
+                                         permute=False,
                                          num_workers=4)
         
         self.state['train_dl'] = train_dl

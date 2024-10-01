@@ -80,6 +80,7 @@ def train(
         min_test_pp: Optional[int] = typer.Option(1, help="Minimum number of Test Examples Per Program"),
         max_test_pp: Optional[int] = typer.Option(3, help="Maximum number of Test Examples Per Program"),
         include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
+        permute: bool = typer.Option(False, help="Permute the training set for each batch"),
 
         # Misc Config
         n_steps: Optional[int] = typer.Option(1000000, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
@@ -112,6 +113,7 @@ def train(
         'max_train_pp': max_train_pp if max_train_pp is not None else min_train_pp,
         'min_test_pp': min_test_pp,
         'max_test_pp': max_test_pp if max_test_pp is not None else min_test_pp,
+        'permute': permute
     }
 
     model_config = {
@@ -216,6 +218,7 @@ def fork(
         min_test_pp: Optional[int] = typer.Option(None, help="Minimum number of Test Examples Per Program"),
         max_test_pp: Optional[int] = typer.Option(None, help="Maximum number of Test Examples Per Program"),
         include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
+        permute: bool = typer.Option(False, help="Permute the training set for each batch"),
 
         # Misc Config
         eval_int: Optional[int] = typer.Option(None, help="Number of steps between evaluations. None means evaluation at the end of each epoch"),
@@ -246,6 +249,7 @@ def fork(
         'max_train_pp': max_train_pp,
         'min_test_pp': min_test_pp,
         'max_test_pp': max_test_pp,
+        'permute': permute
     }
 
     model_config = {

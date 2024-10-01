@@ -1,5 +1,6 @@
 #%%
 from collections import defaultdict
+import copy
 from enum import Enum, auto
 import json
 from pathlib import Path
@@ -67,7 +68,15 @@ class Example:
         self.transform = transform
         self.is_test = is_test
         self._complexity = None
+        self._is_original = color_perm == ColorPermutation.CPID.name and transform == ArrayTransform.IDENT.name
+        self._original_input = None
+        self._original_output = None
 
+
+    @property
+    def is_original(self):
+        return self._is_original
+    
     def __repr__(self):
         prefix = 'Test' if self.is_test else 'Train'
         return f'{self.program_id} : {self.dataset}/{self.task_id}/{prefix}/{self.idx}/{self.color_perm}/{self.transform}'
@@ -113,38 +122,41 @@ class Example:
             self._complexity = self.compute_complexity()
         return self._complexity
 
-    def augment(self, color_perm=None, transform=None):
-        assert self.color_perm == ColorPermutation.CPID.name, 'Augmentation is only supported for identity color permutation'
-        assert self.transform == ArrayTransform.IDENT.name, 'Augmentation is only supported for identity transformation'
+    def clone(self):
+        """Create a deep copy of the example. But it is made as not original example."""
+        assert self._is_original, "Cannot clone an permuted example."
+
+        cloned = copy.deepcopy(self)
+        cloned._is_original = False
+        cloned._original_input = np.copy(self.input)
+        cloned._original_output = np.copy(self.output)
+        return cloned
+
+    def permute(self, color_perm=None, arr_transform=None):
+        assert not self._is_original, "Cannot transform an original example. Please clone first."
 
         if color_perm is None:
             cps = list(ColorPermutation)
             color_perm = random.choice(cps)
 
-        if transform is None:
+        if arr_transform is None:
             ats = list(ArrayTransform)
             transform = random.choice(ats)
 
         # Try again if the identity transformation is selected with the identity color permutation
-        if color_perm == ColorPermutation.CPID and transform == ArrayTransform.IDENT:
-            return self.augment()
+        if color_perm == ColorPermutation.CPID and arr_transform == ArrayTransform.IDENT:
+            return self.permute()
 
         input = color_perm.transform(self.input)
         output = color_perm.transform(self.output)
-        input = transform.transform(input)
-        output = transform.transform(output)
+        input = arr_transform.transform(input)
+        output = arr_transform.transform(output)
 
-        return Example(
-            idx=self.idx,
-            input=input,
-            output=output,
-            program_id=self.program_id,
-            task_id=self.task_id,
-            dataset=self.dataset,
-            color_perm=color_perm.name,
-            transform=transform.name,
-            is_test=self.is_test
-        )
+        self.input = input
+        self.output = output
+        self.color_perm = color_perm.name
+        self.transform = arr_transform.name
+        return self
 
 
 class ArcTask:
@@ -426,7 +438,7 @@ class ArcTrainingDataset:
                 if num_test < min_test:
                     num_to_augment = min_test - num_test
                     augment_examples = [random.choice(kept_test_examples) for _ in range(num_to_augment)]
-                    augmented_tests = [example.augment() for example in augment_examples]
+                    augmented_tests = [example.clone().permute() for example in augment_examples]
                     kept_test_examples.extend(augmented_tests)
 
             new_test[prog_id] = kept_test_examples
@@ -439,7 +451,7 @@ class ArcTrainingDataset:
             if num_train < min_train:
                 num_to_augment = min_train - num_train
                 augment_examples = [random.choice(train_examples) for _ in range(num_to_augment)]
-                augmented_trains = [example.augment() for example in augment_examples]
+                augmented_trains = [example.clone().permute() for example in augment_examples]
                 train_examples.extend(augmented_trains)
                 num_train = len(train_examples)
 
