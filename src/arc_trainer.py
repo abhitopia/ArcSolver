@@ -22,6 +22,7 @@ class ArcTrainer(TrainerBase):
 
     def at_training_start(self):
         self.tokenizer = self.hparams.state['tokenizer']
+        self.n_iter = self.hparams.optim['n_iter']
         self.checkpoint_metric = 'SampleAcc(%)'
         self.console_metrics = self.console_metrics.union({'SampleAcc(%)', 'TokenAcc(%)', 'ΔT(ms)', '#TokensPerSec'})
         self.checkpoint_metric_increases = True
@@ -165,14 +166,14 @@ class ArcTrainer(TrainerBase):
     def train_step(self, batch):
         x, y = batch
         iter_logits, _ = self.model(x, y)
-        loss = self.loss_fn(iter_logits, y.target_grid)
+        loss = self.loss_fn(iter_logits, y.target_grid, self.n_iter)
         self._add_step_metrics(loss, x, y, iter_logits, is_train=True)
         return loss
     
     def eval_step(self, batch):
         x, y = batch
         iter_logits, _ = self.model(x, y)
-        loss = self.loss_fn(iter_logits, y.target_grid)
+        loss = self.loss_fn(iter_logits, y.target_grid, self.n_iter)
         self._add_step_metrics(loss, x, y, iter_logits, is_train=False)
         return loss
     

@@ -115,8 +115,6 @@ class ArcHparams(Hparams):
             n_embd=self.model.n_embd, 
             n_head=self.model.n_head,
             n_layer=self.model.n_layer, 
-            n_state_layer=self.model.n_state_layer,
-            n_iter=self.model.n_iter,
             pnorm=self.model.pnorm, 
             dropout=self.optim.dropout
         )

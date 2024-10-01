@@ -47,13 +47,16 @@ def train(
         bmu: Optional[float] = typer.Option(0.7, min=0.0, max=1.0, help="Batch Min Utilization"),
 
         # Model Config
-        n_iter: int = typer.Option(8, min=2, help="Number of iterations for the model"),
         n_dim: int = typer.Option(128, min=4, max=512, help="Dimension of the model"),
         n_embd: int = typer.Option(16, min=4, max=512, help="Embedding dimension"),
         n_head: int = typer.Option(4, min=1, max=64, help="Number of heads within each self-attention block"),
         n_layer: int = typer.Option(3, min=1, max=20, help="Number of blocks in the Interpreter"),
-        n_state_layer: int = typer.Option(3, min=1, max=20, help="Number of blocks in the State Aggregator"),
         pnorm: Optional[float] = typer.Option(None, min=0.0, help="Program Norm. If not None, then it is pinned to this value. If None, no constraint is placed"),
+
+        # Loss / Compute Config
+        n_iter: int = typer.Option(8, min=2, help="Number of iterations for the model"),
+        edr: Optional[float] = typer.Option(2.0, min=0.0, help="Loss Error Decay Rate"),
+        mctp: Optional[float] = typer.Option(0.4, min=0.0, help="Min Correct Tokens Percentage"),
 
         # Learning Rate Config
         mlr: Optional[float] = typer.Option(0.001, min=-1.0, help="Learning Rate"),
@@ -86,10 +89,7 @@ def train(
         clear_cache_interval: Optional[int] = typer.Option(100, help="Clear cache before training"),
         debug: Optional[bool] = typer.Option(False, help="For test runs. Nothing is saved"),
 
-        # Loss Config
-        edr: Optional[float] = typer.Option(2.0, min=0.0, help="Loss Error Decay Rate"),
-        mctp: Optional[float] = typer.Option(0.4, min=0.0, help="Min Correct Tokens Percentage"),
-
+  
         # Checkpoint Config
         checkpoint: Optional[str] = typer.Option(None, help="Initialize the model from the given checkpoint. Training will start from the beginning")
     ):
@@ -116,16 +116,14 @@ def train(
         "n_embd": n_embd,
         "n_head": n_head,
         "n_layer": n_layer,
-        "pnorm": pnorm,
-        "n_state_layer": n_state_layer,
-        "n_iter": n_iter,
+        "pnorm": pnorm
     }
 
     optimizer_config = {
         # Batch Size
         "train_batch_token_count": tbs,
         "eval_batch_token_count": ebs if ebs is not None else tbs,
-        "batch_min_util": bmu,
+        "batch_min_util": bmu,    
 
         # Regularization / Weight Decay
         "wd_model": mwd,
@@ -133,7 +131,8 @@ def train(
         "dropout": dropout,
         "l1_prog": pl1,
 
-        # Loss
+        # Loss / Compute Config
+        "n_iter": n_iter,
         "edr": edr,
         "mctp": mctp,
 
@@ -183,14 +182,14 @@ def fork(
         ebs: Optional[int] = typer.Option(None, min=1, help="Eval Batch Size (in tokens)"),
         bmu: Optional[float] = typer.Option(None, min=0.0, max=1.0, help="Batch Min Utilization"),
 
+        # Loss Config
+        n_iter: Optional[int] = typer.Option(None, min=2, help="Number of iterations for the model"),
+        edr: Optional[float] = typer.Option(None, min=0.0, help="Loss Error Decay Rate"),
+        mctp: Optional[float] = typer.Option(None, min=0.0, help="Min Correct Tokens Percentage"),
+
         # Misc Config
         n_steps: Optional[int] = typer.Option(1000_000, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
         seed: Optional[int] = typer.Option(None, min=0, help="Random seed for the data and experiment"),
-
-        # Batch Config
-        bs: Optional[int] = typer.Option(None, min=1, help="Batch Size"),
-        bsl: Optional[int] = typer.Option(None, min=1, help="Batch Seq Length"),
-        dynamic_batching: Optional[bool] = typer.Option(True, help="Use dynamic batch size"),
 
         # Learning Rate Config
         mlr: Optional[float] = typer.Option(None, min=0.0, help="Learning Rate"),
@@ -199,9 +198,6 @@ def fork(
         lr_decay: Optional[int] = typer.Option(None, min=0, help="Number of steps for learning rate decay. Only used for noam and lindecay scheduler"),
         lr_schedule: Optional[LRSchedule] = typer.Option(None, help="Learning rate scheduler. Options: noam, alt, const"),
 
-        # Loss Config
-        edr: Optional[float] = typer.Option(None, min=0.0, help="Loss Error Decay Rate"),
-        mctp: Optional[float] = typer.Option(None, min=0.0, help="Min Correct Tokens Percentage"),
 
         # Regularisation/ Weight Decay Config
         mwd: Optional[float] = typer.Option(None, min=0.0, help="Weight Decay"),
@@ -262,7 +258,8 @@ def fork(
         "dropout": dropout,
         "l1_prog": pl1,
 
-        # Loss
+        # Compute / Loss Config
+        "n_iter": n_iter,
         "edr": edr,
         "mctp": mctp,
 
