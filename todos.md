@@ -59,7 +59,7 @@ don't access future tokens making it causal by default)
 - [x] Add min max option num examples option to the data
 - [x] Make data loading astonishingly fast 
 - [x] Cache data for training
-- [ ] Refresh data every 5 epochs
+- [x] Refresh data every epoch. This should substantially reduce the dataset size. Added option to refresh data all the time
 - [ ] Do a single batch test and then see if see if permuting the input changes the output. All valid inputs should affect the output, but not the invalid tokens
 - [ ] Test torch scripted model for training
 - [ ] Number of params in the model (vs Computation Equivalent Params)
