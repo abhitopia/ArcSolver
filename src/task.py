@@ -3,10 +3,11 @@ from collections import defaultdict
 from enum import Enum, auto
 import json
 from pathlib import Path
+import pickle
 import random
 from typing import List
 import numpy as np
-from .utils import get_logger
+from .utils import get_logger, hash_string
 #%%
 
 logger = get_logger()
@@ -393,7 +394,6 @@ class ArcTrainingDataset:
         self._train = new_train
         self._test = new_test
 
-
     def augment(self, min_train=50, max_train=None, min_test=3, max_test=None):
         # Set max_train and max_test to min values if not provided
         if max_train is None:
@@ -453,6 +453,8 @@ class ArcTrainingDataset:
         self._test = new_test
 
 
+
+    
 #%%
 ARC_NOSOUND = ArcTasksLoader(name='ARC_NOSOUND', path='data/arc_dataset_collection/dataset/nosound/data')
 ARC_1D = ArcTasksLoader(name='ARC_1D', path='data/arc_dataset_collection/dataset/1D-ARC/data', identical_task_per_folder=True)
@@ -472,38 +474,41 @@ ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dat
 ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
 ARC_SYNTH = ArcTasksLoader(name='ARC_SYNTH', path='data/synthetic/', identical_task_per_folder=True)
 
-TRAIN_ONLY_COLLECTION = ArcTrainingDataset([
-    ARC_TRAIN,
-    ARC_1D,
-    ARC_REARC_EASY,
-    ARC_REARC_HARD, 
-    ARC_COMMUNITY, 
-    ARC_DIVA, 
-    ARC_CONCEPT, 
-    ARC_DBIGHAM, 
-    ARC_MINI, 
-    ARC_NOSOUND, 
-    ARC_PQA, 
-    ARC_SEQUENCE, 
-    ARC_SYNTH_RIDDLES, 
-    ARC_TAMA,
-    ARC_SYNTH])
 
-
-TRAIN_EVAL_COLLECTION = ArcTrainingDataset([
-    ARC_TRAIN,
-    ARC_1D,
-    ARC_REARC_EASY,
-    ARC_REARC_HARD, 
-    ARC_COMMUNITY, 
-    ARC_DIVA, 
-    ARC_CONCEPT, 
-    ARC_DBIGHAM, 
-    ARC_MINI, 
-    ARC_NOSOUND, 
-    ARC_PQA, 
-    ARC_SEQUENCE, 
-    ARC_SYNTH_RIDDLES, 
-    ARC_TAMA,
+train_collection = [
     ARC_SYNTH,
-    ARC_EVAL])
+    ARC_1D,
+    ARC_COMMUNITY, 
+    ARC_DIVA, 
+    ARC_CONCEPT, 
+    ARC_DBIGHAM, 
+    ARC_MINI, 
+    ARC_NOSOUND, 
+    ARC_PQA, 
+    ARC_SEQUENCE, 
+    ARC_SYNTH_RIDDLES, 
+    ARC_TAMA,
+    ARC_TRAIN
+]
+
+
+class DatasetLoader(Enum):
+    TRAIN_ONLY = train_collection
+    TRAIN_EVAL = train_collection + [ARC_EVAL]
+
+    def load(self, *, max_height, max_width, min_test, min_train, max_test, max_train):
+        base_path = Path(__file__).resolve().parent.parent / ".cache"
+        print(f"Base path: {base_path}")
+        hash_params = f"{self.name}_{max_height}_{max_width}_{min_test}_{max_test}_{max_train}_{min_train}"
+        cache_file = base_path / f"{hash_string(hash_params)}.pkl"
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        if cache_file.exists():
+            print(f"Loading dataset from cache: {cache_file}")
+            dataset = pickle.load(cache_file.open("rb"))
+        else:
+            loaders = self.value
+            dataset = ArcTrainingDataset(loaders=loaders)
+            dataset.filter(max_height=max_height, max_width=max_width)
+            dataset.augment(min_test=min_test, max_test=max_test, max_train=max_train, min_train=min_train)
+            pickle.dump(dataset, cache_file.open("wb"))
+        return dataset

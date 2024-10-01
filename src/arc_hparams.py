@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from .dataset import ArcExamplesDataset
 from .multilevel_loss import MultiLevelLoss, exp_spacing
 from .repl import REPL, REPLConfig
-from .task import TRAIN_EVAL_COLLECTION, TRAIN_ONLY_COLLECTION, ArcTrainingDataset
+from .task import DatasetLoader
 from .tokenizer import ArcTokenizer
 from .trainer import Hparams
 from .utils import get_logger
@@ -71,15 +71,17 @@ class ArcHparams(Hparams):
 
     def build_state(self):
         self.reset_state()
-        training_data: ArcTrainingDataset = TRAIN_EVAL_COLLECTION if self.data.include_eval else TRAIN_ONLY_COLLECTION 
-        training_data.filter(max_height=45, max_width=45)
+        dataset_loader = DatasetLoader.TRAIN_EVAL if self.data.include_eval else DatasetLoader.TRAIN_ONLY 
         logger.info(f"Augmenting examples to be in range:\n Test: [{self.data.min_test_pp}, {self.data.max_test_pp}], Train:[{self.data.min_train_pp}, {self.data.max_train_pp}]")
 
-        training_data.augment(min_test=self.data.min_test_pp,
-                            max_test=self.data.max_test_pp,
-                            max_train=self.data.max_train_pp,
-                            min_train=self.data.min_train_pp)
-        
+        training_data = dataset_loader.load(
+            max_height=self.data.max_height,
+            max_width=self.data.max_width,
+            min_test=self.data.min_test_pp,
+            max_test=self.data.max_test_pp,
+            max_train=self.data.max_train_pp,
+            min_train=self.data.min_train_pp,
+        )
         training_data.stats()
 
         train_examples = training_data.train_examples

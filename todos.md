@@ -58,11 +58,11 @@ don't access future tokens making it causal by default)
 - [x] Measure the impact of wandb logging. Remove excessive logging. Adds 8-10 ms. I am going to keep it
 - [x] Add min max option num examples option to the data
 - [x] Make data loading astonishingly fast 
-- [ ] Cache data for training
+- [x] Cache data for training
+- [ ] Refresh data every 5 epochs
 - [ ] Do a single batch test and then see if see if permuting the input changes the output. All valid inputs should affect the output, but not the invalid tokens
 - [ ] Test torch scripted model for training
 - [ ] Number of params in the model (vs Computation Equivalent Params)
-- [ ] Refresh data every 5 epochs
 - [ ] Will it be faster to apply log head in one go?
 
 - [ ] Use ARC verifiers to generate novel valid programs
