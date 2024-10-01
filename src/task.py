@@ -392,40 +392,66 @@ class ArcTrainingDataset:
 
         self._train = new_train
         self._test = new_test
-    
-    def augment(self, num_train_per_prog=100, max_test_per_prog=2):
+
+
+    def augment(self, min_train=50, max_train=None, min_test=3, max_test=None):
+        # Set max_train and max_test to min values if not provided
+        if max_train is None:
+            max_train = min_train
+        if max_test is None:
+            max_test = min_test
+
+        # Assert that min values are less than or equal to max values
+        assert min_train <= max_train, "min_train should be less than or equal to max_train"
+        assert min_test <= max_test, "min_test should be less than or equal to max_test"
+
         new_train = defaultdict(list)
         new_test = defaultdict(list)
 
         for prog_id in self.train.keys():
-            # Migrate excess test examples to train
-            num_test_examples = len(self.test[prog_id])
-            test_examples_to_keep = list(range(num_test_examples))
+            # Get current test examples
+            test_examples = self.test[prog_id]
+            num_test = len(test_examples)
 
-            if num_test_examples > max_test_per_prog:
-                test_examples_to_keep = random.sample(test_examples_to_keep, max_test_per_prog)
-                # print(f"Reducing test examples for {prog_id} from {num_test_examples} to {num_test_per_prog}")
-                # print(test_examples_to_keep)
+            # Adjust test examples to be within min_test and max_test
+            if num_test > max_test:
+                # Reduce test examples
+                keep_indices = random.sample(range(num_test), max_test)
+                kept_test_examples = [test_examples[i] for i in keep_indices]
+                discarded_test_examples = [test_examples[i] for i in range(num_test) if i not in keep_indices]
+            else:
+                kept_test_examples = test_examples.copy()
+                discarded_test_examples = []
+                # Augment test examples if below min_test
+                if num_test < min_test:
+                    num_to_augment = min_test - num_test
+                    augment_examples = [random.choice(kept_test_examples) for _ in range(num_to_augment)]
+                    augmented_tests = [example.augment() for example in augment_examples]
+                    kept_test_examples.extend(augmented_tests)
 
-            for idx in test_examples_to_keep:
-                new_test[prog_id].append(self.test[prog_id][idx])
+            new_test[prog_id] = kept_test_examples
 
-            discarded_test_examples =  [self.test[prog_id][idx] for idx in range(num_test_examples) if idx not in test_examples_to_keep]
-            new_train_examples = self._train[prog_id] + discarded_test_examples
+            # Prepare train examples by adding discarded test examples first
+            train_examples = self.train[prog_id] + discarded_test_examples
+            num_train = len(train_examples)
 
-            ## Add augmented examples to train if needed
-            num_missing_train_examples = max(num_train_per_prog - len(new_train_examples), 0)
-            examples_to_augment = [random.choice(new_train_examples)  for _ in range(num_missing_train_examples)]
-            augmented_train_examples = [example.augment() for example in examples_to_augment]
-            all_train_examples = new_train_examples + augmented_train_examples
+            # If train examples are less than min_train, augment after using discarded test examples
+            if num_train < min_train:
+                num_to_augment = min_train - num_train
+                augment_examples = [random.choice(train_examples) for _ in range(num_to_augment)]
+                augmented_trains = [example.augment() for example in augment_examples]
+                train_examples.extend(augmented_trains)
+                num_train = len(train_examples)
 
-            ## Discard any excess train examples
-            training_examples_kept = random.sample(all_train_examples, num_train_per_prog)
-            new_train[prog_id] = training_examples_kept
+            # Ensure train_examples do not exceed max_train
+            if num_train > max_train:
+                train_examples = random.sample(train_examples, max_train)
 
+            new_train[prog_id] = train_examples
 
         self._train = new_train
         self._test = new_test
+
 
 #%%
 ARC_NOSOUND = ArcTasksLoader(name='ARC_NOSOUND', path='data/arc_dataset_collection/dataset/nosound/data')

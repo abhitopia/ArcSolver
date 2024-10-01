@@ -73,9 +73,12 @@ class ArcHparams(Hparams):
         self.reset_state()
         training_data: ArcTrainingDataset = TRAIN_EVAL_COLLECTION if self.data.include_eval else TRAIN_ONLY_COLLECTION 
         training_data.filter(max_height=45, max_width=45)
-        training_data.augment(
-                            num_train_per_prog=self.data.num_train_per_program,
-                            max_test_per_prog=self.data.max_test_per_program)
+        logger.info(f"Augmenting examples to be in range:\n Test: [{self.data.min_test_pp}, {self.data.max_test_pp}], Train:[{self.data.min_train_pp}, {self.data.max_train_pp}]")
+
+        training_data.augment(min_test=self.data.min_test_pp,
+                            max_test=self.data.max_test_pp,
+                            max_train=self.data.max_train_pp,
+                            min_train=self.data.min_train_pp)
         
         training_data.stats()
 

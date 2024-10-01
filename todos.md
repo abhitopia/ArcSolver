@@ -51,10 +51,17 @@ don't access future tokens making it causal by default)
 - [x] Add synthetic tasks
 - [x] Remove any samples with > max_seq_len input or output
 - [x] Let the training begin
-
 - [x] Add fork support and resume the previous training (with export CUDA_LAUNCH_BLOCKING=1)
+
+- [x] Test training on a single batch?
+- [x] Change state_agg positional embedding to use Rope Instead. (Not needed. I have changed to use GRU which is much faster)
+- [x] Measure the impact of wandb logging. Remove excessive logging. Adds 8-10 ms. I am going to keep it
+- [x] Add min max option num examples option to the data
 - [ ] Cache data for training
 - [ ] Test torch scripted model for training
+- [ ] Number of params in the model (vs Computation Equivalent Params)
+- [ ] Refresh data every 5 epochs
+- [ ] Will it be faster to apply log head in one go?
 
 - [ ] Use ARC verifiers to generate novel valid programs
 - [ ] Port beam search to the new model
@@ -63,7 +70,7 @@ don't access future tokens making it causal by default)
 - [x] (Top-K progressive loss + exponential weighted?) Implemented MultiLevelLoss
 - [x] Add the augmentation scale to different datasets (Archived in favour of num of examples per task)
 
-
+import ipdb; ipdb.set_trace()
 
 # V2 TODOS
 - [x] Move current code to a separate branch
