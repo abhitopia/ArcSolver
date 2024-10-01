@@ -240,79 +240,79 @@ class TransformerBlock(nn.Module):
         return x, new_kv_cache
 
 
-class StateAggregator(nn.Module):
-    def __init__(self, config: REPLConfig) -> None:
-        super().__init__()
-        self.config = config
-        self.n_state_layer = config.n_state_layer
-        self.pos_emb = nn.Embedding(config.n_iter+1, config.n_dim)
-        self.blocks = nn.ModuleList([TransformerBlock(config, rope=None) for _ in range(self.n_state_layer)])
-        self.rms_out = RMSNorm(config.n_dim)
+# class StateAggregator(nn.Module):
+#     def __init__(self, config: REPLConfig) -> None:
+#         super().__init__()
+#         self.config = config
+#         self.n_state_layer = config.n_state_layer
+#         self.pos_emb = nn.Embedding(config.n_iter+1, config.n_dim)
+#         self.blocks = nn.ModuleList([TransformerBlock(config, rope=None) for _ in range(self.n_state_layer)])
+#         self.rms_out = RMSNorm(config.n_dim)
 
-    def get_causal_mask(self, qT: int, kT: int, device: torch.device):
-        offset = kT - qT
-        causal_mask = torch.ones(1, qT, kT, dtype=torch.bool, device=device).tril(diagonal=offset).unsqueeze(1)
-        return causal_mask
+#     def get_causal_mask(self, qT: int, kT: int, device: torch.device):
+#         offset = kT - qT
+#         causal_mask = torch.ones(1, qT, kT, dtype=torch.bool, device=device).tril(diagonal=offset).unsqueeze(1)
+#         return causal_mask
 
-    def forward_nocache(self, x: List[Tensor]) -> Tensor:
-        B, T, D = x[0].size()
-        x_cat = torch.stack(x, dim=2) # (B, T, n_iter, D)
-        x_cat = x_cat.reshape(B*T, -1, D)
-        n_iters = x_cat.size(1)
+#     def forward_nocache(self, x: List[Tensor]) -> Tensor:
+#         B, T, D = x[0].size()
+#         x_cat = torch.stack(x, dim=2) # (B, T, n_iter, D)
+#         x_cat = x_cat.reshape(B*T, -1, D)
+#         n_iters = x_cat.size(1)
 
-        x_pos = torch.arange(n_iters, device=x[0].device).unsqueeze(0)
-        x_pos_emb = self.pos_emb(x_pos)
+#         x_pos = torch.arange(n_iters, device=x[0].device).unsqueeze(0)
+#         x_pos_emb = self.pos_emb(x_pos)
 
-        x_cat = x_cat + x_pos_emb
-        attn_mask = self.get_causal_mask(n_iters, n_iters, x_cat.device)
+#         x_cat = x_cat + x_pos_emb
+#         attn_mask = self.get_causal_mask(n_iters, n_iters, x_cat.device)
 
-        for idx, block in enumerate(self.blocks):
-            x_cat, _ = block(x_cat,
-                        attn_mask=attn_mask,
-                        positions=None,
-                        return_kv_cache=False)
+#         for idx, block in enumerate(self.blocks):
+#             x_cat, _ = block(x_cat,
+#                         attn_mask=attn_mask,
+#                         positions=None,
+#                         return_kv_cache=False)
         
-        # Reshape back to (B, T, C)
-        output = x_cat[:, -1, :].reshape(B, T, D)
-        output = self.rms_out(output)
-        return output, None
+#         # Reshape back to (B, T, C)
+#         output = x_cat[:, -1, :].reshape(B, T, D)
+#         output = self.rms_out(output)
+#         return output, None
     
-    def forward(self, x: List[Tensor], kv_caches: Optional[List[Tuple[Tensor, Tensor]]] = None):
-        B, T, D = x[-1].size()
-        past_iters = 0 if kv_caches is None else kv_caches[0][0].size(2)
-        n_iters = len(x)
-        new_iters = n_iters - past_iters
-        x_cat = torch.stack(x[-new_iters:], dim=2) # (B, T, new_iters, D)
-        x_cat = x_cat.reshape(B*T, -1, D)
-        x_pos = torch.arange(past_iters, n_iters, device=x[0].device).unsqueeze(0)
-        x_pos_emb = self.pos_emb(x_pos)
+#     def forward(self, x: List[Tensor], kv_caches: Optional[List[Tuple[Tensor, Tensor]]] = None):
+#         B, T, D = x[-1].size()
+#         past_iters = 0 if kv_caches is None else kv_caches[0][0].size(2)
+#         n_iters = len(x)
+#         new_iters = n_iters - past_iters
+#         x_cat = torch.stack(x[-new_iters:], dim=2) # (B, T, new_iters, D)
+#         x_cat = x_cat.reshape(B*T, -1, D)
+#         x_pos = torch.arange(past_iters, n_iters, device=x[0].device).unsqueeze(0)
+#         x_pos_emb = self.pos_emb(x_pos)
 
-        x_cat = x_cat + x_pos_emb
+#         x_cat = x_cat + x_pos_emb
 
-        attn_mask = self.get_causal_mask(new_iters, n_iters, x_cat.device)
-        # NOTE: In incremental setting, even if attn_mask is None, (full non-causal attention)
-        # The fact that previous states are cached and don't access the future states means that
-        # the model is still causal.
-        # attn_mask: Optional[torch.Tensor] = None
+#         attn_mask = self.get_causal_mask(new_iters, n_iters, x_cat.device)
+#         # NOTE: In incremental setting, even if attn_mask is None, (full non-causal attention)
+#         # The fact that previous states are cached and don't access the future states means that
+#         # the model is still causal.
+#         # attn_mask: Optional[torch.Tensor] = None
 
 
-        updated_kv_caches: List[Tuple[Tensor, Tensor]] = []
-        for idx, block in enumerate(self.blocks):
-            x_cat, kv_cache = block(
-                                x_cat,
-                                attn_mask=attn_mask,
-                                positions=None,
-                                kv_cache=kv_caches[idx] if kv_caches is not None else None,
-                                return_kv_cache=True)
+#         updated_kv_caches: List[Tuple[Tensor, Tensor]] = []
+#         for idx, block in enumerate(self.blocks):
+#             x_cat, kv_cache = block(
+#                                 x_cat,
+#                                 attn_mask=attn_mask,
+#                                 positions=None,
+#                                 kv_cache=kv_caches[idx] if kv_caches is not None else None,
+#                                 return_kv_cache=True)
             
-            if kv_cache is not None:
-                updated_kv_caches.append(kv_cache)
+#             if kv_cache is not None:
+#                 updated_kv_caches.append(kv_cache)
 
-        # Reshape back to (B, T, C)
-        output = x_cat[:, -1, :].reshape(B, T, D)
-        output = self.rms_out(output)
+#         # Reshape back to (B, T, C)
+#         output = x_cat[:, -1, :].reshape(B, T, D)
+#         output = self.rms_out(output)
 
-        return output, updated_kv_caches
+#         return output, updated_kv_caches
 
 
 class Interpreter(nn.Module):
@@ -351,6 +351,52 @@ class Interpreter(nn.Module):
 
         x = self.rms_out(x)
         return x, loop_kv_caches
+
+
+
+
+class StateAggregatorRNN(nn.Module):
+    def __init__(self, config: REPLConfig):
+        super().__init__()
+        self.config = config
+        self.hidden_size = config.n_dim
+        self.rnn = nn.GRU(
+            input_size=config.n_dim,
+            hidden_size=config.n_dim,
+            num_layers=1,
+            batch_first=True,
+        )
+        self.rms_out = RMSNorm(config.n_dim)
+
+
+    def forward(self, x_current: Tensor, h_prev: Optional[Tensor] = None):
+        """
+        Args:
+            x_current (Tensor): Current state tensor of shape (B, T, D).
+            h_prev (Tensor, optional): Previous hidden state of shape (B, T, D). Defaults to None.
+        Returns:
+            output (Tensor): Output tensor of shape (B, T, D).
+            h_new (Tensor): New hidden state of shape (B, T, D).
+        """
+        B, T, D = x_current.shape
+        x_input = x_current.view(B * T, 1, D)  # Reshape to (B*T, seq_len=1, D)
+        if h_prev is not None:
+            h_prev = h_prev.unsqueeze(0).view(1, B * T, self.hidden_size)
+        else:
+            h_prev = torch.zeros(1, B * T, self.hidden_size, device=x_current.device)
+
+        # Process the current state with the previous hidden state
+        output, h_new = self.rnn(x_input, h_prev)  # output: (B*T, 1, D), h_new: (n_layers, B*T, D)
+
+        # Reshape the output back to (B, T, D)
+        output = output[:, -1, :].view(B, T, D)
+        output = self.rms_out(output)
+
+        # Reshape h_new back to (n_layers, B*T, D) -> (B, T, D)
+        h_new = h_new.view(1, B, T, self.hidden_size).squeeze(0)
+
+        return output, h_new
+
 
 class REPL(nn.Module):
     def __init__(self,
@@ -394,7 +440,7 @@ class REPL(nn.Module):
         self.register_buffer('out_grid_type_idx', (4 * dummy_idx.clone()))
 
         self.interpreter = Interpreter(config)
-        self.state_agg = StateAggregator(config)
+        self.state_agg = StateAggregatorRNN(config)
 
         self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
                 
@@ -475,26 +521,33 @@ class REPL(nn.Module):
         enc_dec_inp = torch.cat([enc_inp, dec_inp], dim=1)
         enc_dec_indices = torch.cat([enc_indices, dec_indices], dim=1)
 
-        logits = []
-        iter_states = [enc_dec_inp]
+        # logits = []
+        # iter_states = []
+
+        iter_outs = []
 
         updated_kv_cache: List[List[Tuple[Tensor, Tensor]]] = [] 
 
-        current_state, states_kv_cache = self.state_agg(iter_states, None)
+        current_state = enc_dec_inp
+        # current_state, states_kv_cache = self.state_agg(iter_states, None)
         for i in range(self.num_iters):
-            new_state, iter_kv_cache = self.interpreter(
+            interpreter_out, iter_kv_cache = self.interpreter(
                                             x=current_state,
                                             attn_mask=attn_mask,
                                             positions=enc_dec_indices,
                                             kv_cache=None,
                                             return_kv_caches=return_cache)
-            iter_states.append(new_state)
-            current_state, states_kv_cache = self.state_agg(iter_states, states_kv_cache)
-            logits_i = self.lm_head(current_state[:, dec_start_idx:, :])
-            logits.append(logits_i)
-
+            
+            agg_out, current_state = self.state_agg(interpreter_out, current_state)
+            iter_outs.append(agg_out)
+            # current_state, states_kv_cache = self.state_agg(iter_states, states_kv_cache)
+            # logits_i = self.lm_head(current_state[:, dec_start_idx:, :])
+            # logits.append(logits_i)
             if iter_kv_cache is not None:
                 updated_kv_cache.append(iter_kv_cache)
+
+        iter_outs = torch.stack(iter_outs, dim=0)
+        logits = self.lm_head(iter_outs[:, :, dec_start_idx:, :])
 
         cache = (updated_kv_cache, enc_valid_mask, dec_valid_mask) if return_cache else None
         return logits, cache
