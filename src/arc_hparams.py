@@ -83,8 +83,8 @@ class ArcHparams(Hparams):
         logger.info(f"Augmenting examples to be in range:\n Test: [{self.data.min_test_pp}, {self.data.max_test_pp}], Train:[{self.data.min_train_pp}, {self.data.max_train_pp}]")
 
         training_data = dataset_loader.load(
-            max_height=self.data.max_height,
-            max_width=self.data.max_width,
+            max_height=45,
+            max_width=45,
             min_test=self.data.min_test_pp,
             max_test=self.data.max_test_pp,
             max_train=self.data.max_train_pp,

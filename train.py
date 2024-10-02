@@ -81,7 +81,7 @@ def train(
         min_test_pp: Optional[int] = typer.Option(1, help="Minimum number of Test Examples Per Program"),
         max_test_pp: Optional[int] = typer.Option(3, help="Maximum number of Test Examples Per Program"),
         include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
-        permute: bool = typer.Option(False, help="Permute the training set for each batch"),
+        permute: bool = typer.Option(True, help="Permute the training set for each batch"),
 
         # Misc Config
         n_steps: Optional[int] = typer.Option(1000000, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
@@ -157,9 +157,9 @@ def train(
     hparams.add_params(prefix="model", **model_config)
     hparams.add_params(prefix="optim", **optimizer_config)
 
-    assert n_steps >= hparams.lr_warmpup_steps + hparams.lr_decay_steps, f"Number of steps {n_steps} must be greater than warmup steps {hparams.lr_warmup_steps} + decay steps {hparams.lr_decay_steps}"
-    if hparams.lr_min_scale == 0.0:
-        assert n_steps == hparams.lr_warmup_steps + hparams.lr_decay_steps, f"Learning rate goes to zero before training finishes. Set lr_min_scale to a value greater than 0.0 or increase decay steps"
+    assert n_steps >= hparams.optim.lr_warmup_steps + hparams.optim.lr_decay_steps, f"Number of steps {n_steps} must be greater than warmup steps {hparams.optim.lr_warmup_steps} + decay steps {hparams.optim.lr_decay_steps}"
+    if hparams.optim.lr_min_scale == 0.0:
+        assert n_steps == hparams.optim.lr_warmup_steps + hparams.optim.lr_decay_steps, f"Learning rate goes to zero before training finishes. Set lr_min_scale to a value greater than 0.0 or increase decay steps"
 
     if debug:
         hparams.run = f"debug_{hparams.run}"
@@ -298,9 +298,9 @@ def fork(
     override_hparams(hparams.model, model_config)
     override_hparams(hparams.optim, optimizer_config)
 
-    assert n_steps >= hparams.lr_warmpup_steps + hparams.lr_decay_steps, f"Number of steps {n_steps} must be greater than warmup steps {hparams.lr_warmup_steps} + decay steps {hparams.lr_decay_steps}"
-    if hparams.lr_min_scale == 0.0:
-        assert n_steps == hparams.lr_warmup_steps + hparams.lr_decay_steps, f"Learning rate goes to zero before training finishes. Set lr_min_scale to a value greater than 0.0 or increase decay steps"
+    assert n_steps >= hparams.optim.lr_warmup_steps + hparams.optim.lr_decay_steps, f"Number of steps {n_steps} must be greater than warmup steps {hparams.optim.lr_warmup_steps} + decay steps {hparams.optim.lr_decay_steps}"
+    if hparams.optim.lr_min_scale == 0.0:
+        assert n_steps == hparams.optim.lr_warmup_steps + hparams.optim.lr_decay_steps, f"Learning rate goes to zero before training finishes. Set lr_min_scale to a value greater than 0.0 or increase decay steps"
 
 
     if debug:
