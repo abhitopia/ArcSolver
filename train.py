@@ -60,8 +60,9 @@ def train(
         # Learning Rate Config
         mlr: Optional[float] = typer.Option(0.001, min=-1.0, help="Learning Rate"),
         plr: Optional[float] = typer.Option(0.001, min=0.0, help="Program Learning Rate. If None, then it is set to mlr"),
-        lr_warmup: int = typer.Option(2_000, min=0, help="Number of steps for learning rate warmup. Only used for noam and lindecay scheduler"),
-        lr_decay: int = typer.Option(30_000, min=0, help="Number of steps for learning rate decay. Only used for noam and lindecay scheduler"),
+        lr_warmup: int = typer.Option(3_000, min=0, help="Number of steps for learning rate warmup. Only used for noam and lindecay scheduler"),
+        lr_min_scale: Optional[float] = typer.Option(0.0, min=0.0, help="Learning Rate reached after decay phase is obtained by scaling the max learning rate by this factor"),
+        lr_decay: int = typer.Option(None, min=0, help="Number of steps for learning rate decay. If None, then it is set to n_steps - lr_warmup"),
         lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
 
         # Regularisation/ Weight Decay Config
@@ -145,7 +146,8 @@ def train(
         "lr_prog": plr if not lr_find else 1,
         "lr_schedule": lr_schedule.value if isinstance(lr_schedule, LRSchedule) else lr_schedule,
         "lr_warmup_steps": lr_warmup,
-        "lr_decay_steps": lr_decay,
+        "lr_decay_steps": lr_decay if lr_decay is not None else n_steps - lr_warmup,
+        "lr_min_scale": lr_min_scale,
 
         # Misc
         "clear_cache_interval": clear_cache_interval,
@@ -154,6 +156,10 @@ def train(
     hparams.add_params(prefix="data", **data_config)
     hparams.add_params(prefix="model", **model_config)
     hparams.add_params(prefix="optim", **optimizer_config)
+
+    assert n_steps >= hparams.lr_warmpup_steps + hparams.lr_decay_steps, f"Number of steps {n_steps} must be greater than warmup steps {hparams.lr_warmup_steps} + decay steps {hparams.lr_decay_steps}"
+    if hparams.lr_min_scale == 0.0:
+        assert n_steps == hparams.lr_warmup_steps + hparams.lr_decay_steps, f"Learning rate goes to zero before training finishes. Set lr_min_scale to a value greater than 0.0 or increase decay steps"
 
     if debug:
         hparams.run = f"debug_{hparams.run}"
@@ -172,7 +178,7 @@ def train(
     if lr_find:
         trainer.find_lr()
     else:
-        trainer.train(max_steps=n_steps if n_steps is not None else hparams.optim.lr_decay_steps + hparams.optim.lr_warmup_steps)
+        trainer.train(max_steps=n_steps)
 
 
 @app.command("fork")
@@ -191,13 +197,14 @@ def fork(
         mctp: Optional[float] = typer.Option(None, min=0.0, help="Min Correct Tokens Percentage"),
 
         # Misc Config
-        n_steps: Optional[int] = typer.Option(1000_000, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
+        n_steps: Optional[int] = typer.Option(1_000_000, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
         seed: Optional[int] = typer.Option(None, min=0, help="Random seed for the data and experiment"),
 
         # Learning Rate Config
         mlr: Optional[float] = typer.Option(None, min=0.0, help="Learning Rate"),
         plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is set to mlr"),
         lr_warmup: Optional[int] = typer.Option(None, min=0, help="Number of steps for learning rate warmup. Only used for noam and lindecay scheduler"),
+        lr_min_scale: Optional[float] = typer.Option(None, min=0.0, help="Learning Rate reached after decay phase is obtained by scaling the max learning rate by this factor"),
         lr_decay: Optional[int] = typer.Option(None, min=0, help="Number of steps for learning rate decay. Only used for noam and lindecay scheduler"),
         lr_schedule: Optional[LRSchedule] = typer.Option(None, help="Learning rate scheduler. Options: noam, alt, const"),
 
@@ -276,6 +283,7 @@ def fork(
         "lr_prog": plr if not lr_find else 1,
         "lr_schedule": lr_schedule.value if isinstance(lr_schedule, LRSchedule) else None,
         "lr_warmup_steps": lr_warmup,
+        "lr_min_scale": lr_min_scale,
         "lr_decay_steps": lr_decay,
     }
 
@@ -289,6 +297,11 @@ def fork(
     override_hparams(hparams.data, data_config)
     override_hparams(hparams.model, model_config)
     override_hparams(hparams.optim, optimizer_config)
+
+    assert n_steps >= hparams.lr_warmpup_steps + hparams.lr_decay_steps, f"Number of steps {n_steps} must be greater than warmup steps {hparams.lr_warmup_steps} + decay steps {hparams.lr_decay_steps}"
+    if hparams.lr_min_scale == 0.0:
+        assert n_steps == hparams.lr_warmup_steps + hparams.lr_decay_steps, f"Learning rate goes to zero before training finishes. Set lr_min_scale to a value greater than 0.0 or increase decay steps"
+
 
     if debug:
         hparams.run = f"debug_{hparams.run}"
@@ -313,7 +326,7 @@ def fork(
     if lr_find:
         trainer.find_lr()
     else:
-        trainer.train(max_steps=n_steps if n_steps is not None else hparams.optim.lr_decay_steps + hparams.optim.lr_warmup_steps)
+        trainer.train(max_steps=n_steps)
 
 
 @app.command("info")

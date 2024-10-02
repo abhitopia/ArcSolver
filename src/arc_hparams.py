@@ -16,24 +16,34 @@ from .utils import get_logger
 logger = get_logger()
 
 
-def noam_schedule(step, warmup_steps, max_steps, min_lr_scale=0.1):
+def noam_schedule(step, warmup_steps, decay_steps, min_lr_scale=0.1):
+    """
+    Computes the learning rate at a given step based on the adjusted Noam scheduler.
+
+    Args:
+        step (int): Current training step.
+        warmup_steps (int): Number of warmup steps.
+        decay_steps (int): Number of steps for cosine decay.
+        min_lr_scale (float): Scaling factor for the minimum learning rate.
+
+    Returns:
+        float: Learning rate at the current step.
+    """
     max_lr = 1.0
     min_lr = max_lr * min_lr_scale
-    # num_step_in_epoch = self.state['num_train_batches']
-    # warmup_steps = num_step_in_epoch * config.lr_warmup_epochs
-    # max_steps = num_step_in_epoch * config.lr_decay_epochs
+    step_until_decay = warmup_steps + decay_steps
 
-    # 1) linear warmup for warmup_iters steps
     if step < warmup_steps:
+        # Linear warmup
         return max_lr * (step + 1) / warmup_steps
-    # 2) if it > lr_decay_iters, return min learning rate
-    if step > max_steps:
-        return min_lr
-    # 3) in between, use cosine decay down to min learning rate
-    decay_ratio = (step - warmup_steps) / (max_steps - warmup_steps)
-    assert 0 <= decay_ratio <= 1
-    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
-    return min_lr + coeff * (max_lr - min_lr)
+    elif step <= step_until_decay:
+        # Cosine decay
+        decay_ratio = (step - warmup_steps) / (step_until_decay - warmup_steps)
+        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))
+        return min_lr + coeff * (max_lr - min_lr)
+    else:
+        # Inverse square root decay
+        return min_lr * (step_until_decay / step) ** 0.5
 
 
 def const_schedule(step, warmup_steps):
@@ -43,21 +53,19 @@ def const_schedule(step, warmup_steps):
     
     return max_lr
 
-def lin_decay_schedule(step, warmup_steps, max_steps, min_lr_scale=0.1):
+def lin_decay_schedule(step, warmup_steps, decay_steps, min_lr_scale=0.1):
     max_lr = 1.0
     min_lr = max_lr * min_lr_scale
-    # num_step_in_epoch = self.state['num_train_batches']
-    # warmup_steps = num_step_in_epoch * config.lr_warmup_epochs
-    # max_steps = num_step_in_epoch * config.lr_decay_epochs
+    step_until_decay = warmup_steps + decay_steps
 
     # 1) linear warmup for warmup_iters steps
     if step < warmup_steps:
         return max_lr * (step + 1) / warmup_steps
     # 2) if it > lr_decay_iters, return min learning rate
-    if step > max_steps:
+    if step > step_until_decay:
         return min_lr
     # 3) in between, use linear decay down to min learning rate
-    decay_ratio = (step - warmup_steps) / (max_steps - warmup_steps)
+    decay_ratio = (step - warmup_steps) / (step_until_decay - warmup_steps)
     assert 0 <= decay_ratio <= 1
     return max_lr - decay_ratio * (max_lr - min_lr)
 
@@ -178,11 +186,13 @@ class ArcHparams(Hparams):
     def init_scheduler(self, optimizer)-> optim.lr_scheduler.LambdaLR:
         config = self.optim
         warmup_steps = config.lr_warmup_steps
-        max_steps = config.lr_warmup_steps +  config.lr_decay_steps
+        decay_steps = config.lr_decay_steps
+        lr_min_scale = config.lr_min_scale
+
         if config.lr_schedule == 'noam': 
-            schedule = lambda step: noam_schedule(step, warmup_steps, max_steps)
+            schedule = lambda step: noam_schedule(step, warmup_steps, decay_steps, lr_min_scale)
         elif config.lr_schedule == 'lindecay':
-            schedule = lambda step: lin_decay_schedule(step, warmup_steps, max_steps)
+            schedule = lambda step: lin_decay_schedule(step, warmup_steps, decay_steps)
         elif config.lr_schedule == 'const':
             schedule = lambda step: const_schedule(step, warmup_steps)
         elif config.lr_schedule == 'alt':
