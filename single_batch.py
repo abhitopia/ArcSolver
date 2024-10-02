@@ -73,8 +73,8 @@ config = REPLConfig(
 
 x, y = create_test_inp(
     bs=50,
-    inp_seq_len=100, 
-    out_seq_len=100,
+    inp_seq_len=400, 
+    out_seq_len=400,
     grid_vocab_size=config.grid_vocab_size,
     tform_vocab_size=config.tform_vocab_size,
     perm_vocab_size=config.perm_vocab_size,
@@ -88,6 +88,9 @@ y = map_to_tensors(y, lambda y: y.to(device))
 #%%
 model = REPL(config)
 model.to(device)
+model = torch.jit.script(model)
+# model.to(device)
+
 count_parameters_detailed(model)
 loss_fn = MultiLevelLoss(
             pad_idx=0,
@@ -95,21 +98,80 @@ loss_fn = MultiLevelLoss(
             min_pct=0.4)
 # %%
 
-from torch.optim.adam import Adam
+from torch.optim.adamw import AdamW
 # from torch.optim.sgd import SGD
 
 # optimizer = SGD(model.parameters(), lr=1e-3)
-optimizer = Adam(model.parameters(), lr=1e-3)
+optimizer = AdamW(model.parameters(), lr=1e-3)
+
+#%%
+from src.task import DatasetLoader
+from src.tokenizer import ArcTokenizer
+from src.dataset import ArcExamplesDataset
+
+training_data = DatasetLoader.TRAIN_ONLY.load(
+    max_height=45,
+    max_width=45,
+    min_test=1,
+    max_test=3,
+    max_train=100,
+    min_train=100,
+)
+
+
+train_examples = training_data.train_examples
+
+tokenizer = ArcTokenizer()
+tokenizer.build_program_tokenizer(train_examples)
+
+train_ds = ArcExamplesDataset(train_examples, tokenizer)
+
+
+train_dl = train_ds.get_dataloader(token_count=20000,
+                                    pin_memory=False,
+                                    shuffle=True,
+                                    device=device,
+                                    num_workers=0)
 
 #%%
 import time
+
+for i, batch in enumerate(train_dl):
+    x, y = batch
+    x_new = MODEL_INPUT(
+        program=x.program,
+        color_permutation=x.color_permutation,
+        array_transform = x.array_transform,
+        grid = x.grid,
+        grid_indices=x.grid_indices,
+        meta=None
+    )
+    start_time = time.time()
+    optimizer.zero_grad()
+    iter_logits, _ = model(x_new, y)
+    loss = loss_fn(iter_logits, y.target_grid)
+
+    if i == 10:
+        break
+
+
+
 import torch.nn.functional as F
 num_iters = 100
 time_taken = 0
-for i in range(num_iters):
+for i, batch in enumerate(train_dl):
+    x, y = batch
+    x_new = MODEL_INPUT(
+        program=x.program,
+        color_permutation=x.color_permutation,
+        array_transform = x.array_transform,
+        grid = x.grid,
+        grid_indices=x.grid_indices,
+        meta=None
+    )
     start_time = time.time()
     optimizer.zero_grad()
-    iter_logits, _ = model(x, y)
+    iter_logits, _ = model(x_new, y)
     loss = loss_fn(iter_logits, y.target_grid)
 
     # targets = y.target_grid
@@ -126,6 +188,8 @@ for i in range(num_iters):
     end_time = time.time()
 
     time_taken += (end_time - start_time)
+    if i == num_iters - 1:
+        break
 
 print("Time Taken(ms)", (time_taken*1000)/num_iters)
 
