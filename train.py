@@ -46,7 +46,7 @@ def train(
         ebs: Optional[int] = typer.Option(None, min=1, help="Eval Batch Size (in tokens)"),
 
         # Model Config
-        n_dim: int = typer.Option(128, min=4, max=512, help="Dimension of the model"),
+        n_dim: int = typer.Option(128, min=4, max=1024, help="Dimension of the model"),
         n_embd: int = typer.Option(16, min=4, max=512, help="Embedding dimension"),
         n_head: int = typer.Option(4, min=1, max=64, help="Number of heads within each self-attention block"),
         n_layer: int = typer.Option(3, min=1, max=20, help="Number of blocks in the Interpreter"),
