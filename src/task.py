@@ -141,7 +141,7 @@ class Example:
 
         if arr_transform is None:
             ats = list(ArrayTransform)
-            transform = random.choice(ats)
+            arr_transform = random.choice(ats)
 
         # Try again if the identity transformation is selected with the identity color permutation
         if color_perm == ColorPermutation.CPID and arr_transform == ArrayTransform.IDENT:
