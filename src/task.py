@@ -331,17 +331,19 @@ class ArcTrainingDataset:
         ## Print color permutation and transformation distribution
         color_permutations = defaultdict(int)
         transformations = defaultdict(int)
-
+        dataset_counts = defaultdict(int)
         for prog_id in self.train.keys():
             train_examples = self.train[prog_id]
             test_examples = self.test[prog_id]
             for example in train_examples:
                 color_permutations[example.color_perm] += 1
                 transformations[example.transform] += 1
+                dataset_counts[example.dataset] += 1
 
             for example in test_examples:
                 color_permutations[example.color_perm] += 1
                 transformations[example.transform] += 1
+                dataset_counts[example.dataset] += 1
 
         logger.info("Color Permutations:")
         for k, v in sorted(color_permutations.items(), key=lambda x: x[1], reverse=True):
@@ -351,6 +353,23 @@ class ArcTrainingDataset:
         for k, v in sorted(transformations.items(), key=lambda x: x[1], reverse=True):
             logger.info(f"\t{k}: {v}")
 
+        total_datasets = sum(dataset_counts.values())
+        logger.info("Datasets:")
+        for k, v in sorted(dataset_counts.items(), key=lambda x: x[1], reverse=True):
+            logger.info(f"\t{k}: {v} ({v/total_datasets:.2f})")
+
+
+        # Number of program per dataset
+        dataset_progs = defaultdict(set)
+        for prog_id in self.train.keys():
+            for example in self.train[prog_id]:
+                dataset_progs[example.dataset].add(prog_id)
+        
+        logger.info("Programs per dataset:")
+        for k, v in sorted(dataset_progs.items(), key=lambda x: len(x[1]), reverse=True):
+            logger.info(f"\t{k}: {len(v)}")
+
+        
 
     @property
     def train(self):
@@ -500,7 +519,9 @@ train_collection = [
     ARC_SEQUENCE, 
     ARC_SYNTH_RIDDLES, 
     ARC_TAMA,
-    ARC_TRAIN
+    ARC_TRAIN,
+    ARC_REARC_EASY,
+    ARC_REARC_HARD
 ]
 
 

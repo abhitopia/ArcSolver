@@ -63,11 +63,13 @@ don't access future tokens making it causal by default)
 - [x] Refresh data every epoch. This should substantially reduce the dataset size. Added option to refresh data all the time
 - [x] Make learning rate decay forever (There seems to be a trend where the progress on the accuracy becomes linear as the learning rate flattens out)
 - [x] Test torch scripted model for training. The speed is not different.
-
-- [ ] Do a single batch test and then see if see if permuting the input changes the output. All valid inputs should affect the output, but not the invalid tokens
+- [x] Why is there no REARC in the training models? (It was not included in train_collection :facepalm:)
+- [ ] Try resuming training with new data
 - [ ] Number of params in the model (vs Computation Equivalent Params)
 
+- [ ] Do a single batch test and then see if see if permuting the input changes the output. All valid inputs should affect the output, but not the invalid tokens
 - [ ] Use ARC verifiers to generate novel valid programs
+
 - [ ] Port beam search to the new model
 
 - [ ] Ability to specify start step?
