@@ -423,7 +423,7 @@ class REPL(nn.Module):
             y: Optional[MODEL_OUTPUT] = None,
             num_iters: int = 8,
             return_cache: bool = False
-        )-> Tuple[List[Tensor], Optional[Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]]:
+        )-> Tuple[Tensor, Optional[Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]]:
 
         if y is None:
             bs = x.grid.size(0)
@@ -471,7 +471,7 @@ class REPL(nn.Module):
             next_y: MODEL_OUTPUT, 
             cache: Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor],
             num_iters: int = 8,
-        ) -> Tuple[List[Tensor], Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]:
+        ) -> Tuple[Tensor, Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]:
                    
         dec_inp, dec_valid_mask, dec_indices = self.contruct_decoder_input(next_y)
         seq_len = dec_inp.size(1)
@@ -484,27 +484,26 @@ class REPL(nn.Module):
         # Need to strip the attn_mask to match the size of decoder input
         attn_mask = attn_mask[:, :, -seq_len:, :]
 
-        logits = []
-        iter_states = [dec_inp]
-
+        iter_outs = []
         updated_kv_cache: List[List[Tuple[Tensor, Tensor]]] = []
-        current_state, states_kv_cache = self.state_agg(iter_states, None)
+
+        current_state = dec_inp
 
         for i in range(num_iters):
-            new_state, iter_kv_cache = self.interpreter(
+            interpreter_out, iter_kv_cache = self.interpreter(
                                             x=current_state,
                                             attn_mask=attn_mask,
                                             positions=dec_indices,
                                             kv_cache=past_kv_cache[i],
                                             return_kv_caches=True)
-
-            iter_states.append(new_state)
-            current_state, states_kv_cache = self.state_agg(iter_states, states_kv_cache)
-            logits_i = self.lm_head(current_state)
-            logits.append(logits_i)
-
+            
+            agg_out, current_state = self.state_agg(interpreter_out, current_state)
+            iter_outs.append(agg_out)
             # Store the updated kv-cache for this loop iteration
             updated_kv_cache.append(iter_kv_cache)
+
+        iter_outs = torch.stack(iter_outs, dim=0)
+        logits = self.lm_head(iter_outs)
 
         cache = (updated_kv_cache, past_enc_valid_mask, dec_valid_mask)
         return logits, cache
@@ -515,6 +514,7 @@ class REPL(nn.Module):
             prog_idx: int,
             input_grid: List[int],
             input_indices: List[Tuple[int, int]],
+            num_iters: int = 8,
             color_perm_idx: int = 0,
             array_tform_idx: int = 0,
             max_length: int = 30*30,
@@ -543,6 +543,7 @@ class REPL(nn.Module):
         _, cache = self.forward(
                 x=x,
                 y=None,
+                num_iters=num_iters,
                 return_cache=True
         )
 
@@ -567,7 +568,8 @@ class REPL(nn.Module):
 
             logits_iters, cache = self.forward_inc(
                 next_y=next_y,
-                cache=cache
+                cache=cache,
+                num_iters=num_iters
             )
 
             # Get the logits from the last iteration
@@ -603,7 +605,6 @@ class REPL(nn.Module):
         torch.set_grad_enabled(True)
         return output_list, output_log_prob
     
-    @torch.jit.ignore
     def get_optimizer(
             self, 
             model_lr,
