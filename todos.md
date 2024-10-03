@@ -64,7 +64,16 @@ don't access future tokens making it causal by default)
 - [x] Make learning rate decay forever (There seems to be a trend where the progress on the accuracy becomes linear as the learning rate flattens out)
 - [x] Test torch scripted model for training. The speed is not different.
 - [x] Why is there no REARC in the training models? (It was not included in train_collection :facepalm:)
-- [ ] Try resuming training with new data
+- [x] Try resuming training with new data
+- [ ] Something wrong with either tokenAcc or SampleAcc or both as I noticed SampleAcc would go to 100 while TokenAcc still remained 28%. Need to investigate
+
+
+- [ ] Try learning a single task on a really small network (with lots of augmentations)
+
+
+## New Training
+- [ ] Overfitting so use higher regularisation
+- [ ] Detangle the datasets. It seems combining ARC with REARC is hurting performance on ARC
 - [ ] Number of params in the model (vs Computation Equivalent Params)
 
 - [ ] Do a single batch test and then see if see if permuting the input changes the output. All valid inputs should affect the output, but not the invalid tokens
