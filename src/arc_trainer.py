@@ -88,7 +88,8 @@ class ArcTrainer(TrainerBase):
         output_mask = y != self.model.PAD_IDX
         mask_correct_tokens = correct_token_predictions & output_mask
         mask_correct_samples = output_mask.sum(axis=1) == mask_correct_tokens.sum(axis=1)
-        return mask_correct_tokens, mask_correct_samples
+        total_tokens = output_mask.sum().item()
+        return mask_correct_tokens, mask_correct_samples, total_tokens
 
     @torch.no_grad()
     def _add_step_metrics(self, loss, x, y, iter_logits, is_train):
@@ -112,40 +113,35 @@ class ArcTrainer(TrainerBase):
 
 
         for i, logits in enumerate(iter_logits):
-            correct_tokens_mask, correct_samples_mask = self._accuracy(logits, y.target_grid)
+            correct_tokens_mask, correct_samples_mask, total_tokens = self._accuracy(logits, y.target_grid)
+            num_tokens_correct = correct_tokens_mask.sum().item()
+            num_samples_correct = correct_samples_mask.sum().item()
+            total_samples_batch = y.grid.size(0)
             metrics_obj.add_metric(
                     f'TokenAcc/I{i+1}',
-                    correct_tokens_mask.sum().item(),
-                    y.grid.numel())
+                    num_tokens_correct,
+                    total_tokens)
             
             metrics_obj.add_metric(
                     f'SampleAcc/I{i+1}',
-                    correct_samples_mask.sum().item(), 
-                    y.grid.size(0))
-            
-            # Compute Sample Accuracy per level
-            for level, indices in level_indices.items():
-                correct_samples_in_level = correct_samples_mask[indices]
-                num_correct = correct_samples_in_level.sum().item()
-                total_samples = len(indices)
-                metrics_obj.add_metric(
-                    f'LevelAcc/I{i+1}_{level}',
-                    num_correct,
-                    total_samples)
+                    num_samples_correct, 
+                    total_samples_batch)
                 
-            # Compute Sample Accuracy per level per dataset
-            for (level, dataset), indices in level_dataset_indices.items():
-                correct_samples_in_group = correct_samples_mask[indices]
-                num_correct = correct_samples_in_group.sum().item()
-                total_samples = len(indices)
-                metrics_obj.add_metric(
-                    f'{dataset}/I{i+1}_{level}',
-                    num_correct,
-                    total_samples)
-            
+
+            # Only for last iteration!
             if i == len(iter_logits) - 1:
-                metrics_obj.add_metric('TokenAcc(%)', correct_tokens_mask.sum().item() * 100, y.grid.numel())
-                metrics_obj.add_metric('SampleAcc(%)', correct_samples_mask.sum() * 100, y.grid.size(0) )
+                metrics_obj.add_metric('TokenAcc(%)', num_samples_correct * 100, total_tokens)
+                metrics_obj.add_metric('SampleAcc(%)', num_samples_correct * 100, total_samples_batch)
+
+                # Compute Sample Accuracy per level
+                for level, indices in level_indices.items():
+                    correct_samples_in_level = correct_samples_mask[indices]
+                    num_correct = correct_samples_in_level.sum().item()
+                    total_samples = len(indices)
+                    metrics_obj.add_metric(
+                        f'LevelAcc(%)/L{level}',
+                        num_correct * 100,
+                        total_samples)
 
                 for dataset, indices in dataset_indices.items():
                     if not indices:
@@ -158,6 +154,17 @@ class ArcTrainer(TrainerBase):
                         num_correct * 100,
                         total_samples 
                     )
+
+                # Compute Sample Accuracy per level per dataset
+                for (level, dataset), indices in level_dataset_indices.items():
+                    correct_samples_in_group = correct_samples_mask[indices]
+                    num_correct = correct_samples_in_group.sum().item()
+                    total_samples = len(indices)
+                    metrics_obj.add_metric(
+                        f'{dataset}/L{level}',
+                        num_correct,
+                        total_samples)
+            
 
         metrics_obj.add_metric('BatchSize(#Tokens)', y.grid.numel())
         metrics_obj.add_metric('#Samples', y.grid.size(0))

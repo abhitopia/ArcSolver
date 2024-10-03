@@ -65,7 +65,8 @@ don't access future tokens making it causal by default)
 - [x] Test torch scripted model for training. The speed is not different.
 - [x] Why is there no REARC in the training models? (It was not included in train_collection :facepalm:)
 - [x] Try resuming training with new data
-- [ ] Something wrong with either tokenAcc or SampleAcc or both as I noticed SampleAcc would go to 100 while TokenAcc still remained 28%. Need to investigate
+- [x] Something wrong with either tokenAcc or SampleAcc or both as I noticed SampleAcc would go to 100 while TokenAcc still remained 28%. Need to investigate.
+        - There was a bug in tokenacc computation.
 
 
 - [ ] Try learning a single task on a really small network (with lots of augmentations)
