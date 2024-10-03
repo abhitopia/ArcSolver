@@ -130,7 +130,7 @@ class ArcTrainer(TrainerBase):
 
             # Only for last iteration!
             if i == len(iter_logits) - 1:
-                metrics_obj.add_metric('TokenAcc(%)', num_samples_correct * 100, total_tokens)
+                metrics_obj.add_metric('TokenAcc(%)', num_tokens_correct * 100, total_tokens)
                 metrics_obj.add_metric('SampleAcc(%)', num_samples_correct * 100, total_samples_batch)
 
                 # Compute Sample Accuracy per level
