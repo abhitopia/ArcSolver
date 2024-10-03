@@ -139,7 +139,7 @@ class ArcTrainer(TrainerBase):
                     num_correct = correct_samples_in_level.sum().item()
                     total_samples = len(indices)
                     metrics_obj.add_metric(
-                        f'LevelAcc(%)/L{level}',
+                        f'LevelAcc(%)/{level}',
                         num_correct * 100,
                         total_samples)
 
@@ -161,7 +161,7 @@ class ArcTrainer(TrainerBase):
                     num_correct = correct_samples_in_group.sum().item()
                     total_samples = len(indices)
                     metrics_obj.add_metric(
-                        f'{dataset}/L{level}',
+                        f'{dataset}/{level}',
                         num_correct,
                         total_samples)
             
