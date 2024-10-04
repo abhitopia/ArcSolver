@@ -51,8 +51,8 @@ def train(
 
         # Loss / Compute Config
         n_iter: int = typer.Option(8, min=2, help="Number of iterations for the model"),
-        edr: Optional[float] = typer.Option(2.0, min=0.0, help="Loss Error Decay Rate"),
-        mctp: Optional[float] = typer.Option(0.4, min=0.0, help="Min Correct Tokens Percentage"),
+        edr: Optional[float] = typer.Option(0.5, min=0.0, help="Loss Error Decay Rate"),
+        mctp: Optional[float] = typer.Option(0.3, min=0.0, help="Min Correct Tokens Percentage"),
 
         # Learning Rate Config
         mlr: Optional[float] = typer.Option(0.001, min=-1.0, help="Learning Rate"),
