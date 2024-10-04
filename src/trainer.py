@@ -14,12 +14,12 @@ import wandb
 import numpy as np
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 from collections import defaultdict
 from tqdm import tqdm
 from .utils import add_logfile_handler, add_logging_funcs, get_git_commit_hash, get_logger, map_to_tensors, migrate_hparam_dict
-from dataclasses import dataclass
-
+from dataclasses import dataclass, field
+from .lr_scheduler import LambdaLRWithReduceOnPlateau
 
 def gradfilter_ema(
     m: nn.Module,
@@ -91,6 +91,12 @@ class Hparams:
     seed: int = 1337  # Seed everything for reproducibility
     device: str = None # Device to use for training, None means automatically determine the best device
     eval_interval: Optional[int] = None # Evaluate every n steps, None means evaluate after every epoch
+    num_checkpoints_to_keep=3,
+    target_metric='loss',
+    target_metric_increases=False,
+    plateau_patience=3, # Number of target_metric evaluations to wait before reducing LR
+    plateau_factor=0.5, # Factor by which to reduce LR
+    console_metrics: Optional[List[str]] = field(default_factory=lambda: ['loss'])
     grok_alpha: Optional[float] = 0.0
     grok_lambda: Optional[float] = 0.0
 
@@ -106,7 +112,23 @@ class Hparams:
         assert self.grok_lambda >= 0, 'grok_lambda must be zero or a positive'
         assert self.grok_alpha == 0 or self.grok_lambda > 0, 'grok_lambda must be provided if grok_alpha is provided'
         assert self.grok_lambda == 0 or self.grok_alpha > 0, 'grok_alpha must be provided if grok_lambda is provideds'
+        self._seed_everything()
         self._state = {}
+
+    def _seed_everything(self):
+        self.logger.info(f'Seeding everything with seed: {self.seed}')
+        seed = self.seed
+        random.seed(seed)                       # Python's built-in random module
+        np.random.seed(seed)                    # NumPy's random module
+        torch.manual_seed(seed)                 # PyTorch's random number generator for CPU
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)         # PyTorch's random number generator for CUDA
+            torch.cuda.manual_seed_all(seed)     # for multi-GPU setups
+            torch.backends.cudnn.deterministic = True  # To increase reproducibility on GPU
+            torch.backends.cudnn.benchmark = False
+
+        if torch.backends.mps.is_available():
+            torch.mps.manual_seed(seed)
 
     def build_state(self):
         raise NotImplementedError('build_state method must be implemented')
@@ -124,7 +146,7 @@ class Hparams:
             else:
                 prefix_dict = getattr(self, prefix)
                 prefix_dict[k] = v
-    
+
     def reset_state(self):
         self._state = {}
 
@@ -141,11 +163,21 @@ class Hparams:
     def init_loss_fn(self)-> nn.Module:
         raise NotImplementedError('init_loss_fn method must be implemented')
     
-    def init_optimizer(self, model)-> optim.Optimizer:
+    def init_optimizer_and_lr_schedule(self, model)-> Tuple[optim.Optimizer, Union[Callable[[int], float], List[Callable[[int], float]]]]:
         raise NotImplementedError('init_optimizer method must be implemented')
     
-    def init_scheduler(self, optimizer)-> optim.lr_scheduler.LambdaLR:
-        raise NotImplementedError('init_scheduler method must be implemented')
+    def init_scheduler(self, optimizer, schedule)-> LambdaLRWithReduceOnPlateau:
+        scheduler = LambdaLRWithReduceOnPlateau(
+            optimizer,
+            lr_lambda=schedule,
+            mode='max' if self.target_metric_increases else 'min',
+            factor=self.plateau_factor,
+            patience=self.plateau_patience,
+            verbose=True
+        )
+
+        # scheduler._step_count = -1 # To prevent warning because initialation makes a first call to step automatically
+        return scheduler
 
     def as_dict(self):
         flat_dict = {} # not flat actually as wandb supports nested dicts
@@ -179,11 +211,7 @@ class TrainerBase:
                 parent_dir: Optional[Union[str, Path]] = None,
                 disable_checkpointing_and_logging=False,
                 prevent_overwrite=True,
-                logger: Optional[logging.Logger] = None,
-                num_checkpoints_to_keep=3,
-                checkpoint_metric='loss',
-                checkpoint_metric_increases=False,
-                console_metrics: Optional[List[str]] = ['Loss']
+                logger: Optional[logging.Logger] = None
             ):
         
         assert isinstance(hparams, Hparams), 'hparams must be an instance of Hparams'
@@ -219,6 +247,7 @@ class TrainerBase:
         self._device = None
         self._model = None
         self._optimizer = None
+        self._schedule = None
         self._scheduler = None
         self._train_dl = None
         self._eval_dl = None
@@ -227,7 +256,7 @@ class TrainerBase:
 
         self.train_metrics = MetricLogger()
         self.eval_metrics = MetricLogger()
-        self.console_metrics = set(console_metrics)
+        self.console_metrics = set(self.hparams.console_metrics)
 
         self.hparams.init_dataloaders()
         self._eval_at_start = False
@@ -246,10 +275,7 @@ class TrainerBase:
             mode="disabled" if self.disable_checkpointing_and_logging else "online"
         )
 
-        self.num_checkpoints_to_keep = num_checkpoints_to_keep
-        self.checkpoint_metric = checkpoint_metric
-        self.checkpoint_metrics = {}
-        self.checkpoint_metric_increases = checkpoint_metric_increases
+        self.target_metric_over_steps = {}
         self._ema_grads = None
 
 
@@ -276,13 +302,13 @@ class TrainerBase:
     @property
     def optimizer(self):
         if self._optimizer is None:
-            self._optimizer = self.hparams.init_optimizer(self.model)
+            self._optimizer, self._schedule = self.hparams.init_optimizer(self.model)
         return self._optimizer
     
     @property
     def scheduler(self):
         if self._scheduler is None:
-            self._scheduler = self.hparams.init_scheduler(self.optimizer)
+            self._scheduler = self.hparams.init_scheduler(self.optimizer, self._schedule)
         return self._scheduler
     
     @property
@@ -326,20 +352,6 @@ class TrainerBase:
         elif isinstance(_device, torch.device):
             return _device
 
-    def _seed_everything(self):
-        self.logger.info(f'Seeding everything with seed: {self.seed}')
-        seed = self.seed
-        random.seed(seed)                       # Python's built-in random module
-        np.random.seed(seed)                    # NumPy's random module
-        torch.manual_seed(seed)                 # PyTorch's random number generator for CPU
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed(seed)         # PyTorch's random number generator for CUDA
-            torch.cuda.manual_seed_all(seed)     # for multi-GPU setups
-            torch.backends.cudnn.deterministic = True  # To increase reproducibility on GPU
-            torch.backends.cudnn.benchmark = False
-
-        if torch.backends.mps.is_available():
-            torch.mps.manual_seed(seed)
 
     def load_state_dict(self, state_dict, load_model=True, load_optim=True, strict=True):
         if load_model:
@@ -399,8 +411,14 @@ class TrainerBase:
         if self.disable_checkpointing_and_logging:
             return
         
-        checkpoint_metric = eval_metrics[self.checkpoint_metric]
-        if self.checkpoint_metric_increases:
+        target_metric = self.hparams.target_metric
+        target_metric_increases = self.hparams.target_metric_increases
+        num_checkpoints_to_keep = self.hparams.num_checkpoints_to_keep
+        
+        assert target_metric in eval_metrics, f'Target metric: {target_metric} not found in eval metrics: {eval_metrics}. You must add it to the eval_metrics'
+
+        checkpoint_metric = eval_metrics[target_metric]
+        if target_metric_increases:
             checkpoint_metric_to_sort = -checkpoint_metric
         else:
             checkpoint_metric_to_sort = checkpoint_metric
@@ -415,26 +433,26 @@ class TrainerBase:
         self.debug(f'Checkpoint saved for step: {self.step} at: {checkpoint_path}')
         
         # Update the list of tracked checkpoints
-        self.checkpoint_metrics[self.step] = checkpoint_metric_to_sort
+        self.target_metric_over_steps[self.step] = checkpoint_metric_to_sort
 
         # Keep only the top N best checkpoints and the latest one
-        if len(self.checkpoint_metrics) > self.num_checkpoints_to_keep:
+        if len(self.target_metric_over_steps) > num_checkpoints_to_keep:
             # Sort steps based on the metric value (ascending for the best values)
-            sorted_steps = sorted(self.checkpoint_metrics, key=self.checkpoint_metrics.get)
-            steps_to_remove = sorted_steps[:-self.num_checkpoints_to_keep]
+            sorted_steps = sorted(self.target_metric_over_steps, key=self.target_metric_over_steps.get)
+            steps_to_remove = sorted_steps[:-num_checkpoints_to_keep]
             for step in steps_to_remove:
                 if step == self.step:
                     continue  # Always keep the latest checkpoint
         
                 checkpoint_to_remove = next(self.checkpoint_dir.glob(f'ckt_{step}_*.pth'))
                 checkpoint_to_remove.unlink()
-                self.debug(f'Deleted checkpoint at step: {step} with metric: {self.checkpoint_metrics[step]}')
-                self.checkpoint_metrics.pop(step)
+                self.debug(f'Deleted checkpoint at step: {step} with metric: {self.target_metric_over_steps[step]}')
+                self.target_metric_over_steps.pop(step)
 
         # Log the best checkpoint to Wandb
-        best_step = min(self.checkpoint_metrics, key=self.checkpoint_metrics.get)
-        best_metric = self.checkpoint_metrics[best_step]
-        wandb.run.summary[f'best_{self.checkpoint_metric}'] = best_metric if not self.checkpoint_metric_increases else -best_metric
+        best_step = min(self.target_metric_over_steps, key=self.target_metric_over_steps.get)
+        best_metric = self.target_metric_over_steps[best_step]
+        wandb.run.summary[f'best_{target_metric}'] = best_metric if not target_metric_increases else -best_metric
         wandb.run.summary['best_step'] = best_step
 
     @staticmethod
@@ -456,7 +474,6 @@ class TrainerBase:
 
         self.debug(f'Setting torch float32 matmul precision to high for faster training!')
         torch.set_float32_matmul_precision('high')
-        self._seed_everything()
         self._device = self._init_device(self._device)
         self.logger.info(f'Using device: {self._device}')
         self.model.to(self.device)

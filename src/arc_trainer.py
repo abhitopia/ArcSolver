@@ -23,10 +23,6 @@ class ArcTrainer(TrainerBase):
     def at_training_start(self):
         self.tokenizer = self.hparams.state['tokenizer']
         self.n_iter = self.hparams.optim['n_iter']
-        self.checkpoint_metric = 'ARC_TRAIN/Accuracy(%)'
-        self.console_metrics = self.console_metrics.union({'SampleAcc(%)', 'TokenAcc(%)', 'ΔT(ms)', '#TokensPerSec'})
-        self.checkpoint_metric_increases = True
-
 
         ## Set up complexity levels
         self.num_levels = 5

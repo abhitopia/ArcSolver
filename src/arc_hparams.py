@@ -1,5 +1,6 @@
+from dataclasses import dataclass, field
 import math
-from typing import Tuple
+from typing import Callable, List, Optional, Tuple
 import torch.optim as optim
 import torch.nn as nn
 import math
@@ -75,7 +76,17 @@ def get_alt_schedulers(num_steps_in_epoch):
     return first_scheduler, second_scheduler
 
 
+@dataclass
 class ArcHparams(Hparams):
+    num_checkpoints_to_keep: int = 5  # Keep more checkpoints
+    target_metric: str = 'ARC_TRAIN/Accuracy(%)'  # Change target metric
+    target_metric_increases: bool = True  # Now, higher is better
+    eval_interval: Optional[int] = None # Evaluate every n steps, None means evaluate after every epoch
+    plateau_patience: int = 5  # 5 Evaluations without improvement
+    plateau_factor: float = 0.5  # Reduce LR by half
+    console_metrics: List[str] = field(default_factory=lambda: ['Loss', 'SampleAcc(%)', 'TokenAcc(%)', 'ΔT(ms)', '#TokensPerSec'])
+
+
 
     def build_state(self):
         self.reset_state()
@@ -167,7 +178,7 @@ class ArcHparams(Hparams):
         return self.state['loss']
     
 
-    def init_optimizer(self, model: REPL)-> optim.Optimizer:
+    def init_optimizer_and_lr_schedule(self, model: REPL)-> Tuple[optim.Optimizer, List[Callable[[int], float]]]:
         config = self.optim
 
         if config.lr_prog is None:
@@ -181,9 +192,7 @@ class ArcHparams(Hparams):
                                     prog_l1=config.l1_prog,
                                     device_type=self.device,
                                 )
-        return optimizer
     
-    def init_scheduler(self, optimizer)-> optim.lr_scheduler.LambdaLR:
         config = self.optim
         warmup_steps = config.lr_warmup_steps
         decay_steps = config.lr_decay_steps
@@ -202,6 +211,4 @@ class ArcHparams(Hparams):
         else:
             raise ValueError(f"Invalid LR Schedule: {config.lr_schedule}. Options: noam, const, alt")
 
-        scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=schedule)
-        scheduler._step_count = -1 # To prevent warning because initialation makes a first call to step automatically
-        return scheduler
+        return optimizer, schedule

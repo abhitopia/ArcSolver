@@ -73,9 +73,12 @@ don't access future tokens making it causal by default)
 
 - [x] Detangle the datasets. It seems combining ARC with REARC is hurting performance on ARC. Add prefix to ARC datasets. 
 - [x] Also add a plug for arc synth tasks
-- [ ] Make ARC_TRAIN accuracy as the measure of success. Further, add plateau LR scheduler based on the measure of success
+- [x] Make ARC_TRAIN accuracy as the measure of success. 
+- [x] Further, add plateau LR scheduler based on the measure of success
+- [x] Make program vocab size additive. (No need for my usecase)
 
-- [ ] Make program vocab size additive
+- [ ] Make relevant changes to the train.py and test if the training works
+
 
 
 
