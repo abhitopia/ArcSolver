@@ -393,68 +393,61 @@ class TrainerBase:
     @staticmethod
     def checkpoint_path(checkpoint_dir, step):
         return checkpoint_dir / f'checkpoint_{step:06d}.pth'
+    
 
     def _save_checkpoint(self, eval_metrics):
-
         if self.disable_checkpointing_and_logging:
             return
         
-        # Always save the latest checkpoint
-        checkpoint_path = self.checkpoint_path(self.checkpoint_dir, self.step)
-        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Last checkpoint might be overwritten if self.num_epochs is specified. That is why disabling this check
-        # assert checkpoint_path.exists() == False, f'Checkpoint file already exists: {checkpoint_path}'
-        
-        state_dict = self.state_dict()
-        torch.save(state_dict, checkpoint_path)
-
         checkpoint_metric = eval_metrics[self.checkpoint_metric]
         if self.checkpoint_metric_increases:
-            checkpoint_metric = -checkpoint_metric
-
-        # Additionally also track the best checkpoints and delete any that are not needed (except the last checkpoint)
-        # Store step: metric value in the dictionary for reference.
-        if len(self.checkpoint_metrics) < self.num_checkpoints_to_keep:
-            self.checkpoint_metrics[self.step] = checkpoint_metric
+            checkpoint_metric_to_sort = -checkpoint_metric
         else:
-            # Find the worst of the best checkpoints
-            worst_metric = max(self.checkpoint_metrics.values())
-            if checkpoint_metric < worst_metric:
-                worst_metric_step = [k for k, v in self.checkpoint_metrics.items() if v == worst_metric][0]
-                worst_metric_path = self.checkpoint_path(self.checkpoint_dir, worst_metric_step)
-                worst_metric_path.unlink()
-                self.debug(f'Deleted worst checkpoint at step: {worst_metric_step} with metric: {worst_metric}')
-                self.checkpoint_metrics.pop(worst_metric_step)
-                self.checkpoint_metrics[self.step] = checkpoint_metric
-                self.debug(f'Added new checkpoint at step: {self.step} with metric: {checkpoint_metric}')
+            checkpoint_metric_to_sort = checkpoint_metric
 
-        # Checkpoints to keep
-        checkpoint_to_keep_paths = set([self.checkpoint_path(self.checkpoint_dir, k) for k in self.checkpoint_metrics.keys()] + [checkpoint_path])
+        # Format the checkpoint name to include step and metric
+        checkpoint_filename = f'ckt_{self.step}_{checkpoint_metric:.2f}.pth'
+        checkpoint_path = self.checkpoint_dir / checkpoint_filename
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Delete any other checkpoints
-        for checkpoint_file in self.checkpoint_dir.glob('checkpoint_*.pth'):
-            if checkpoint_file not in checkpoint_to_keep_paths:
-                checkpoint_file.unlink()
-
-        # Log Wandb Summary
-        best_checkpoint_metric = min(self.checkpoint_metrics.values())
-        best_checkpoint_step = [k for k, v in self.checkpoint_metrics.items() if v == best_checkpoint_metric][0]
-
-        wandb.run.summary[f'best_{self.checkpoint_metric}'] = best_checkpoint_metric if not self.checkpoint_metric_increases else -best_checkpoint_metric
-        wandb.run.summary['best_step'] = best_checkpoint_step
-
+        # Save the current checkpoint
+        torch.save(self.state_dict(), checkpoint_path)
         self.debug(f'Checkpoint saved for step: {self.step} at: {checkpoint_path}')
+        
+        # Update the list of tracked checkpoints
+        self.checkpoint_metrics[self.step] = checkpoint_metric_to_sort
 
+        # Keep only the top N best checkpoints and the latest one
+        if len(self.checkpoint_metrics) > self.num_checkpoints_to_keep:
+            # Sort steps based on the metric value (ascending for the best values)
+            sorted_steps = sorted(self.checkpoint_metrics, key=self.checkpoint_metrics.get)
+            steps_to_remove = sorted_steps[:-self.num_checkpoints_to_keep]
+            for step in steps_to_remove:
+                if step == self.step:
+                    continue  # Always keep the latest checkpoint
+        
+                checkpoint_to_remove = next(self.checkpoint_dir.glob(f'ckt_{step}_*.pth'))
+                checkpoint_to_remove.unlink()
+                self.debug(f'Deleted checkpoint at step: {step} with metric: {self.checkpoint_metrics[step]}')
+                self.checkpoint_metrics.pop(step)
+
+        # Log the best checkpoint to Wandb
+        best_step = min(self.checkpoint_metrics, key=self.checkpoint_metrics.get)
+        best_metric = self.checkpoint_metrics[best_step]
+        wandb.run.summary[f'best_{self.checkpoint_metric}'] = best_metric if not self.checkpoint_metric_increases else -best_metric
+        wandb.run.summary['best_step'] = best_step
 
     @staticmethod
     def get_latest_checkpoint(checkpoint_dir):
-        checkpoint_files = list(checkpoint_dir.glob('checkpoint_*.pth'))
+        checkpoint_files = list(checkpoint_dir.glob('ckt_*.pth'))
         if len(checkpoint_files) == 0:
             return None
-        checkpoint_files = sorted(checkpoint_files, key=lambda x: int(x.stem.split('_')[-1]))
+        # Sort by step number which is in the name as 'step_{step_number}'
+        try:
+            checkpoint_files = sorted(checkpoint_files, key=lambda x: int(x.stem.split('_')[1]))
+        except (IndexError, ValueError):
+            raise ValueError("Checkpoint filename format is incorrect. Expected format: 'ckt_{step}_{metric}.pth'")
         return checkpoint_files[-1]
-
 
     def _at_training_start(self):
         self.info(f"Training batches: {len(self.train_dl)}")
