@@ -116,7 +116,7 @@ class Hparams:
         self._state = {}
 
     def _seed_everything(self):
-        self.logger.info(f'Seeding everything with seed: {self.seed}')
+        # logging.info(f'Seeding everything with seed: {self.seed}')
         seed = self.seed
         random.seed(seed)                       # Python's built-in random module
         np.random.seed(seed)                    # NumPy's random module
@@ -302,7 +302,7 @@ class TrainerBase:
     @property
     def optimizer(self):
         if self._optimizer is None:
-            self._optimizer, self._schedule = self.hparams.init_optimizer(self.model)
+            self._optimizer, self._schedule = self.hparams.init_optimizer_and_lr_schedule(self.model)
         return self._optimizer
     
     @property

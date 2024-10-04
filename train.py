@@ -8,9 +8,6 @@ from rich import print
 from src.utils import get_logger
 
 app = typer.Typer(pretty_exceptions_show_locals=False)
-# train_app = typer.Typer()
-# change_app = typer.Typer()
-# app.add_typer(train_app, name="train")
 
 logger = get_logger()
 
@@ -64,6 +61,8 @@ def train(
         lr_min_scale: Optional[float] = typer.Option(0.0, min=0.0, help="Learning Rate reached after decay phase is obtained by scaling the max learning rate by this factor"),
         lr_decay: int = typer.Option(None, min=0, help="Number of steps for learning rate decay. If None, then it is set to n_steps - lr_warmup"),
         lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
+        plt_patience: int = typer.Option(5, min=0, help="Patience for plateau scheduler to reduce learning rate"),
+        plt_factor: float = typer.Option(0.5, min=0.0, help="Factor for plateau scheduler to reduce learning rate"),
 
         # Regularisation/ Weight Decay Config
         mwd: float = typer.Option(0.1, min=0.0, help="Weight Decay"),
@@ -105,6 +104,8 @@ def train(
                         seed=seed, 
                         device=device, 
                         eval_interval=eval_int,
+                        plateau_patience=plt_patience,
+                        plateau_factor=plt_factor,
                         grok_alpha=grok_alpha,
                         grok_lambda=grok_lambda)
     
@@ -148,7 +149,7 @@ def train(
         "lr_warmup_steps": lr_warmup,
         "lr_decay_steps": lr_decay if lr_decay is not None else n_steps - lr_warmup,
         "lr_min_scale": lr_min_scale,
-
+        
         # Misc
         "clear_cache_interval": clear_cache_interval,
     }
@@ -167,7 +168,6 @@ def train(
     trainer = ArcTrainer(hparams=hparams,
                         parent_dir=_BASE_DIR,
                         prevent_overwrite=True,
-                        num_checkpoints_to_keep=4,
                         disable_checkpointing_and_logging=True if (lr_find or debug) else False)
     
     if checkpoint is not None:
@@ -207,6 +207,8 @@ def fork(
         lr_min_scale: Optional[float] = typer.Option(None, min=0.0, help="Learning Rate reached after decay phase is obtained by scaling the max learning rate by this factor"),
         lr_decay: Optional[int] = typer.Option(None, min=0, help="Number of steps for learning rate decay. Only used for noam and lindecay scheduler"),
         lr_schedule: Optional[LRSchedule] = typer.Option(None, help="Learning rate scheduler. Options: noam, alt, const"),
+        plt_patience: Optional[int] = typer.Option(None, min=0, help="Patience for plateau scheduler to reduce learning rate"),
+        plt_factor: Optional[float] = typer.Option(None, min=0.0, help="Factor for plateau scheduler to reduce learning rate"),
 
 
         # Regularisation/ Weight Decay Config
@@ -247,7 +249,10 @@ def fork(
         "seed": seed,
         "grok_alpha": grok_alpha,
         "grok_lambda": grok_lambda,
-        "eval_interval": eval_int
+        "eval_interval": eval_int,
+        "plateau_patience": plt_patience,
+        "plateau_factor": plt_factor,
+
     }
 
     data_config = {
@@ -284,7 +289,7 @@ def fork(
         "lr_schedule": lr_schedule.value if isinstance(lr_schedule, LRSchedule) else None,
         "lr_warmup_steps": lr_warmup,
         "lr_min_scale": lr_min_scale,
-        "lr_decay_steps": lr_decay,
+        "lr_decay_steps": lr_decay
     }
 
     def override_hparams(hparams, config):

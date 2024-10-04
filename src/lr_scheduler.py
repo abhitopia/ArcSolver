@@ -2,6 +2,9 @@ import warnings
 from torch.optim.lr_scheduler import LRScheduler
 from torch.optim import Optimizer
 from typing import List, Callable, Union
+from .utils import get_logger
+
+logger = get_logger()
 
 class LambdaLRWithReduceOnPlateau(LRScheduler):
     def __init__(self,
@@ -48,7 +51,7 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
         self._init_is_better(mode=mode, threshold=threshold, threshold_mode=threshold_mode)
 
         # Now call the base class __init__
-        super().__init__(optimizer, last_epoch=-1, verbose=verbose)
+        super().__init__(optimizer, last_epoch=-1)
 
     def step(self):
         """Updates the learning rate based on the lambda function."""
@@ -84,7 +87,7 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
 
             if self.verbose:
                 for i, lr in enumerate(self.base_lrs):
-                    print('Reducing base learning rate of group {} to {:.4e}.'.format(i, lr))
+                    logger.info('Reducing base learning rate of group {} to {:.4e}.'.format(i, lr))
 
     def _reduce_base_lrs(self):
         for i in range(len(self.base_lrs)):
