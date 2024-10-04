@@ -487,41 +487,42 @@ class ArcTrainingDataset:
 
     
 #%%
-ARC_NOSOUND = ArcTasksLoader(name='ARC_NOSOUND', path='data/arc_dataset_collection/dataset/nosound/data')
 ARC_1D = ArcTasksLoader(name='ARC_1D', path='data/arc_dataset_collection/dataset/1D-ARC/data', identical_task_per_folder=True)
-ARC_REARC_EASY = ArcTasksLoader(name='ARC_REARC_EASY', path='data/arc_dataset_collection/dataset/RE-ARC/data/easy')
-ARC_REARC_HARD = ArcTasksLoader(name='ARC_REARC_HARD', path='data/arc_dataset_collection/dataset/RE-ARC/data/hard')
 ARC_COMMUNITY = ArcTasksLoader(name='ARC_COMMUNITY', path='data/arc_dataset_collection/dataset/arc-community/data')
-ARC_DIVA = ArcTasksLoader(name='ARC_DIVA', path='data/arc_dataset_collection/dataset/arc-dataset-diva/data', identical_task_per_folder=True)
 ARC_CONCEPT = ArcTasksLoader(name='ARC_CONCEPT', path='data/arc_dataset_collection/dataset/ConceptARC/data')
 ARC_DBIGHAM = ArcTasksLoader(name='ARC_DBIGHAM', path='data/arc_dataset_collection/dataset/dbigham/data')
+ARC_DIVA = ArcTasksLoader(name='ARC_DIVA', path='data/arc_dataset_collection/dataset/arc-dataset-diva/data', identical_task_per_folder=True)
+ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dataset/ARC/data/evaluation')
 ARC_MINI = ArcTasksLoader(name='ARC_MINI', path='data/arc_dataset_collection/dataset/Mini-ARC/data')
 ARC_NOSOUND = ArcTasksLoader(name='ARC_NOSOUND', path='data/arc_dataset_collection/dataset/nosound/data')
 ARC_PQA = ArcTasksLoader(name='ARC_PQA', path='data/arc_dataset_collection/dataset/PQA/data', identical_task_per_folder=True)
+ARC_REARC_EASY = ArcTasksLoader(name='ARC_REARC_EASY', path='data/arc_dataset_collection/dataset/RE-ARC/data/easy', prog_prefix='REARCEASY')
+ARC_REARC_HARD = ArcTasksLoader(name='ARC_REARC_HARD', path='data/arc_dataset_collection/dataset/RE-ARC/data/hard', prog_prefix='REARCHARD')
 ARC_SEQUENCE = ArcTasksLoader(name='ARC_SEQUENCE', path='data/arc_dataset_collection/dataset/Sequence_ARC/data', prog_prefix='SEQ')
+ARC_SYNTH = ArcTasksLoader(name='ARC_SYNTH', path='data/synthetic/', identical_task_per_folder=True)
+ARC_SYNTHTASK = ArcTasksLoader(name='ARC_SYNTHTASK', path='data/arc_synth_tasks/data/synthetic_tasks')
 ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_dataset_collection/dataset/synth_riddles/data')
 ARC_TAMA = ArcTasksLoader(name='ARC_TAMA', path='data/arc_dataset_collection/dataset/arc-dataset-tama/data')
-ARC_EVAL = ArcTasksLoader(name='ARC_EVAL', path='data/arc_dataset_collection/dataset/ARC/data/evaluation')
 ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
-ARC_SYNTH = ArcTasksLoader(name='ARC_SYNTH', path='data/synthetic/', identical_task_per_folder=True)
 
 
 train_collection = [
-    ARC_SYNTH,
     ARC_1D,
     ARC_COMMUNITY, 
-    ARC_DIVA, 
     ARC_CONCEPT, 
     ARC_DBIGHAM, 
+    ARC_DIVA, 
     ARC_MINI, 
     ARC_NOSOUND, 
     ARC_PQA, 
+    ARC_REARC_EASY,
+    ARC_REARC_HARD,
     ARC_SEQUENCE, 
+    ARC_SYNTH,
+    ARC_SYNTHTASK,
     ARC_SYNTH_RIDDLES, 
     ARC_TAMA,
     ARC_TRAIN,
-    ARC_REARC_EASY,
-    ARC_REARC_HARD
 ]
 
 
@@ -529,13 +530,13 @@ class DatasetLoader(Enum):
     TRAIN_ONLY = train_collection
     TRAIN_EVAL = train_collection + [ARC_EVAL]
 
-    def load(self, *, max_height, max_width, min_test, min_train, max_test, max_train):
+    def load(self, *, max_height, max_width, min_test, min_train, max_test, max_train, no_cache=False):
         base_path = Path(__file__).resolve().parent.parent / ".cache"
         print(f"Base path: {base_path}")
         hash_params = f"{self.name}_{max_height}_{max_width}_{min_test}_{max_test}_{max_train}_{min_train}"
         cache_file = base_path / f"{hash_string(hash_params)}.pkl"
         cache_file.parent.mkdir(parents=True, exist_ok=True)
-        if cache_file.exists():
+        if cache_file.exists() and not no_cache:
             print(f"Loading dataset from cache: {cache_file}")
             dataset = pickle.load(cache_file.open("rb"))
         else:

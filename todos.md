@@ -69,9 +69,12 @@ don't access future tokens making it causal by default)
         - There was a bug in tokenacc computation.
 - [x] Try training only the ARC_TRAIN dataset (without any auxiliary tasks). Use high regularisation. It trains but doesn't get to high enough accuracy
 
-
 - [x] Add the ARCSynthTasks dataset to the training mix
-- [ ] Detangle the datasets. It seems combining ARC with REARC is hurting performance on ARC. Add prefix to ARC datasets. Also add a plug for arc synth tasks
+
+- [x] Detangle the datasets. It seems combining ARC with REARC is hurting performance on ARC. Add prefix to ARC datasets. 
+- [x] Also add a plug for arc synth tasks
+- [ ] Make ARC_TRAIN accuracy as the measure of success. Further, add plateau LR scheduler based on the measure of success
+
 - [ ] Make program vocab size additive
 
 
