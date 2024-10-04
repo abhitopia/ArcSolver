@@ -499,6 +499,7 @@ ARC_PQA = ArcTasksLoader(name='ARC_PQA', path='data/arc_dataset_collection/datas
 ARC_REARC_EASY = ArcTasksLoader(name='ARC_REARC_EASY', path='data/arc_dataset_collection/dataset/RE-ARC/data/easy', prog_prefix='REARCEASY')
 ARC_REARC_HARD = ArcTasksLoader(name='ARC_REARC_HARD', path='data/arc_dataset_collection/dataset/RE-ARC/data/hard', prog_prefix='REARCHARD')
 ARC_SEQUENCE = ArcTasksLoader(name='ARC_SEQUENCE', path='data/arc_dataset_collection/dataset/Sequence_ARC/data', prog_prefix='SEQ')
+ARC_SORTOF = ArcTasksLoader(name='ARC_SORTOF', path='data/arc_dataset_collection/dataset/Sort-of-ARC/data')
 ARC_SYNTH = ArcTasksLoader(name='ARC_SYNTH', path='data/synthetic/', identical_task_per_folder=True)
 ARC_SYNTHTASK = ArcTasksLoader(name='ARC_SYNTHTASK', path='data/arc_synth_tasks/data/synthetic_tasks')
 ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_dataset_collection/dataset/synth_riddles/data')
@@ -518,6 +519,7 @@ train_collection = [
     ARC_REARC_EASY,
     ARC_REARC_HARD,
     ARC_SEQUENCE, 
+    ARC_SORTOF,
     ARC_SYNTH,
     ARC_SYNTHTASK,
     ARC_SYNTH_RIDDLES, 
