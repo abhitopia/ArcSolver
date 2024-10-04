@@ -67,14 +67,20 @@ don't access future tokens making it causal by default)
 - [x] Try resuming training with new data
 - [x] Something wrong with either tokenAcc or SampleAcc or both as I noticed SampleAcc would go to 100 while TokenAcc still remained 28%. Need to investigate.
         - There was a bug in tokenacc computation.
+- [x] Try training only the ARC_TRAIN dataset (without any auxiliary tasks). Use high regularisation. It trains but doesn't get to high enough accuracy
+
+
+- [x] Add the ARCSynthTasks dataset to the training mix
+- [ ] Detangle the datasets. It seems combining ARC with REARC is hurting performance on ARC. Add prefix to ARC datasets. Also add a plug for arc synth tasks
+- [ ] Make program vocab size additive
+
+
 
 
 - [ ] Try learning a single task on a really small network (with lots of augmentations)
 
-
 ## New Training
 - [ ] Overfitting so use higher regularisation
-- [ ] Detangle the datasets. It seems combining ARC with REARC is hurting performance on ARC
 - [ ] Number of params in the model (vs Computation Equivalent Params)
 
 - [ ] Do a single batch test and then see if see if permuting the input changes the output. All valid inputs should affect the output, but not the invalid tokens
