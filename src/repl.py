@@ -8,7 +8,7 @@ from torch import Tensor
 from torch.nn import functional as F
 
 from .lazy_adamw import LazyAdamW
-from .rope_2d import Rope2D
+from .rope2d import RoPE2D
 from .tokenizer import MODEL_INPUT, MODEL_OUTPUT, ArrayTransformTokenizer, ColorPermutationTokenizer, GridTokenizer
 from .mask_utils import create_enc_dec_mask
 from .multilevel_loss import MultiLevelLoss
@@ -32,6 +32,7 @@ class REPLConfig:
     pad_idx: int = GridTokenizer().PAD_IDX
     max_grid_height: int = 60
     max_grid_width: int = 60
+    rope_base: int = 10_000 # Base for geometric progression in angle computation
 
     def __post_init__(self):
         if self.n_dim % self.n_head != 0:
@@ -142,7 +143,7 @@ class RMSNorm(nn.Module):
 
 
 class SelfAttention(nn.Module):
-    def __init__(self, config: REPLConfig, rope: Optional[Rope2D]=None):
+    def __init__(self, config: REPLConfig, rope: Optional[RoPE2D]=None):
         super().__init__()
         self.config = config
         self.rope = rope
@@ -179,8 +180,8 @@ class SelfAttention(nn.Module):
 
         # Apply Rope2D to q and k
         if self.rope is not None and positions is not None:
-            k = self.rope(k, positions)
-            q = self.rope(q, positions)
+            k = self.rope(k, positions.unsqueeze(1))
+            q = self.rope(q, positions.unsqueeze(1))
 
 
         # # If kv_cache is present, concatenate past keys and values
@@ -214,7 +215,7 @@ class SelfAttention(nn.Module):
         return y, new_kv_cache
 
 class TransformerBlock(nn.Module):
-    def __init__(self, config: REPLConfig, rope: Optional[Rope2D]):
+    def __init__(self, config: REPLConfig, rope: Optional[RoPE2D]):
         super().__init__()
         self.config = config
         self.dropout = nn.Dropout(config.dropout)
@@ -241,9 +242,10 @@ class Interpreter(nn.Module):
         super().__init__()
         self.config = config
 
-        rope_2d = Rope2D(config.n_dim // config.n_head,
+        rope_2d = RoPE2D(config.n_dim // config.n_head,
                         max_height=config.max_grid_height,
-                        max_width=config.max_grid_width)
+                        max_width=config.max_grid_width,
+                        base=config.rope_base)
         self.blocks = nn.ModuleList([TransformerBlock(config, rope=rope_2d) for _ in range(config.n_layer)])
         self.rms_out = RMSNorm(config.n_dim)
 

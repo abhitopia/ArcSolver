@@ -1,3 +1,12 @@
+## V8 Model (Mission Restore Accuracy) (Test the heck out)
+
+- [x] Added new 2D rope which is extension of the original 1D rope
+- [ ] Train the model and pray to the universe to be kind to me this time.
+- [ ] Understand whether 2D Rope is better or worse for the model
+- [ ] Understand the 2D rope base frequence vs max height/width
+
+
+
 ## V7 Model
 - [x] Push the current code to V6
 - [x] Introduct Concept of Example
