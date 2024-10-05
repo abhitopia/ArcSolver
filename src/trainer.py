@@ -602,6 +602,7 @@ class TrainerBase:
             self.info(self._metrics_string(" (EVAL-STEP) ", step_metrics, eval=True))
 
         epoch_metrics = self.eval_metrics.mean_metrics()
+        self.scheduler.step_metric(epoch_metrics[self.hparams.target_metric])
         self.info(self._metrics_string("(EVAL-EPOCH) ", epoch_metrics, eval=True))
         self._log_metrics(suffix='eval', metrics=epoch_metrics)
         self.model.train()
