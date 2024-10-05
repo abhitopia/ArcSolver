@@ -34,7 +34,9 @@ for epoch in range(num_epochs):
     hybrid_scheduler.step()
     lr_hybrid = optimizer_hybrid.param_groups[0]['lr']
 
-    print(f"{epoch+1}\t{lr_lambda:.6f}\t{lr_hybrid:.6f}")
+    last_lr = hybrid_scheduler.get_last_lr()
+
+    print(f"{epoch+1}\t{lr_lambda:.6f}\t{lr_hybrid:.6f}, {last_lr}")
 
 #%%
 
@@ -71,7 +73,7 @@ for epoch, metric in enumerate(metrics):
     hybrid_scheduler.step_metric(metric)
     lr_hybrid = optimizer_hybrid.param_groups[0]['lr']
 
-    print(f"{epoch+1}\t{lr_plateau:.6f}\t{lr_hybrid:.6f}")
+    print(f"{epoch+1}\t{lr_plateau:.6f}\t{lr_hybrid:.6f} {hybrid_scheduler.get_last_lr()}")
 
 # %%
 # Simulate an optimizer with dummy parameters
@@ -104,7 +106,7 @@ for epoch, metric in enumerate(metrics):
     lr_hybrid = optimizer_hybrid.param_groups[0]['lr']
 
 
-    print(f"{epoch+1}\t{lr_hybrid:.6f}\t{metric:.2f}")
+    print(f"{epoch+1}\t{lr_hybrid:.6f}\t{metric:.2f} {hybrid_scheduler.get_last_lr()}")
 
 # %%
 # Save the state

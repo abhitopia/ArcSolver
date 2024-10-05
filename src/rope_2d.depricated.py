@@ -10,8 +10,9 @@ import torch
 import torch.nn as nn
 import math
 
+
 class Rope2D(nn.Module):
-    def __init__(self, h_dim, max_height, max_width):
+    def __init__(self, h_dim, max_height, max_width, base=10_000):
         """
         Initializes the Rope2D module.
 
@@ -25,6 +26,7 @@ class Rope2D(nn.Module):
         self.head_dim = h_dim
         self.max_height = max_height
         self.max_width = max_width
+        self.base = base
         self.max_freq = max(max_height, max_width)
 
         assert h_dim % 2 == 0, 'The head dimension must be divisible by 2.'
@@ -55,7 +57,11 @@ class Rope2D(nn.Module):
         all_freqs = []
 
         # Initialize frequency buffer: [dim//2], Unsure full precision
-        freqs = (torch.linspace(1., self.max_freq / 2, self.dim // 2) * math.pi).float()  # [dim//2]
+        # freqs = (torch.linspace(1., self.max_freq / 2, self.dim // 2) * math.pi).float()  # [dim//2]
+        # print("Freqs Size",freqs.size())
+
+        freqs = 1.0 / (10_000 ** (torch.arange(0, self.dim, 2) / self.dim))
+        # print("Theta Size",freqs.size())
         for ind, dim_size in enumerate(dims):
             # Generate positional values, full precision
             pos = torch.linspace(-1., 1., steps=dim_size).float()  # [dim_size]
