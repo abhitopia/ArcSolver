@@ -2,7 +2,7 @@
 import sys
 src_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver'
 sys.path.append(src_path)  # replace "/path/to/src" with the actual path to the src directory
-from src.lr_scheduler import LambdaLRWithReduceOnPlateau
+from src.lrscheduler import LambdaLRWithReduceOnPlateau
 #%%
 import torch
 from torch.optim import SGD

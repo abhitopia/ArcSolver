@@ -1,3 +1,4 @@
+import types
 import warnings
 from torch.optim.lr_scheduler import LRScheduler
 from torch.optim import Optimizer
@@ -142,7 +143,7 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
 
     def state_dict(self):
         """Returns the state of the scheduler as a :class:`dict`."""
-        state = {
+        state_dict = {
             'lambda_epoch': self.lambda_epoch,
             'best': self.best,
             'num_bad_epochs': self.num_bad_epochs,
@@ -158,10 +159,24 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
             'min_lrs': self.min_lrs,
             '_last_lr': self._last_lr,
             'base_lrs': self.base_lrs,
-            'lr_lambdas': self.lr_lambdas,
+            'lr_lambdas': [None] * len(self.lr_lambdas),
         }
-        return state
+
+
+        for idx, fn in enumerate(self.lr_lambdas):
+            if not isinstance(fn, types.FunctionType):
+                state_dict["lr_lambdas"][idx] = fn.__dict__.copy()
+
+        return state_dict
 
     def load_state_dict(self, state_dict):
         """Loads the scheduler's state."""
+        lr_lambdas = state_dict.pop("lr_lambdas")
         self.__dict__.update(state_dict)
+         # Restore state_dict keys in order to prevent side effects
+        # https://github.com/pytorch/pytorch/issues/32756
+        state_dict["lr_lambdas"] = lr_lambdas
+
+        for idx, fn in enumerate(lr_lambdas):
+            if fn is not None:
+                self.lr_lambdas[idx].__dict__.update(fn)

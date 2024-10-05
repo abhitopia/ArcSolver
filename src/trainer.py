@@ -19,7 +19,7 @@ from collections import defaultdict
 from tqdm import tqdm
 from .utils import add_logfile_handler, add_logging_funcs, get_git_commit_hash, get_logger, map_to_tensors, migrate_hparam_dict
 from dataclasses import dataclass, field
-from .lr_scheduler import LambdaLRWithReduceOnPlateau
+from .lrscheduler import LambdaLRWithReduceOnPlateau
 
 def gradfilter_ema(
     m: nn.Module,
