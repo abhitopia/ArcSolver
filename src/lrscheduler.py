@@ -11,6 +11,7 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
     def __init__(self,
                  optimizer: Optimizer,
                  lr_lambda: Union[Callable[[int], float], List[Callable[[int], float]]],
+                 last_epoch=-1,
                  mode='min',
                  factor=0.1,
                  patience=10,
@@ -27,7 +28,6 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
             if len(lr_lambda) != len(optimizer.param_groups):
                 raise ValueError("Expected {} lr_lambdas, but got {}".format(len(optimizer.param_groups), len(lr_lambda)))
             self.lr_lambdas = list(lr_lambda)
-        self.lambda_epoch = -1  # Independent counter for lambda-based scheduler
 
         # Initialize plateau-based scheduling parameters
         self.mode = mode
@@ -52,16 +52,16 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
         self._init_is_better(mode=mode, threshold=threshold, threshold_mode=threshold_mode)
 
         # Now call the base class __init__
-        super().__init__(optimizer, last_epoch=-1)
+        super().__init__(optimizer, last_epoch=last_epoch)
 
     def step(self):
         """Updates the learning rate based on the lambda function."""
-        self.lambda_epoch += 1  # Increment independent lambda_epoch
+        self.last_epoch += 1  # Increment independent lambda_epoch
 
         # Update learning rates for each param group
         new_lrs = []
         for i, (lmbda, base_lr) in enumerate(zip(self.lr_lambdas, self.base_lrs)):
-            new_lr = base_lr * lmbda(self.lambda_epoch)
+            new_lr = base_lr * lmbda(self.last_epoch)
             # Apply min_lr constraint
             new_lr = max(new_lr, self.min_lrs[i])
             self.optimizer.param_groups[i]['lr'] = new_lr
@@ -143,19 +143,21 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
 
     def state_dict(self):
         """Returns the state of the scheduler as a :class:`dict`."""
+
+        # The stuff related to plateau-based scheduling is not saved
+        # Because it should always be reloaded
         state_dict = {
-            'lambda_epoch': self.lambda_epoch,
-            'best': self.best,
-            'num_bad_epochs': self.num_bad_epochs,
-            'cooldown_counter': self.cooldown_counter,
-            'mode': self.mode,
-            'factor': self.factor,
-            'patience': self.patience,
-            'threshold': self.threshold,
-            'threshold_mode': self.threshold_mode,
-            'cooldown': self.cooldown,
+            'last_epoch': self.last_epoch,
+            # 'best': self.best,
+            # 'num_bad_epochs': self.num_bad_epochs,
+            # 'cooldown_counter': self.cooldown_counter,
+            # 'mode': self.mode,
+            # 'factor': self.factor,
+            # 'patience': self.patience,
+            # 'threshold': self.threshold,
+            # 'threshold_mode': self.threshold_mode,
+            # 'cooldown': self.cooldown,
             'eps': self.eps,
-            'verbose': self.verbose,
             'min_lrs': self.min_lrs,
             '_last_lr': self._last_lr,
             'base_lrs': self.base_lrs,
