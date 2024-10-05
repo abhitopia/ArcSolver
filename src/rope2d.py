@@ -41,6 +41,7 @@ class RotaryPositionalEmbeddings(nn.Module):
         # Helper method to get device of theta if it exists
         return self.theta.device if hasattr(self, 'theta') else 'cpu'
 
+    @autocast('cuda', enabled=False)
     def build_rope_cache(self, max_seq_len: int = 4096) -> None:
         seq_idx = torch.arange(
             max_seq_len, dtype=self.theta.dtype, device=self.theta.device
@@ -56,12 +57,16 @@ class RotaryPositionalEmbeddings(nn.Module):
 
         Args:
             x (Tensor): Input tensor of shape [B, H, S, D].
-            input_pos (Tensor): Position indices of shape [B, H, S].
+            input_pos (Tensor): Position indices of shape [B, 1, S] or [B, H, S].
 
         Returns:
             Tensor: Tensor with RoPE applied, shape [B, H, S, D].
         """
         batch_size, n_heads, seq_len, head_dim = x.shape
+
+        # Check if input_pos has shape [B, 1, S] and broadcast to [B, H, S]
+        if input_pos.shape == (batch_size, 1, seq_len):
+            input_pos = input_pos.expand(batch_size, n_heads, seq_len)  # Broadcast to [B, H, S]
 
         assert input_pos.shape == (batch_size, n_heads, seq_len), \
             f"Expected input_pos shape {(batch_size, n_heads, seq_len)}, got {input_pos.shape}"
@@ -128,19 +133,25 @@ class RoPE2D(nn.Module):
             base=base
         )
 
+    @autocast('cuda', enabled=False)
     def forward(self, x: Tensor, positions: Tensor) -> Tensor:
         """
         Applies 2D RoPE to the input tensor.
 
         Args:
             x (Tensor): Input tensor of shape [B, H, S, D].
-            positions (Tensor): Position indices of shape [B, H, S, 2].
+            positions (Tensor): Position indices of shape [B, 1, S, 2] or [B, H, S, 2].
 
         Returns:
             Tensor: Tensor with 2D RoPE applied, shape [B, H, S, D].
         """
         B, H, S, D = x.shape
         assert D == self.dim, f"Expected embedding dimension {self.dim}, got {D}."
+
+        # Check if positions has shape [B, 1, S, 2] and broadcast to [B, H, S, 2]
+        if positions.shape == (B, 1, S, 2):
+            positions = positions.expand(B, H, S, 2)  # Broadcast to [B, H, S, 2]
+
         assert positions.shape == (B, H, S, 2), f"Expected positions shape [B, H, S, 2], got {positions.shape}."
 
         # Split the embeddings into two halves

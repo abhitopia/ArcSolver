@@ -6,7 +6,7 @@ sys.path.append(src_path)  # replace "/path/to/src" with the actual path to the 
 
 import torch
 import math
-from src.rope import RotaryEmbedding, apply_rotary_emb
+from src.archived.rope import RotaryEmbedding, apply_rotary_emb
 
 # Grid dimensions
 height = 5
