@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from torch import Tensor
 from src.dataset import ArcExamplesDataset
-from src.interpreter import RMSNorm, RotaryPositionalEmbeddings, SwiGLUFFN
+from src.archived.interpreter import RMSNorm, RotaryPositionalEmbeddings, SwiGLUFFN
 from src.multilevel_loss import MultiLevelLoss
 from src.task import TRAIN_COLLECTION, ColorPermutation, ArrayTransform, Example
 from src.tokenizer import ArcTokenizer, ArrayTransformTokenizer, ColorPermutationTokenizer, GridTokenizer

@@ -9,7 +9,7 @@ if module_path not in sys.path:
 import torch
 
 from src.dataset import GridTokenizer, ProgramTokenizer
-from src.interpreter import Interpreter, InterpreterConfig
+from src.archived.interpreter import Interpreter, InterpreterConfig
 #%%
 
 def load_checkpoint(checkpoint_path: str, ref=False):

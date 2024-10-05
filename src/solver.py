@@ -17,7 +17,7 @@ import torch
 import random
 
 from src.dataset import ArcExamplesDataset, GridTokenizer, ProgramTokenizer
-from src.interpreter import Interpreter, InterpreterConfig
+from src.archived.interpreter import Interpreter, InterpreterConfig
 from src.lazy_adamw import LazyAdamW
 
 

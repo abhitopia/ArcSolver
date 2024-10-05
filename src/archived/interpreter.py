@@ -6,11 +6,11 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import torch.types
-from .utils import is_power_of_two, get_logger, gather_4d_tensor_along_zero_dim
-from .dataset import ProgramTokenizer, GridTokenizer
+from ..utils import is_power_of_two, get_logger, gather_4d_tensor_along_zero_dim
+from ..dataset import ProgramTokenizer, GridTokenizer
 from torch import Tensor
 from torch.cuda.amp import autocast
-from .lazy_adamw import LazyAdamW
+from ..lazy_adamw import LazyAdamW
 
 logger = get_logger()
 

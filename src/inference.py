@@ -5,7 +5,7 @@ import torch.multiprocessing as mp
 import torch
 from tqdm import tqdm
 
-from .interpreter import InterpreterConfig, Interpreter
+from .archived.interpreter import InterpreterConfig, Interpreter
 from .dataset import GridTokenizer, ProgramTokenizer, TaskToExamples
 #%%
 

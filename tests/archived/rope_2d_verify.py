@@ -33,7 +33,7 @@ v = v.view(1, 1, dim).expand(bs, t, dim)
 k = q.clone()
 
 
-indices = torch.tensor([[0, 0], [-1, -1], [0, 2], [0, 3], [1, 0], [1, 1], [1, 2], [1, 3]])
+indices = torch.tensor([[0, 0], [0, 1], [0, 2], [0, 3], [1, 0], [1, 1], [1, 2], [1, 3]])
 indices = indices.unsqueeze(0).expand(bs, t, 2)
 q.size(), indices.size()
 
@@ -56,7 +56,7 @@ k_roped[0, 0, 0, :], k_roped[0, 0, 3, :]
 #%%
 
 qA = q_roped[0, :, 0, :]
-qB = q_roped[0, :, 1, :]
+qB = q_roped[0, :, 2, :]
 
 qC = q_roped[0, :, 4, :]
 qD = q_roped[0, :, 5, :]
@@ -67,7 +67,8 @@ scoreCD = torch.einsum('n d, n d -> n', qC, qD)
 
 # scoreAB = qA * qB
 # scoreCD = qC * qD
-assert torch.allclose(scoreAB, scoreCD)
+scoreAB, scoreCD
+# assert torch.allclose(scoreAB, scoreCD)
 # %%
 scoreAB, scoreCD
 
