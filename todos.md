@@ -6,7 +6,8 @@
     - The universe is indifferent to me
 - [x] The checkpoint saving is broken for target metrics. Fix it
 - [x] Make the plateau metric to track eval loss instead.
-- [ ] Analyse those models which trained well when Universe was kind to me
+- [x] Analyse those models which trained well when Universe was kind to me
+- [x] Resuming optimizer/scheduler is broken as it doesn't retain the reduced lr. Fix it. (Introduced load_step and changed how forking works when changin LR params)
 
 - [ ] Understand whether 2D Rope is better or worse for the model
 - [ ] Understand the 2D rope base frequence vs max height/width

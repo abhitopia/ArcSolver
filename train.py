@@ -173,7 +173,11 @@ def train(
     if checkpoint is not None:
         existing_checkpoint = trainer.get_latest_checkpoint(trainer.checkpoint_dir)
         assert existing_checkpoint is None, f"Checkpoint {existing_checkpoint} already exists. Loading from checkpoint will overwrite the existing checkpoint"
-        trainer.initialise_from_checkpoint(checkpoint, strict=False, load_model=True, load_optim=False)    # NO RESUME, start from the beginning 
+        trainer.initialise_from_checkpoint(checkpoint, 
+                                           strict=False, 
+                                           load_model=True, 
+                                           load_step=False,     # NO RESUME, start from the beginning 
+                                           load_optim=False)    # NO RESUME, start from the beginning 
 
     if lr_find:
         trainer.find_lr()
@@ -200,7 +204,7 @@ def fork(
         n_steps: Optional[int] = typer.Option(1_000_000, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
         seed: Optional[int] = typer.Option(None, min=0, help="Random seed for the data and experiment"),
 
-        # Learning Rate Config
+        # Learning Rate Config (If any of the Learning Rate Config is changed, then resume must be false)
         mlr: Optional[float] = typer.Option(None, min=0.0, help="Learning Rate"),
         plr: Optional[float] = typer.Option(None, min=0.0, help="Program Learning Rate. If None, then it is set to mlr"),
         lr_warmup: Optional[int] = typer.Option(None, min=0, help="Number of steps for learning rate warmup. Only used for noam and lindecay scheduler"),
@@ -209,7 +213,7 @@ def fork(
         lr_schedule: Optional[LRSchedule] = typer.Option(None, help="Learning rate scheduler. Options: noam, alt, const"),
         plt_patience: Optional[int] = typer.Option(None, min=0, help="Patience for plateau scheduler to reduce learning rate"),
         plt_factor: Optional[float] = typer.Option(None, min=0.0, help="Factor for plateau scheduler to reduce learning rate"),
-
+        resume: Optional[bool] = typer.Option(True, help="Resume training from the checkpoint. If False, then optimizer and scheduler are not loaded, only model is loaded"),
 
         # Regularisation/ Weight Decay Config
         mwd: Optional[float] = typer.Option(None, min=0.0, help="Weight Decay"),
@@ -242,6 +246,8 @@ def fork(
     new_exp = f"{experiment}_{run}"
 
     is_resume = prev_exp == new_exp
+    if is_resume:
+        assert resume, "If resuming from the same run, then resume must be true"
 
     base_config = {
         "experiment": experiment,
@@ -266,6 +272,10 @@ def fork(
 
     model_config = {
     }
+
+    if any(option is not None for option in [mlr, plr, lr_decay, lr_min_scale, lr_warmup, lr_schedule, plt_patience, plt_factor]):
+        assert not resume, "If any of the Learning Rate Config is changed, then resume must be false. And no optimizer and scheduler are loaded, only model is loaded"
+
 
     optimizer_config = {
         # Batch Size
@@ -325,7 +335,11 @@ def fork(
     else:
         trainer.info(f"Attemping to resume {experiment}/{run}")
 
-    trainer.initialise_from_checkpoint(checkpoint, strict=False, load_model=True, load_optim=True)    # Fork start from the beginning 
+    trainer.initialise_from_checkpoint(checkpoint,
+                                    strict=False, 
+                                    load_model=True, 
+                                    load_step=True,     # When forking, we always load the step, irrespective of resume
+                                    load_optim=resume)  # If resume is False, then only model is loaded, not optimizer and scheduler 
 
 
     if lr_find:

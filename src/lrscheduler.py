@@ -124,7 +124,9 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
         else:  # mode == 'max':
             self.mode_worse = -float('inf')
 
-        self.best = self.mode_worse
+        self.mode = mode
+        self.threshold = threshold
+        self.threshold_mode = threshold_mode
 
     @property
     def in_cooldown(self):
@@ -144,26 +146,24 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
     def state_dict(self):
         """Returns the state of the scheduler as a :class:`dict`."""
 
-        # The stuff related to plateau-based scheduling is not saved
-        # Because it should always be reloaded
+        # Get both lambda and plateau-based scheduler states
         state_dict = {
             'last_epoch': self.last_epoch,
-            # 'best': self.best,
-            # 'num_bad_epochs': self.num_bad_epochs,
-            # 'cooldown_counter': self.cooldown_counter,
-            # 'mode': self.mode,
-            # 'factor': self.factor,
-            # 'patience': self.patience,
-            # 'threshold': self.threshold,
-            # 'threshold_mode': self.threshold_mode,
-            # 'cooldown': self.cooldown,
+            'best': self.best,
+            'num_bad_epochs': self.num_bad_epochs,
+            'cooldown_counter': self.cooldown_counter,
+            'mode': self.mode,
+            'factor': self.factor,
+            'patience': self.patience,
+            'threshold': self.threshold,
+            'threshold_mode': self.threshold_mode,
+            'cooldown': self.cooldown,
             'eps': self.eps,
             'min_lrs': self.min_lrs,
             '_last_lr': self._last_lr,
             'base_lrs': self.base_lrs,
             'lr_lambdas': [None] * len(self.lr_lambdas),
         }
-
 
         for idx, fn in enumerate(self.lr_lambdas):
             if not isinstance(fn, types.FunctionType):

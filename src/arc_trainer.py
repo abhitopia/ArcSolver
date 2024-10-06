@@ -203,7 +203,7 @@ class ArcTrainer(TrainerBase):
         state_dict['tokenizer'] = self.hparams.state['tokenizer'].to_dict()
         return state_dict
     
-    def load_state_dict(self, state_dict, load_model=True, load_optim=True, strict=True):
+    def load_state_dict(self, state_dict, load_model=True, load_step=True, load_optim=True, strict=True):
         tokenizer = ArcTokenizer.from_dict(state_dict['tokenizer'])
         model_config = REPLConfig.from_dict(state_dict['model_config'])
         
@@ -211,7 +211,7 @@ class ArcTrainer(TrainerBase):
             assert model_config == self.model.config, "Model Configs do not match!"
             assert tokenizer == self.hparams.state['tokenizer'], "Tokenizers do not match!"
 
-        super().load_state_dict(state_dict, load_model=True, load_optim=load_optim, strict=strict)
+        super().load_state_dict(state_dict, load_model=True, load_step=load_step, load_optim=load_optim, strict=strict)
 
         if load_model:
             self.info("Copying program embeddings from the loaded model.")

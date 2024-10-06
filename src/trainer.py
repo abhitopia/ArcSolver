@@ -353,10 +353,11 @@ class TrainerBase:
             return _device
 
 
-    def load_state_dict(self, state_dict, load_model=True, load_optim=True, strict=True):
+    def load_state_dict(self, state_dict, load_model=True, load_step=True, load_optim=True, strict=True):
         if load_model:
             self.model.load_state_dict(state_dict['model_state_dict'], strict=strict)
             self.model.to(self.device)
+            self.info(f"Loaded model from state dict")
 
         self._eval_at_start = True
         current_commit_hash = get_git_commit_hash()
@@ -369,28 +370,40 @@ class TrainerBase:
             assert hparams_dict == self.hparams.as_dict(), 'Hparams do not match! Cannot resume training.'
 
         if load_optim:
+            assert load_model, 'Cannot load optimizer without loading model'
+            assert load_step, 'Cannot load optimizer without loading step'
+
             self.step = state_dict['step']
 
             src_optim_sd = self.optimizer.state_dict()
             trg_optim_sd = state_dict['optimizer_state_dict']
 
-            # Copy over the new weight decays
+            # Copy over the new weight decays (This allows changing weight decay during resume)
             for spg, tpg in zip(src_optim_sd['param_groups'], trg_optim_sd['param_groups']):
                 tpg['weight_decay'] = spg['weight_decay']
-          
+
+            # This will overwrite the `lr` for each param group.
             self.optimizer.load_state_dict(trg_optim_sd)
 
-            # Loading scheduler state_dict rewrites the initial LR. So we need to set it to new values
+            # The way it works is that Schedule uses base_lrs and uses it to modify the `lr` for each param group. 
+            # That means that after the next step, `lr` will be updated based on the new `base_lrs` in the schedule.
             scheduler_sd = state_dict['scheduler_state_dict']
-            scheduler_sd['base_lrs'] = [pg['lr'] for pg in src_optim_sd['param_groups']]
+            # We don't update the Base LRs because we want to keep the learning rates as they were when the checkpoint was saved
+            # Including reduced learning rates due to ReduceOnPlateau.
+            # scheduler_sd['base_lrs'] = [pg['lr'] for pg in src_optim_sd['param_groups']]
 
             self.scheduler.load_state_dict(scheduler_sd)
-            self.info(f"Continuing from Step: {self.step}")
+            self.info(f"Loaded Optimizer and Scheduler from state dict")
+
         else:
             # Resetting those just to be safe!!
             self._optimizer = None
             self._scheduler = None
-            self.info(f"Loaded only model from state dict. Starting with Step: {self.step}")
+
+            if load_step: # If we are not loading optimizer, we can still load the step
+                self.step = state_dict['step']
+            
+        self.info(f"Continuing from Step: {self.step}")
 
     def state_dict(self):
         return {
@@ -759,13 +772,16 @@ class TrainerBase:
             sys.exit(0)
 
 
-    def initialise_from_checkpoint(self, checkpoint_path: Union[str, Path], strict=True, load_model=True, load_optim=False):
+    def initialise_from_checkpoint(self, checkpoint_path: Union[str, Path], strict=True, load_model=True, load_step=True, load_optim=True):
         checkpoint_path = Path(checkpoint_path)
         assert checkpoint_path.exists(), f'Checkpoint file does not exist: {checkpoint_path}'
         state_dict = torch.load(checkpoint_path, map_location=self.device.type, weights_only=False)
-
         self.info(f"Initialising model from checkpoint: {checkpoint_path}")
-        self.load_state_dict(state_dict, load_model=load_model, load_optim=load_optim, strict=strict) # Prevent loading optimizer and scheduler state
+        self.load_state_dict(state_dict,
+                            load_model=load_model,
+                            load_step=load_step, 
+                            load_optim=load_optim, 
+                            strict=strict) # Prevent loading optimizer and scheduler state
 
     @staticmethod
     def load_hparams_dict(checkpoint_path: Union[str, Path]):
