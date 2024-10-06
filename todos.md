@@ -1,7 +1,13 @@
 ## V8 Model (Mission Restore Accuracy) (Test the heck out)
 
 - [x] Added new 2D rope which is extension of the original 1D rope
-- [ ] Train the model and pray to the universe to be kind to me this time.
+- [x] LR Warm up seems broken. It's not, I was looking at the log scale
+- [x] Train the model and pray to the universe to be kind to me this time. 
+    - The universe is indifferent to me
+- [x] The checkpoint saving is broken for target metrics. Fix it
+- [x] Make the plateau metric to track eval loss instead.
+- [ ] Analyse those models which trained well when Universe was kind to me
+
 - [ ] Understand whether 2D Rope is better or worse for the model
 - [ ] Understand the 2D rope base frequence vs max height/width
 

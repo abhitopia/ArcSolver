@@ -61,8 +61,8 @@ def train(
         lr_min_scale: Optional[float] = typer.Option(0.0, min=0.0, help="Learning Rate reached after decay phase is obtained by scaling the max learning rate by this factor"),
         lr_decay: int = typer.Option(None, min=0, help="Number of steps for learning rate decay. If None, then it is set to n_steps - lr_warmup"),
         lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
-        plt_patience: int = typer.Option(5, min=0, help="Patience for plateau scheduler to reduce learning rate"),
-        plt_factor: float = typer.Option(0.5, min=0.0, help="Factor for plateau scheduler to reduce learning rate"),
+        plt_patience: int = typer.Option(10, min=0, help="Patience for plateau scheduler to reduce learning rate"),
+        plt_factor: float = typer.Option(0.8, min=0.0, help="Factor for plateau scheduler to reduce learning rate"),
 
         # Regularisation/ Weight Decay Config
         mwd: float = typer.Option(0.1, min=0.0, help="Weight Decay"),
