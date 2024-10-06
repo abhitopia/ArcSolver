@@ -1,3 +1,11 @@
+import os
+
+# Set the environment variable
+# This is important when dealing with dynamic batches so GPU doesn't run out of memory
+# See more here https://pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+
+
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Tuple
