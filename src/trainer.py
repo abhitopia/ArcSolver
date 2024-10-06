@@ -439,7 +439,7 @@ class TrainerBase:
         if len(self.target_metric_over_steps) > num_checkpoints_to_keep:
             # Sort steps based on the metric value (ascending for the best values)
             sorted_steps = sorted(self.target_metric_over_steps, key=self.target_metric_over_steps.get)
-            steps_to_remove = sorted_steps[:-num_checkpoints_to_keep]
+            steps_to_remove = sorted_steps[num_checkpoints_to_keep:]
             for step in steps_to_remove:
                 if step == self.step:
                     continue  # Always keep the latest checkpoint
