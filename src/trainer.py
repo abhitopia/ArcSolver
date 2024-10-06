@@ -424,7 +424,7 @@ class TrainerBase:
             checkpoint_metric_to_sort = checkpoint_metric
 
         # Format the checkpoint name to include step and metric
-        checkpoint_filename = f'ckt_{self.step}_{checkpoint_metric:.2f}.pth'
+        checkpoint_filename = f'ckt_{self.step}_{checkpoint_metric:.3f}.pth'
         checkpoint_path = self.checkpoint_dir / checkpoint_filename
         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
