@@ -8,7 +8,8 @@
 - [x] Make the plateau metric to track eval loss instead.
 - [x] Analyse those models which trained well when Universe was kind to me
 - [x] Resuming optimizer/scheduler is broken as it doesn't retain the reduced lr. Fix it. (Introduced load_step and changed how forking works when changin LR params)
-
+- [x] Separate Checkpoint tracking metrics with Plateau metric (Or just revert back to SampleAcc / Not ARC_TRAIN accuracy)
+- [ ] Create a solver for Synthetic data first!
 - [ ] Understand whether 2D Rope is better or worse for the model
 - [ ] Understand the 2D rope base frequence vs max height/width
 
