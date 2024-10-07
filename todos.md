@@ -13,8 +13,9 @@
 - [x] Understand the 2D rope base frequence vs max height/width
 - [x] Add gradient accumulation to the trainer
 - [x] Ignore first Eval metric when the model is loaded from a checkpoint when considering plateau (basically ignore eval on start)
+- [x] Analyse attention to check if the model is indeed paying attention to the program embedding. It definitely is. Checked the visualisations
 
-- [ ] Analyse attention to check if the model is indeed paying attention to the program embedding
+- [ ] Analyse the norms of the trained model
 - [ ] Create a solver for Synthetic data first!
 
 
