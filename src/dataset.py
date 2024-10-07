@@ -167,6 +167,9 @@ class ArcExamplesDataset(Dataset):
     def __getitem__(self, idx):
         return self.examples[idx]
     
+    def tokenized_example(self, idx: int) -> Tuple[MODEL_INPUT, MODEL_OUTPUT]:
+        return self.collate_fn([self.examples[idx]], pad_idx=self.tokenizer.grid_tokenizer.PAD_IDX, permute=False, device=torch.device('cpu'))
+    
     def subset(self, num_examples: int):
         """
         Returns a subset of the dataset
