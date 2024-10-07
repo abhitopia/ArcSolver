@@ -189,6 +189,22 @@ class ArcTokenizer:
         return x, y
 
     def decode(self, x: MODEL_INPUT, y: MODEL_OUTPUT=None) -> Example:
+        
+        if isinstance(x.grid, torch.Tensor):
+            x = MODEL_INPUT(
+                color_permutation=x.color_permutation.tolist()[0],
+                array_transform=x.array_transform.tolist()[0],
+                program=x.program.tolist()[0],
+                grid=x.grid.tolist()[0],
+                grid_indices=x.grid_indices.tolist()[0],
+                meta=x.meta[0]
+            )
+        if y is not None and isinstance(y.grid, torch.Tensor):
+            y = MODEL_OUTPUT(
+                grid=y.grid.tolist()[0],
+                grid_indices=y.grid_indices.tolist()[0],
+                target_grid=y.target_grid.tolist()[0]
+            )
         input_decoded = self.grid_tokenizer.decode(x.grid)
         output_decoded = self.grid_tokenizer.decode(y.grid) if y else None
         program_decoded = self.program_tokenizer.decode(x.program)
