@@ -42,7 +42,7 @@ def clip_dense_grad_norm_(parameters, max_norm, norm_type=2):
     """
     Clip the norm of the gradients for all dense parameters
     """
-    dense_params = [p for p in parameters if not p.grad.is_sparse]
+    dense_params = [p for p in parameters if p.grad is not None and not p.grad.is_sparse]
     return torch.nn.utils.clip_grad_norm_(dense_params, max_norm, norm_type)
 
 
