@@ -530,6 +530,7 @@ train_collection = [
 
 class DatasetLoader(Enum):
     TRAIN_ONLY = train_collection
+    EVAL_ONLY = [ARC_EVAL]
     TRAIN_EVAL = train_collection + [ARC_EVAL]
 
     def load(self, *, max_height, max_width, min_test, min_train, max_test, max_train, no_cache=False):

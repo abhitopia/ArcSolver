@@ -89,7 +89,16 @@ class ArcHparams(Hparams):
 
     def build_state(self):
         self.reset_state()
-        dataset_loader = DatasetLoader.TRAIN_EVAL if self.data.include_eval else DatasetLoader.TRAIN_ONLY 
+
+        if self.data.include_eval and self.data.include_train:
+            dataset_loader = DatasetLoader.TRAIN_EVAL
+        elif self.data.include_train:
+            dataset_loader = DatasetLoader.TRAIN_ONLY
+        elif self.data.include_eval:
+            dataset_loader = DatasetLoader.EVAL_ONLY
+        else:
+            raise ValueError("Invalid Dataset Configuration")
+
         logger.info(f"Augmenting examples to be in range:\n Test: [{self.data.min_test_pp}, {self.data.max_test_pp}], Train:[{self.data.min_train_pp}, {self.data.max_train_pp}]")
 
         training_data = dataset_loader.load(

@@ -88,8 +88,11 @@ def train(
         max_train_pp: Optional[int] = typer.Option(None, help="Maximum number of Train Examples Per Program"),
         min_test_pp: Optional[int] = typer.Option(1, help="Minimum number of Test Examples Per Program"),
         max_test_pp: Optional[int] = typer.Option(3, help="Maximum number of Test Examples Per Program"),
-        include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
         permute: bool = typer.Option(True, help="Permute the training set for each batch"),
+
+        # Dataset Config
+        include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
+        include_train: bool = typer.Option(True, help="Include training data for training"),
 
         # Misc Config
         n_steps: Optional[int] = typer.Option(1000000, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
@@ -119,8 +122,11 @@ def train(
                         grok_alpha=grok_alpha,
                         grok_lambda=grok_lambda)
     
+    assert include_eval or include_train, "At least one of include_eval or include_train must be True"
+
     data_config = {
         'include_eval': include_eval,
+        'include_train': include_train,
         'min_train_pp': min_train_pp,
         'max_train_pp': max_train_pp if max_train_pp is not None else min_train_pp,
         'min_test_pp': min_test_pp,
@@ -167,6 +173,7 @@ def train(
     hparams.add_params(prefix="data", **data_config)
     hparams.add_params(prefix="model", **model_config)
     hparams.add_params(prefix="optim", **optimizer_config)
+
 
     assert n_steps >= hparams.optim.lr_warmup_steps + hparams.optim.lr_decay_steps, f"Number of steps {n_steps} must be greater than warmup steps {hparams.optim.lr_warmup_steps} + decay steps {hparams.optim.lr_decay_steps}"
     if hparams.optim.lr_min_scale == 0.0:
@@ -243,6 +250,7 @@ def fork(
         min_test_pp: Optional[int] = typer.Option(None, help="Minimum number of Test Examples Per Program"),
         max_test_pp: Optional[int] = typer.Option(None, help="Maximum number of Test Examples Per Program"),
         include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
+        include_train: bool = typer.Option(True, help="Include training data for training"),
         permute: bool = typer.Option(False, help="Permute the training set for each batch"),
 
         # Misc Config
@@ -274,8 +282,11 @@ def fork(
 
     }
 
+    assert include_eval or include_train, "At least one of include_eval or include_train must be True"
+
     data_config = {
         'include_eval': include_eval,
+        'include_train': include_train,
         'min_train_pp': min_train_pp,
         'max_train_pp': max_train_pp,
         'min_test_pp': min_test_pp,
