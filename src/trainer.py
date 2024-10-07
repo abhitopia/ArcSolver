@@ -88,6 +88,7 @@ class Hparams:
     experiment: str
     run: str
     clip_grad_norm: Optional[float] = 1.0 # Clip gradient norm, None means no clipping
+    accumulation_steps: int = 1 # Number of steps to accumulate gradients before stepping the optimizer
     seed: int = 1337  # Seed everything for reproducibility
     device: str = None # Device to use for training, None means automatically determine the best device
     eval_interval: Optional[int] = None # Evaluate every n steps, None means evaluate after every epoch
@@ -112,6 +113,14 @@ class Hparams:
         assert self.grok_lambda >= 0, 'grok_lambda must be zero or a positive'
         assert self.grok_alpha == 0 or self.grok_lambda > 0, 'grok_lambda must be provided if grok_alpha is provided'
         assert self.grok_lambda == 0 or self.grok_alpha > 0, 'grok_alpha must be provided if grok_lambda is provideds'
+
+
+        if not isinstance(self.accumulation_steps, int) or self.accumulation_steps < 1:
+            raise ValueError(
+                f"accumulation_steps must be a positive integer >= 1. "
+                f"Received: {self.accumulation_steps}"
+            )
+
         self._seed_everything()
         self._state = {}
 
@@ -522,38 +531,46 @@ class TrainerBase:
     def post_optimizer_step(self):
         pass
     
-    def _train_step(self, batch):
+    def _train_step(self, batch, accumulation_step):
         # move the batch to the device
         self.pre_train_step(batch)
         batch = map_to_tensors(batch, lambda x: x.to(self.device, non_blocking=True) if x.device.type != self.device.type else x)
 
-        self.optimizer.zero_grad()
+        # Zero the gradients only at the first step of the accumulation
+        if accumulation_step == 0:
+            self.optimizer.zero_grad()
+
+
         with torch.autocast(device_type= 'cpu' if self.device.type == 'mps' else self.device.type, dtype=torch.bfloat16):
             loss = self.train_step(batch)
 
         self.post_train_step(batch)
 
-        loss.backward()
+        loss_accum = loss / self.hparams.accumulation_steps
+        loss_accum.backward()
 
-        # This is super important to disable when alpha/lambda == 0, because otherwise it keeps accumulating the gradients for all program embeddings
-        if self.hparams.grok_alpha is not None:
-            if self.hparams.grok_lambda is not None and self.hparams.grok_lambda > 0:
-                self._ema_grads = gradfilter_ema(self.model, grads=self._ema_grads, alpha=self.hparams.grok_alpha, lamb=self.hparams.grok_lambda)
+ 
 
-        if self.clip_grad_norm is not None:
-            norm = clip_dense_grad_norm_(self.model.parameters(), 1.0)
-            self.train_metrics.add_metric('GradientNorm', norm.item())
+        # Perform optimizer and scheduler step only at the last accumulation step
+        if accumulation_step == self.hparams.accumulation_steps - 1:
+            # Gradient Clipping: Apply before the optimizer step
+            if self.clip_grad_norm is not None:
+                norm = clip_dense_grad_norm_(self.model.parameters(), 1.0)
+                self.train_metrics.add_metric('GradientNorm', norm.item())
 
-        self.optimizer.step()
-        self.scheduler.step()
+            # This is super important to disable when alpha/lambda == 0, because otherwise it keeps accumulating the gradients for all program embeddings
+            if self.hparams.grok_alpha is not None:
+                if self.hparams.grok_lambda is not None and self.hparams.grok_lambda > 0:
+                    self._ema_grads = gradfilter_ema(self.model, grads=self._ema_grads, alpha=self.hparams.grok_alpha, lamb=self.hparams.grok_lambda)
 
-        self.post_optimizer_step()
-        
-        for idx, last_lr in enumerate(self.scheduler.get_last_lr()):
-            self.train_metrics.add_metric(f'LR/ParamGroup_{idx}', last_lr)
+            self.optimizer.step()
+            self.scheduler.step()
+            self.post_optimizer_step()
+                
+            for idx, last_lr in enumerate(self.scheduler.get_last_lr()):
+                self.train_metrics.add_metric(f'LR/ParamGroup_{idx}', last_lr)
 
         self.train_metrics.add_metric('Epoch', self.epoch)
-
         step_metrics = self.train_metrics.last_metrics()
         self.info(self._metrics_string("(TRAIN-STEP) ", step_metrics))
         self._log_metrics(suffix='step', metrics=step_metrics)
@@ -735,6 +752,11 @@ class TrainerBase:
             self.epoch = self.step // len(self.train_dl) if self.step > 0 else 0
             self.info(f'Setting starting epoch to: {self.epoch}')
 
+
+            accumulation_steps = self.hparams.accumulation_steps
+            self.info(f'Accumulating gradients over {accumulation_steps} steps.')
+
+
             while self.step < max_steps:
                 self.epoch_step = 0
                 self._at_epoch_start()
@@ -751,7 +773,8 @@ class TrainerBase:
                         self._eval_loop(save_checkpoint=False)
                         run_eval_at_start = False
 
-                    self._train_step(batch)
+                    accumulation_step = self.step % accumulation_steps
+                    self._train_step(batch, accumulation_step)
 
                     # In case train_dl has different number of batches per epoch
                     eval_now = (epoch_step == len(self.train_dl) - 1) if self.eval_interval is None else (self.step > 0 and self.step % eval_interval == 0)

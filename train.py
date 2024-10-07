@@ -49,6 +49,7 @@ def train(
         # Batch Config
         tbs: int = typer.Option(10_000, min=1, help="Train Batch Size (in tokens)"),
         ebs: Optional[int] = typer.Option(None, min=1, help="Eval Batch Size (in tokens)"),
+        grad_accum: Optional[int] = typer.Option(1, min=1, help="Number of steps to accumulate gradients over."),
 
         # Model Config
         n_dim: int = typer.Option(128, min=4, max=1024, help="Dimension of the model"),
@@ -113,6 +114,7 @@ def train(
                         device=device, 
                         eval_interval=eval_int,
                         plateau_patience=plt_patience,
+                        accumulation_steps=grad_accum,
                         plateau_factor=plt_factor,
                         grok_alpha=grok_alpha,
                         grok_lambda=grok_lambda)
@@ -202,6 +204,8 @@ def fork(
         # Batch Config
         tbs: Optional[int] = typer.Option(None, min=1, help="Train Batch Size (in tokens)"),
         ebs: Optional[int] = typer.Option(None, min=1, help="Eval Batch Size (in tokens)"),
+        grad_accum: Optional[int] = typer.Option(None, min=1, help="Number of steps to accumulate gradients over."),
+
 
         # Loss Config
         n_iter: Optional[int] = typer.Option(None, min=2, help="Number of iterations for the model"),
@@ -266,6 +270,7 @@ def fork(
         "eval_interval": eval_int,
         "plateau_patience": plt_patience,
         "plateau_factor": plt_factor,
+        "accumulation_steps": grad_accum,
 
     }
 
