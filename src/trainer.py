@@ -632,11 +632,16 @@ class TrainerBase:
             self.info(self._metrics_string(" (EVAL-STEP) ", step_metrics, eval=True))
 
         epoch_metrics = self.eval_metrics.mean_metrics()
-        self.scheduler.step_metric(epoch_metrics[self.hparams.target_metric])
         self.info(self._metrics_string("(EVAL-EPOCH) ", epoch_metrics, eval=True))
         self._log_metrics(suffix='eval', metrics=epoch_metrics)
         self.model.train()
         if save_checkpoint:
+
+            # This prevents the scheduler from regustering metric right after loading the checkpoint
+            # typically this value can be much higher, which can then influence the learning rate reduction even if subsequent 
+            # values are increasing. Please note this this does not help if the training is resumed, as then the scheduler will
+            # retore the past best metric.
+            self.scheduler.step_metric(epoch_metrics[self.hparams.target_metric])
             self._save_checkpoint(epoch_metrics)
 
         self.at_eval_end()
