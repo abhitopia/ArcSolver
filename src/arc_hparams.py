@@ -153,6 +153,7 @@ class ArcHparams(Hparams):
             dropout=self.optim.dropout,
             lora_r=self.model.lora_r,
             lora_alpha=self.model.lora_alpha,
+            n_iter=self.optim.n_iter,
         )
 
         self.state['model'] = REPL(config)

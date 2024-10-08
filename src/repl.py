@@ -35,6 +35,7 @@ class REPLConfig:
     rope_base: int = 10_000 # Base for geometric progression in angle computation
     lora_r: int = 0 # Rank for LoRA linear layer
     lora_alpha: Optional[int] = None # Alpha for LoRA linear layer, it None, it defaults to lora_r
+    n_iter: int = 4
 
     def __post_init__(self):
         if self.n_dim % self.n_head != 0:
@@ -66,7 +67,11 @@ class REPLConfig:
             'tform_vocab_size': self.tform_vocab_size,
             'pad_idx': self.pad_idx,
             'max_grid_height': self.max_grid_height,
-            'max_grid_width': self.max_grid_width
+            'max_grid_width': self.max_grid_width,
+            'rope_base': self.rope_base,
+            'lora_r': self.lora_r,
+            'lora_alpha': self.lora_alpha,
+            'n_iter': self.n_iter,
         }
     
     @staticmethod
