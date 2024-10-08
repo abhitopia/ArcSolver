@@ -346,8 +346,8 @@ class LoRALinear(nn.Linear):
 
         if self.r > 0:
             # Initialize LoRA parameters A and B
-            self.A = nn.Parameter(torch.randn(self.r, self.in_features) * 0.01)
-            self.B = nn.Parameter(torch.randn(self.out_features, self.r) * 0.01)
+            self.A = nn.Parameter(torch.randn(r, in_features) * 0.01)  # Small random initialization
+            self.B = nn.Parameter(torch.zeros(out_features, r))        # Zero initialization
             self.scaling = self.alpha / self.r
         else:
             # Register A and B as None to maintain state_dict consistency
