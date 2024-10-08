@@ -57,7 +57,7 @@ def train(
         n_head: int = typer.Option(4, min=1, max=64, help="Number of heads within each self-attention block"),
         n_layer: int = typer.Option(3, min=1, max=20, help="Number of blocks in the Interpreter"),
         pnorm: Optional[float] = typer.Option(None, min=0.0, help="Program Norm. If not None, then it is pinned to this value. If None, no constraint is placed"),
-        lora_r: int = typer.Option(0, min=1, help="Rank of the Lora Matrix. 0 disabled Lora"),
+        lora_r: int = typer.Option(0, min=0, help="Rank of the Lora Matrix. 0 disabled Lora"),
         lora_alpha: Optional[float] = typer.Option(None, min=0.0, help="Lora Alpha, None set alpha to lora_r"),
         n_iter: int = typer.Option(8, min=2, help="Number of iterations for the model"),
 
