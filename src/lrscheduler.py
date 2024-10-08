@@ -17,6 +17,7 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
                  patience=10,
                  threshold=1e-4,
                  threshold_mode='rel',
+                 warmup_epochs=3000,
                  cooldown=0,
                  min_lr=0,
                  eps=1e-8,
@@ -35,6 +36,7 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
         self.patience = patience
         self.threshold = threshold
         self.threshold_mode = threshold_mode
+        self.warmup_epochs = warmup_epochs
         self.cooldown = cooldown
         self.cooldown_counter = 0
         self.num_bad_epochs = 0
@@ -70,6 +72,11 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
 
     def step_metric(self, metrics):
         """Adjusts learning rate based on the validation metrics."""
+
+        # Skip the first few (lr) epochs, which typically correspond to warmup
+        if self.last_epoch < self.warmup_epochs:
+            return
+
         current = float(metrics)
         if self.is_better(current, self.best):
             self.best = current
@@ -150,6 +157,7 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
         state_dict = {
             'last_epoch': self.last_epoch,
             'best': self.best,
+            'warmup_epochs': self.warmup_epochs,
             'num_bad_epochs': self.num_bad_epochs,
             'cooldown_counter': self.cooldown_counter,
             'mode': self.mode,
