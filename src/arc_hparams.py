@@ -150,7 +150,9 @@ class ArcHparams(Hparams):
             n_head=self.model.n_head,
             n_layer=self.model.n_layer, 
             pnorm=self.model.pnorm, 
-            dropout=self.optim.dropout
+            dropout=self.optim.dropout,
+            lora_r=self.model.lora_r,
+            lora_alpha=self.model.lora_alpha,
         )
 
         self.state['model'] = REPL(config)

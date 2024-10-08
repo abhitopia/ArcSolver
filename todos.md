@@ -15,7 +15,9 @@
 - [x] Ignore first Eval metric when the model is loaded from a checkpoint when considering plateau (basically ignore eval on start)
 - [x] Analyse attention to check if the model is indeed paying attention to the program embedding. It definitely is. Checked the visualisations
 - [x] Introduce ARC_EVAL only dataset for finetuning
-- [ ] Analyse the norms of the trained model
+- [x] Analyse the norms of the trained model. Did and nothing special
+- [x] Implement LORA on LM Head
+- [x] Separate LM Head as a param group. (Combined with Lora Params with Program params instead)
 
 - [ ] Create a solver for Synthetic data first!
 

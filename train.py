@@ -57,6 +57,8 @@ def train(
         n_head: int = typer.Option(4, min=1, max=64, help="Number of heads within each self-attention block"),
         n_layer: int = typer.Option(3, min=1, max=20, help="Number of blocks in the Interpreter"),
         pnorm: Optional[float] = typer.Option(None, min=0.0, help="Program Norm. If not None, then it is pinned to this value. If None, no constraint is placed"),
+        lora_r: int = typer.Option(0, min=1, help="Rank of the Lora Matrix. 0 disabled Lora"),
+        lora_alpha: Optional[float] = typer.Option(None, min=0.0, help="Lora Alpha, None set alpha to lora_r"),
 
         # Loss / Compute Config
         n_iter: int = typer.Option(8, min=2, help="Number of iterations for the model"),
@@ -139,8 +141,13 @@ def train(
         "n_embd": n_embd,
         "n_head": n_head,
         "n_layer": n_layer,
-        "pnorm": pnorm
+        "pnorm": pnorm,
+        "lora_r": lora_r,
+        "lora_alpha": lora_alpha if lora_alpha is not None else lora_r
     }
+
+    if lora_r > 0:
+        assert mlr == 0.0, "Lora is enabled, so mlr must be 0.0"
 
     optimizer_config = {
         # Batch Size
@@ -212,7 +219,6 @@ def fork(
         tbs: Optional[int] = typer.Option(None, min=1, help="Train Batch Size (in tokens)"),
         ebs: Optional[int] = typer.Option(None, min=1, help="Eval Batch Size (in tokens)"),
         grad_accum: Optional[int] = typer.Option(None, min=1, help="Number of steps to accumulate gradients over."),
-
 
         # Loss Config
         n_iter: Optional[int] = typer.Option(None, min=2, help="Number of iterations for the model"),

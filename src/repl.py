@@ -33,6 +33,8 @@ class REPLConfig:
     max_grid_height: int = 60
     max_grid_width: int = 60
     rope_base: int = 10_000 # Base for geometric progression in angle computation
+    lora_r: int = 0 # Rank for LoRA linear layer
+    lora_alpha: Optional[int] = None # Alpha for LoRA linear layer, it None, it defaults to lora_r
 
     def __post_init__(self):
         if self.n_dim % self.n_head != 0:
@@ -43,6 +45,11 @@ class REPLConfig:
         
         head_dim = self.n_dim // self.n_head
         assert head_dim % 2 == 0, "Head dimension must be even"
+
+        if self.lora_alpha is None:
+            self.lora_alpha = self.lora_r
+
+        assert isinstance(self.lora_r, int) and self.lora_r >= 0, "LoRA rank must be a non-negative integer"
 
 
     def to_dict(self):
@@ -321,6 +328,70 @@ class StateAggregatorRNN(nn.Module):
         return output, h_new
 
 
+class LoRALinear(nn.Linear):
+    def __init__(self, in_features, out_features, bias=True, r=0, alpha=1):
+        """
+        LoRA-enhanced Linear layer.
+
+        Args:
+            in_features (int): Size of each input sample.
+            out_features (int): Size of each output sample.
+            bias (bool, optional): If set to False, the layer will not learn an additive bias. Default: True.
+            r (int, optional): Rank of the LoRA decomposition. If 0, LoRA is not applied. Default: 0.
+            alpha (int, optional): Scaling factor for LoRA. Default: 1.
+        """
+        super(LoRALinear, self).__init__(in_features, out_features, bias)
+        self.r = r
+        self.alpha = alpha
+
+        if self.r > 0:
+            # Initialize LoRA parameters A and B
+            self.A = nn.Parameter(torch.randn(self.r, self.in_features) * 0.01)
+            self.B = nn.Parameter(torch.randn(self.out_features, self.r) * 0.01)
+            self.scaling = self.alpha / self.r
+        else:
+            # Register A and B as None to maintain state_dict consistency
+            self.register_parameter('A', None)
+            self.register_parameter('B', None)
+            self.scaling = 1.0
+
+
+    def fine_tune_mode(self):
+        # Freeze the original weights and bias
+        self.weight.requires_grad = False
+        if self.bias is not None:
+            self.bias.requires_grad = False
+
+        # Unfreeze the LoRA parameters
+        self.A.requires_grad = True
+        self.B.requires_grad = True
+
+    def forward(self, input):
+        """
+        Forward pass through the LoRA-enhanced Linear layer.
+
+        Args:
+            input (Tensor): Input tensor of shape (*, in_features).
+
+        Returns:
+            Tensor: Output tensor of shape (*, out_features).
+        """
+        if self.r > 0:
+            # Compute the low-rank adaptation
+            # W' = W + (B @ A) * scaling
+            lora_weight = torch.matmul(self.B, self.A) * self.scaling
+            # Adjust the original weight with LoRA weight
+            adjusted_weight = self.weight + lora_weight
+            return F.linear(input, adjusted_weight, self.bias)
+        else:
+            return super(LoRALinear, self).forward(input)
+
+    def extra_repr(self):
+        return (f'in_features={self.in_features}, out_features={self.out_features}, '
+                f'bias={self.bias is not None}, r={self.r}, alpha={self.alpha}')
+
+
+
 class REPL(nn.Module):
     def __init__(self,
                 config: REPLConfig):
@@ -364,8 +435,7 @@ class REPL(nn.Module):
         self.interpreter = Interpreter(config)
         self.state_agg = StateAggregatorRNN(config)
 
-        self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
-                
+        self.lm_head = LoRALinear(config.n_dim, config.grid_vocab_size, bias=False, r=config.lora_r, alpha=config.lora_alpha)
         # weight sharing scheme. Transformer++ (Llama architecture does not tie weights)
         # Reference: https://youtu.be/pRM_P6UfdIc?t=1500
         # self.wte.weight = self.lm_head.weight
@@ -617,18 +687,20 @@ class REPL(nn.Module):
             device_type=None
         ):
 
-        # Freeze model params if model_lr is 0, needed for finetuning
-        if model_lr == 0.0:
-            logger.warning("Freezing model parameters. Only Program embedding parameters will be trained.")
-            logger.warning("This setting should only be used for training without resuming/forkin (with optimizer state load disabled)")
+        if model_lr == 0:
+            assert prog_lr > 0, "Program learning rate must be greater than 0"
+            self.fine_tune_mode(enable_lora=True)
 
-            for n, p in self.named_parameters():
-                if 'pte.0' not in n:
-                    p.requires_grad = False
+        program_param_keys = ['pte.0.weight', 'lm_head.A', 'lm_head.B']
 
         # Separate the embedding parameters
-        program_params = [p for n, p in self.named_parameters() if 'pte.0' in n and p.requires_grad]
-        model_params = [p for n, p in self.named_parameters() if 'pte.0' not in n and p.requires_grad]
+        program_params = [p for n, p in self.named_parameters() if n in program_param_keys and p.requires_grad]
+        model_params = [p for n, p in self.named_parameters() if n not in program_param_keys and p.requires_grad]
+
+        if self.config.lora_r > 0:
+            assert len(program_params) == 3, "Program parameters must be 3"
+        else:
+            assert len(program_params) == 1, "Program parameters must be 1"
 
         # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
         # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
@@ -656,26 +728,43 @@ class REPL(nn.Module):
         optimizer = LazyAdamW(optim_groups, lr=model_lr, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
         return optimizer
 
+    def fine_tune_mode(self, enable_lora: bool = False):
+        # Freeze model params if model_lr is 0, needed for finetuning
+        logger.warning("Freezing model parameters. Only Program embedding parameters will be trained.")
+        logger.warning("This setting should only be used for training without resuming/forkin (with optimizer state load disabled)")
+
+        for n, p in self.named_parameters():
+            if 'pte.0' not in n:
+                p.requires_grad = False
+
+        if enable_lora:
+            logger.warning("Unfreezing LoRA parameters for fine-tuning.")
+            self.lm_head.fine_tune_mode()
 
     def load_state_dict(self, state_dict, strict: bool=True, assign: bool=False):
 
         if strict:
             return super().load_state_dict(state_dict, strict=strict, assign=assign)
+        
+        def skip_if_not_present(key):
+            if key not in state_dict and key in self.state_dict():
+                logger.warning(f"WARNING: Skipping loading {key} as it is not present in the source model.")
+                state_dict[key] = self.state_dict()[key]
+
+        skip_if_not_present('lm_head.A')
+        skip_if_not_present('lm_head.B')
 
         pte_w_key = 'pte.0.weight'
-        src_sd = self.state_dict()
-        trg_sd = state_dict
-        
         if self.state_dict()[pte_w_key].shape != state_dict[pte_w_key].shape:
             logger.warning(f"WARNING: Skipping loading Program Embeddings as they differ in shape in the target model. ")
-            trg_sd = {k: v for k, v in state_dict.items() if k != pte_w_key}
-            trg_sd[pte_w_key] = self.state_dict()[pte_w_key]
+            state_dict = {k: v for k, v in state_dict.items() if k != pte_w_key}
+            state_dict[pte_w_key] = self.state_dict()[pte_w_key]
 
 
-        def get_num_blocks(state_dict, prefix):
+        def get_num_blocks(sd, prefix):
             max_block_id = 0
 
-            for key in state_dict.keys():
+            for key in sd.keys():
                 # Use regex to match the pattern
                 match = re.match(rf'{prefix}\.blocks\.(\d+)\.', key)
                 if match:
@@ -686,11 +775,11 @@ class REPL(nn.Module):
 
         @torch.no_grad()
         def copy_(prefix, idx_mapping=None, src_prefix=None):
-            for name, t in trg_sd.items():
+            for name, t in self.state_dict().items():
                 if name.startswith(prefix):
                     suffix = name[len(prefix):]
                     src_name = src_prefix + suffix if src_prefix is not None else name
-                    s = src_sd[src_name]
+                    s = state_dict[src_name]
                     trg_ptr_b4 = t.data_ptr()
                     if idx_mapping is None:
                         t.data.copy_(s)
@@ -701,14 +790,14 @@ class REPL(nn.Module):
                     trg_ptr_after = t.data_ptr()
                     assert trg_ptr_b4 == trg_ptr_after, f"Data pointer changed for {prefix}"
 
-        missing_keys, unexpected_keys = super().load_state_dict(trg_sd, strict=strict, assign=assign)
+        missing_keys, unexpected_keys = super().load_state_dict(state_dict, strict=strict, assign=assign)
 
         for k in missing_keys + unexpected_keys:
-            assert k.startswith('interpreter.') or k.startswith('state_agg.'), f"Unexpected key: {k}"
+            assert k.startswith('interpreter.') or k.startswith('state_agg.'), f"Unexpected/Missing key: {k}"
 
         def deal_with_blocks(prefix):
             num_trg_blocks = get_num_blocks(self.state_dict(), prefix)
-            num_src_blocks = get_num_blocks(trg_sd, prefix)
+            num_src_blocks = get_num_blocks(state_dict, prefix)
             num_params_per_block = 7
 
             prefix_missing_keys = [k for k in missing_keys if k.startswith(f'{prefix}.blocks')]    
