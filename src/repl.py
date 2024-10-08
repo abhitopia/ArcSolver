@@ -159,7 +159,6 @@ class SelfAttention(nn.Module):
         self.c_attn = nn.Linear(config.n_dim, 3 * config.n_dim, bias=False)
         # output projection
         self.c_proj = nn.Linear(config.n_dim, config.n_dim, bias=False)
-        self.c_proj.RESCALE_RESIDUAL = 1
 
         # regularization
         self.n_head = config.n_head
@@ -350,10 +349,10 @@ class LoRALinear(nn.Linear):
             self.B = nn.Parameter(torch.zeros(out_features, r))        # Zero initialization
             self.scaling = self.alpha / self.r
         else:
-            # Register A and B as None to maintain state_dict consistency
-            self.register_parameter('A', None)
-            self.register_parameter('B', None)
-            self.scaling = 1.0
+            # Not registering parameter to deliberably cause different state dicts
+            self.A = None
+            self.B = None
+            self.scaling = 0.0
 
 
     def fine_tune_mode(self):
@@ -363,6 +362,7 @@ class LoRALinear(nn.Linear):
             self.bias.requires_grad = False
 
         # Unfreeze the LoRA parameters
+        assert self.r > 0
         self.A.requires_grad = True
         self.B.requires_grad = True
 
@@ -689,7 +689,7 @@ class REPL(nn.Module):
 
         if model_lr == 0:
             assert prog_lr > 0, "Program learning rate must be greater than 0"
-            self.fine_tune_mode(enable_lora=True)
+            self.fine_tune_mode(enable_lora=True if self.config.lora_r > 0 else False)
 
         program_param_keys = ['pte.0.weight', 'lm_head.A', 'lm_head.B']
 
@@ -701,6 +701,9 @@ class REPL(nn.Module):
             assert len(program_params) == 3, "Program parameters must be 3"
         else:
             assert len(program_params) == 1, "Program parameters must be 1"
+
+        if model_lr == 0:
+            assert len(model_params) == 0, "When model_lr == 0, there shouldn't be any model params to train!"
 
         # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
         # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
