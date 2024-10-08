@@ -166,8 +166,8 @@ def train(
         "mctp": mctp,
 
         # Learning Rate
-        "lr_model": mlr if not lr_find else 1,
-        "lr_prog": plr if not lr_find else 1,
+        "lr_model": mlr if not lr_find else (1 if mlr > 0 else 0),
+        "lr_prog": plr if not lr_find else (1 if plr > 0 else 0),
         "lr_schedule": lr_schedule.value if isinstance(lr_schedule, LRSchedule) else lr_schedule,
         "lr_warmup_steps": lr_warmup,
         "lr_decay_steps": lr_decay if lr_decay is not None else n_steps - lr_warmup,
@@ -324,8 +324,9 @@ def fork(
         "mctp": mctp,
 
         # Learning Rate
-        "lr_model": mlr if not lr_find else 1,
-        "lr_prog": plr if not lr_find else 1,
+        "lr_model": mlr if not lr_find else (1 if mlr > 0 else 0),
+        "lr_prog": plr if not lr_find else (1 if plr > 0 else 0),
+
         "lr_schedule": lr_schedule.value if isinstance(lr_schedule, LRSchedule) else None,
         "lr_warmup_steps": lr_warmup,
         "lr_min_scale": lr_min_scale,

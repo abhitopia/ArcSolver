@@ -710,10 +710,10 @@ class TrainerBase:
                     lrs[i].append(lr)
                 
                     # Check the first parameter group as an example, adjust if necessary
-                if all(lr > 1 for lr in scheduler.get_last_lr()):  # Stop if the LR gets too high
+                if any(lr > 1 for lr in scheduler.get_last_lr()):  # Stop if the LR gets too high
                     break
 
-            if all(lr > 1 for lr in scheduler.get_last_lr()):  # Stop if the LR gets too high
+            if any(lr > 1 for lr in scheduler.get_last_lr()):  # Stop if the LR gets too high
                 break
             
 
