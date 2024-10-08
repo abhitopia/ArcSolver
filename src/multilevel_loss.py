@@ -1,3 +1,4 @@
+#%%
 from typing import List, Tuple
 import numpy as np
 import torch
@@ -8,34 +9,83 @@ import torch.nn.functional as F
 
 def exp_spacing(
     n: int,
-    rate: float = 1.0,
+    rate: float = 0.0,
     min_val: float = 0.4,
-    max_val: float = 1.0
+    max_val: float = 1.0,
+    device: torch.device = torch.device('cpu'),
+    dtype: torch.dtype = torch.float32
 ) -> torch.Tensor:
     """
-    Generates exponentially spaced intervals between min_val and max_val.
+    Generates n points in the range [min_val, max_val] with spacing controlled by rate.
 
-    Args:
-        n (int): Number of intervals. Must be greater than 0.
-        rate (float, optional): Rate parameter for exponential spacing. Default is 1.0.
-        min_val (float, optional): Minimum value of the interval. Default is 0.4.
-        max_val (float, optional): Maximum value of the interval. Default is 1.0.
+    Parameters:
+    - n (int): Number of points to generate. Must be >= 1.
+    - rate (float): Controls the spacing between points.
+        - rate = 0: Uniform spacing.
+        - rate = 1: All points except the first are max_val.
+        - rate = -1: All points except the last are min_val.
+        - -1 < rate < 1: Exponential spacing biased towards min_val (rate > 0) or max_val (rate < 0).
+    - min_val (float): Minimum value of the range.
+    - max_val (float): Maximum value of the range.
+    - device (torch.device): Device on which to perform computations.
+    - dtype (torch.dtype): Data type of the output tensor.
 
     Returns:
-        torch.Tensor: A tensor containing the spaced intervals.
+    - torch.Tensor: Tensor of n points with specified spacing.
     """
-    assert n > 0, "n must be greater than 0"
+    if n < 1:
+        raise ValueError("n must be at least 1.")
     if n == 1:
-        spaced_intervals = torch.tensor([max_val], dtype=torch.float32)
-    elif rate == 0.0:
-        spaced_intervals = torch.linspace(min_val, max_val, n)
+        return torch.tensor([min_val], device=device, dtype=dtype)
+    if n == 2:
+        return torch.tensor([min_val, max_val], device=device, dtype=dtype)
+    
+    # Define a fixed scale for exponential mapping
+    scale = 10.0  # Adjust as needed for desired bias strength
+    
+    # Handle extreme rates: rate=1 and rate=-1
+    if rate >= 1.0:
+        # All points except the first are max_val
+        points = torch.full((n,), max_val, device=device, dtype=dtype)
+        points[0] = min_val
+        return points
+    elif rate <= -1.0:
+        # All points except the last are min_val
+        points = torch.full((n,), min_val, device=device, dtype=dtype)
+        points[-1] = max_val
+        return points
+    
+    # Generate uniform parameter t
+    t = torch.linspace(0, 1, steps=n, device=device, dtype=dtype)
+    
+    if rate == 0.0:
+        p = t
     else:
-        exponents = torch.linspace(0.0, rate, n, dtype=torch.float32)
-        values = 1.0 - torch.exp(-exponents)
-        values_max = torch.max(values)
-        spaced_intervals = min_val + (values / values_max) * (max_val - min_val)
-    return spaced_intervals
-
+        # Convert rate to tensor
+        rate_tensor = torch.tensor(rate, device=device, dtype=dtype)
+        
+        # Compute exponential scaling
+        exponent = scale * rate_tensor
+        # For positive rate: p(t) = (1 - exp(-exponent * t)) / (1 - exp(-exponent))
+        # For negative rate: p(t) = (exp(exponent * t) - 1) / (exp(exponent) - 1)
+        if rate > 0:
+            numerator = 1 - torch.exp(-exponent * t)
+            denominator = 1 - torch.exp(-exponent)
+        else:
+            exponent = -exponent  # Make exponent positive for rate < 0
+            numerator = torch.exp(exponent * t) - 1
+            denominator = torch.exp(exponent) - 1
+        
+        p = numerator / denominator
+        
+    # Map p from [0, 1] to [min_val, max_val]
+    points = min_val + p * (max_val - min_val)
+    
+    # Ensure points are within [min_val, max_val]
+    points = torch.clamp(points, min=min_val, max=max_val)
+    
+    return points
+#%%
 
 
 class MultiLevelLoss(nn.Module):
@@ -201,7 +251,6 @@ class MultiLevelLoss(nn.Module):
         device = targets.device
 
         pct_indices_per_level = exp_spacing(N, self.edr, self.min_pct, self.max_pct)
-
         # Compute valid_mask and number of valid tokens per sequence
         valid_mask, num_valid_tokens_per_seq = self.compute_valid_mask(targets)
 
@@ -216,6 +265,9 @@ class MultiLevelLoss(nn.Module):
         for level_i in range(N):
             logits_i = logits[level_i]  # shape (B, T, D)
             pct_i = pct_indices_per_level[level_i]
+
+            if pct_i == 0:
+                continue
 
             # Compute N_i for each sequence
             N_i_per_seq = (num_valid_tokens_per_seq.float() * pct_i).ceil().long()  # shape (B,)
@@ -254,10 +306,11 @@ class MultiLevelLoss(nn.Module):
 # #%%
 
 # # Example tensors (replace with actual data)
-# B, T, D = 3, 20, 10  # Example dimensions
-# N_levels = 3
+# B, T, D = 3, 20, 1000  # Example dimensions
+# N_levels = 4
+# vocab_size = D
 # logits_list = [torch.randn(B, T, D) for _ in range(N_levels)]
-# targets = torch.randint(1, D, (B, T))
+# targets = torch.randint(1, vocab_size, (B, T))
 # PAD_IDX = 0  # Index of the padding token
 # pct_indices_per_level = [0.5, 0.75, 1.0]  # Percentages for each level
 
@@ -266,9 +319,13 @@ class MultiLevelLoss(nn.Module):
 #     targets[i, seq_len_i:] = 0  # Add padding tokens to targets
 
 # targets
+
+# progressive_loss = MultiLevelLoss(PAD_IDX, edr=-1, min_pct=0.0, max_pct=1.0)
+
+# loss = progressive_loss(torch.stack(logits_list, dim=0), targets)
+# print(f"Total Loss: {loss.item()}")
 # #%%
 # # Initialize the ProgressiveLoss class
-# progressive_loss = MultiLevelLoss(PAD_IDX, pct_indices_per_level)
 
 # valid_mask, num_valid_tokens_per_seq = progressive_loss.compute_valid_mask(targets)
 # print("Valid Mask:", valid_mask)
@@ -306,6 +363,9 @@ class MultiLevelLoss(nn.Module):
 # # Continue testing other methods similarly...
 
 # # Compute the loss
-# loss = progressive_loss(logits_list, targets)
-# print(f"Total Loss: {loss.item()}")
+
 # # %%
+
+# # %%
+
+# %%

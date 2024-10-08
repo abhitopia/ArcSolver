@@ -59,11 +59,11 @@ def train(
         pnorm: Optional[float] = typer.Option(None, min=0.0, help="Program Norm. If not None, then it is pinned to this value. If None, no constraint is placed"),
         lora_r: int = typer.Option(0, min=1, help="Rank of the Lora Matrix. 0 disabled Lora"),
         lora_alpha: Optional[float] = typer.Option(None, min=0.0, help="Lora Alpha, None set alpha to lora_r"),
+        n_iter: int = typer.Option(8, min=2, help="Number of iterations for the model"),
 
         # Loss / Compute Config
-        n_iter: int = typer.Option(8, min=2, help="Number of iterations for the model"),
-        edr: Optional[float] = typer.Option(0.5, min=0.0, help="Loss Error Decay Rate"),
-        mctp: Optional[float] = typer.Option(0.3, min=0.0, help="Min Correct Tokens Percentage"),
+        edr: Optional[float] = typer.Option(-1, min=-1.0, max=1.0,  help="Rate of error decay gradient. -1 falls back to regular cross entropy if mctp is 0.0"),
+        mctp: Optional[float] = typer.Option(0.0, min=0.0, help="Error % aftr the first iteration."),
 
         # Learning Rate Config
         mlr: Optional[float] = typer.Option(0.001, min=-1.0, help="Learning Rate"),
