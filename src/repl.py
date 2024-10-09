@@ -11,7 +11,6 @@ from .lazy_adamw import LazyAdamW
 from .rope2d import RoPE2D
 from .tokenizer import MODEL_INPUT, MODEL_OUTPUT, ArrayTransformTokenizer, ColorPermutationTokenizer, GridTokenizer
 from .mask_utils import create_enc_dec_mask
-from .multilevel_loss import MultiLevelLoss
 from .utils import get_logger
 
 logger = get_logger()
@@ -587,9 +586,9 @@ class REPL(nn.Module):
     
     @torch.jit.export
     def greedy_search(self, 
-            prog_idx: int,
             input_grid: List[int],
             input_indices: List[Tuple[int, int]],
+            prog_idx: int,
             color_perm_idx: int = 0,
             array_tform_idx: int = 0,
             max_length: int = 30*30,
@@ -679,6 +678,218 @@ class REPL(nn.Module):
         output_list = prefix_list + output_list
         torch.set_grad_enabled(True)
         return output_list, output_log_prob
+    
+    @staticmethod
+    def _select_kv_caches(kv_caches: List[List[Tuple[torch.Tensor, torch.Tensor]]], mask_or_indices: torch.Tensor) -> List[List[Tuple[torch.Tensor, torch.Tensor]]]:
+        # Selects the kv_caches for a specific beam index
+        selected_kv_caches: List[List[Tuple[torch.Tensor, torch.Tensor]]] = []
+        for loop_kv in kv_caches:
+            selected_loop_kv: List[Tuple[torch.Tensor, torch.Tensor]] = []
+            for k, v in loop_kv:
+                if isinstance(mask_or_indices, torch.Tensor) and mask_or_indices.dtype == torch.bool:
+                    k = k[mask_or_indices]
+                    v = v[mask_or_indices]
+                elif isinstance(mask_or_indices, torch.Tensor) and mask_or_indices.dtype == torch.long:
+                    k = torch.index_select(k, 0, mask_or_indices)
+                    v = torch.index_select(v, 0, mask_or_indices)
+                    assert v.size(0) == mask_or_indices.size(0), "Gathering didn't work!"
+                else:
+                    raise ValueError(f"mask_or_indices must be a tensor of type bool or long. Got {mask_or_indices} ")
+                selected_loop_kv.append((k, v))
+            selected_kv_caches.append(selected_loop_kv)
+        return selected_kv_caches
+    
+    @torch.jit.export
+    def beam_search(self, 
+        input_grid: List[int],
+        input_indices: List[Tuple[int, int]],
+        top_k: int = 5,
+        prog_idx: int = 0,
+        color_perm_idx: int = 0,
+        array_tform_idx: int = 0,
+        bos_idx: int = GridTokenizer().BOS_IDX,
+        eos_idx: int = GridTokenizer().EOS_IDX,
+        new_row_idx: int = GridTokenizer().NEW_ROW_IDX,
+        max_grid_height: int = 35,
+        max_grid_width: int = 35)-> List[Tuple[List[int], float]]:
+    
+        # Assume prog_idx and inp_idx are lists of integers
+        # Batch size is 1
+        device = self.type_emb.weight.device  # Get the device from the embedding layer (assuming it's available)
+
+        # device = self.ate[0].weight.device  # Get the device from the embedding layer (assuming it's available)
+        max_length = max_grid_height * max_grid_width
+        max_r = torch.tensor(max_grid_height-1, device=device)
+        max_c = torch.tensor(max_grid_width-1, device=device)
+        torch.set_grad_enabled(False)
+
+        # Convert input_indices to a list of lists to make torchscript happy
+        input_indices_list = [list(t) for t in input_indices]
+
+        x = MODEL_INPUT(
+            program=torch.tensor([[prog_idx]], dtype=torch.long, device=device),
+            color_permutation=torch.tensor([[color_perm_idx]], dtype=torch.long, device=device),
+            array_transform=torch.tensor([[array_tform_idx]], dtype=torch.long, device=device),
+            grid=torch.tensor([input_grid], dtype=torch.long, device=device),
+            grid_indices=torch.tensor([input_indices_list], dtype=torch.long, device=device),  # Fixed line
+            meta=None
+        )
+
+        _, cache = self.forward(
+                x=x,
+                y=None,
+                return_cache=True
+        )
+
+        assert cache is not None, "Cache must be returned for greedy search"
+
+        last_token_indices = torch.tensor([[[0, 0]]], dtype=torch.long, device=device)
+        last_token = torch.tensor([[bos_idx]], dtype=torch.long, device=device)
+
+        next_y = MODEL_OUTPUT(
+            grid=last_token,  # Shape: (1, 1),
+            grid_indices=last_token_indices,  # Shape: (1, 1, 2)
+            target_grid=None
+        )
+
+        output_sequence = torch.zeros(1, 0, dtype=torch.long, device=device)  # Shape: (1,)
+        output_log_probs = torch.zeros(1, 0, dtype=torch.float, device=device)  # Shape: (1,)
+
+        candidate_sequences: List[List[int]] = []  # Separate list for sequences
+        candidate_log_probs: List[float] = []  # Separate list for log probabilities
+
+        for t in range(max_length):
+            # # if torch.cuda.is_available():
+            # torch.cuda.synchronize() # wait for the GPU to finish work
+            # torch.cuda.empty_cache()
+
+            next_y = MODEL_OUTPUT(
+                grid=last_token,  # Shape: (1, 1),
+                grid_indices=last_token_indices,  # Shape: (1, 1, 2)
+                target_grid=None
+            )
+
+            logits_iters, cache = self.forward_inc(
+                next_y=next_y,
+                cache=cache
+            )
+            logits = logits_iters[-1]
+            seq_len = output_sequence.size(1)
+            bs = output_sequence.size(0)
+
+            # Get the logits for the last token
+            next_logits = logits[:, -1, :]  # Shape: (1, vocab_size)
+            log_probs = F.log_softmax(next_logits, dim=-1)  # Shape: (1, vocab_size)
+
+            # Convert log probabilities to probabilities for sampling
+            probs = torch.exp(log_probs)
+
+            sample_k_tokens = torch.multinomial(probs, top_k, replacement=False)
+            # Gather the log probabilities of the sampled tokens for each sequence
+            batch_indices = torch.arange(log_probs.size(0)).unsqueeze(-1).expand(-1, top_k)
+            sample_log_probs = log_probs[batch_indices, sample_k_tokens]
+
+            # Get top top_k tokens and their log probabilities
+            # topk_log_probs, topk_tokens = log_probs.topk(top_k, dim=-1)  # Each is (1, beam_width)
+
+            topk_log_probs, topk_tokens = sample_log_probs, sample_k_tokens
+
+            # Expand the sequences and log_probs
+            output_sequence = output_sequence.unsqueeze(1).expand(bs, top_k, seq_len)  # Shape: (bs,  top_k, seq_len)
+            output_log_probs = output_log_probs.unsqueeze(1).expand(bs, top_k, seq_len)  # Shape: (bs, top_k, seq_len)
+
+
+            # Combine the expanded sequences with the new tokens
+            output_sequence = torch.cat([output_sequence, topk_tokens.unsqueeze(-1)], dim=-1)  # Shape: (top_k, seq_len+1, top_k)
+            output_log_probs = torch.cat([output_log_probs, topk_log_probs.unsqueeze(-1)], dim=-1)  # Shape: (top_k, seq_len+1, top_k)
+
+            # reshape the output sequence and log_probs
+            output_sequence = output_sequence.reshape(bs * top_k, -1)  # Shape: (top_k*bs, seq_len+1)
+            output_log_probs = output_log_probs.reshape(bs * top_k, -1)  # Shape: (top_k*bs, seq_len+1)
+
+            sorted_log_probs, sorted_indices = output_log_probs.sum(dim=-1).sort(descending=True)  # Shape: (top_k^2,)
+
+            # Select the top top_k sequences
+            topk_indices = sorted_indices[:top_k]  # Shape: (top_k,)
+            original_indices = topk_indices // top_k  # Shape: (top_k,)
+
+            # Update the output sequence and log_probs
+            output_sequence = output_sequence[topk_indices]
+            output_log_probs = output_log_probs[topk_indices]
+
+            mask_ends_eos = output_sequence[:, -1] == eos_idx
+
+            # Separate the sequences that end with EOS token
+            completed_sequences = output_sequence[mask_ends_eos]
+            completed_log_probs = output_log_probs[mask_ends_eos].sum(dim=-1)
+
+
+            for seq, log_prob in zip(completed_sequences, completed_log_probs):
+                seq_list: List[int] = seq.tolist()
+                log_prob: float = float(log_prob.item())
+                candidate_sequences.append(seq_list)
+                candidate_log_probs.append(log_prob)
+
+            # Keep the sequences that do not end with EOS token
+            output_sequence = output_sequence[~mask_ends_eos]
+            output_log_probs = output_log_probs[~mask_ends_eos]
+
+            # If all sequences are completed, stop
+            if output_sequence.size(0) == 0:
+                break
+
+            # If not, then prepare the next input
+            kv_caches, enc_mask, dec_mask = cache
+
+            # reconstruct kv_caches based on the original indices
+            kv_caches = self._select_kv_caches(kv_caches, original_indices)
+            enc_mask = torch.index_select(enc_mask, 0, original_indices)
+            dec_mask = torch.index_select(dec_mask, 0, original_indices)
+            last_token_indices = torch.index_select(last_token_indices, 0, original_indices)
+
+            # The apply the non-eos mask
+            kv_caches = self._select_kv_caches(kv_caches, ~mask_ends_eos)
+            enc_mask = enc_mask[~mask_ends_eos]
+            dec_mask = dec_mask[~mask_ends_eos]
+            last_token_indices = last_token_indices[~mask_ends_eos]
+
+            # Now update the last token and indices
+            last_token = output_sequence[:, -1].unsqueeze(1)
+
+            # Create a boolean mask where last_token equals new_row_idx
+            mask_new_row = (last_token[:, 0] == new_row_idx)  # Shape: [B]
+
+            # Update row indices: If mask is True, increment by 1 and clamp to max_r else, keep the original row index
+            updated_rows = torch.where(
+                mask_new_row,
+                torch.min(last_token_indices[:, 0, 0] + 1, max_r),
+                last_token_indices[:, 0, 0]
+            )
+
+            # Update column indices: If mask is True, set to 0 Else, increment by 1 and clamp to max_c
+            updated_cols = torch.where(
+                mask_new_row,
+                torch.tensor(0, device=device),
+                torch.min(last_token_indices[:, 0, 1] + 1, max_c)
+            )
+
+            # Combine the updated rows and columns
+            last_token_indices = torch.stack([updated_rows, updated_cols], dim=1).unsqueeze(1)  # Shape: [B, 1, 2]
+
+            # Repack the cache
+            cache = (kv_caches, enc_mask, dec_mask)
+
+        # This particular way is used for TorchScript compatibility
+        # Sort the candidate_log_probs and reorder candidate_sequences based on the sorted candidate_log_probs
+        sorted_indices: List[int] = torch.tensor(candidate_log_probs).argsort(descending=True).tolist()  # Sort indices based on log_probs
+        sorted_log_probs = [candidate_log_probs[i] for i in sorted_indices]
+        sorted_sequences = [[bos_idx] + candidate_sequences[i] for i in sorted_indices]
+
+        # Combine sorted log_probs and sequences into the final output
+        output_candidates = [(seq, log_prob) for log_prob, seq in zip(sorted_log_probs, sorted_sequences)]
+
+        torch.set_grad_enabled(True)
+        return output_candidates
     
     def get_optimizer(
             self, 

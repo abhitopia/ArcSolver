@@ -12,19 +12,6 @@ from rich.logging import RichHandler
 from unique_names_generator import get_random_name
 
 
-def gather_4d_tensor_along_zero_dim(data, indices):
-    # Ensure indices is a torch.LongTensor (required for gather)
-    indices = indices.long()
-    # Add enough dimensions to indices to match the number of dimensions in data
-    indices = indices.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)  # Add dimensions to match data's dimensions
-    # Expand the indices to match the shape of data except for the 0th dimension
-    
-    dim_0, dim_1, dim_2, dim_3 = data.shape
-    expanded_indices = indices.expand(-1, dim_1, dim_2, dim_3)
-    # Use torch.gather to gather along the 0th dimension
-    gathered_data = torch.gather(data, 0, expanded_indices)
-    return gathered_data
-
 def find_factors(number):
     factors = []
     for i in range(1, int(number ** 0.5) + 1):
@@ -165,6 +152,7 @@ def map_to_tensors(nested, func):
     else:
         # If the item is not a tensor or a nested structure, return it as is
         return nested
+    
 def get_logger(name: str = None):
     logger = logging.getLogger("ArcSolver" if name is None else name)
 

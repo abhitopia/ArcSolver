@@ -1,10 +1,9 @@
 #%%
-import functools
-import random
 import torch
+import torch.nn.functional as F
 from src.repl import REPLConfig, REPL
-from src.task import ARC_SYNTH, ARC_TRAIN, ARC_EVAL
-from src.tokenizer import ArcTokenizer, MODEL_INPUT
+from src.task import ARC_SYNTH
+from src.tokenizer import ArcTokenizer
 from src.dataset import ArcExamplesDataset
 ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
 #%%
@@ -23,12 +22,12 @@ model = torch.jit.script(model)
 # %%
 loader = ARC_SYNTH
 tasks = loader.tasks
-task_id = 2
+task_id = 6
 
 task = tasks[task_id]
 train_examples = task.train
 test_examples = task.test
-example_id = 1
+example_id = 2
 example = train_examples[example_id]
 # %%
 
@@ -47,10 +46,6 @@ def get_predicted_tokens(model, tokenizer, example):
     _, predicted_tokens = torch.max(logits, dim=2)
     predicted_tokens = [start_idx] + predicted_tokens[0].tolist()[:-1]
     return predicted_tokens, y.grid.tolist()[0]
-
-predicted_tokens, target_tokens = get_predicted_tokens(model, tokenizer, example)
-# %%
-assert target_tokens == predicted_tokens
 #%%
 
 def get_greedy_prediction(model, tokenizer, example):
@@ -71,9 +66,29 @@ def get_greedy_prediction(model, tokenizer, example):
 
     return gs, score
 
+def get_beam_search_prediction(model, tokenizer, example, top_k=5):
+    x, y =  tokenizer.encode(example)
+    cp = x.color_permutation[0]
+    at = x.array_transform[0]
+    prg = x.program[0]
+    inp_grid = x.grid
+    inp_indices = x.grid_indices
+    result = model.beam_search(
+        input_grid=inp_grid,
+        input_indices=inp_indices,
+        prog_idx=prg,
+        color_perm_idx=cp,
+        array_tform_idx=at,
+        top_k=top_k
+    )
+
+    return result[0]
+
+predicted_tokens, target_tokens = get_predicted_tokens(model, tokenizer, example)
+# %%
+assert target_tokens == predicted_tokens
 gs, score = get_greedy_prediction(model, tokenizer, example)
-# %%
 assert gs == target_tokens
-# %%
-gs == target_tokens
+bs, score_bs = get_beam_search_prediction(model, tokenizer, example)
+assert bs == target_tokens
 # %%

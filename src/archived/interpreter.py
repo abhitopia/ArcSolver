@@ -6,13 +6,26 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import torch.types
-from ..utils import is_power_of_two, get_logger, gather_4d_tensor_along_zero_dim
+from ..utils import is_power_of_two, get_logger
 from ..dataset import ProgramTokenizer, GridTokenizer
 from torch import Tensor
 from torch.cuda.amp import autocast
 from ..lazy_adamw import LazyAdamW
 
 logger = get_logger()
+
+def gather_4d_tensor_along_zero_dim(data, indices):
+    # Ensure indices is a torch.LongTensor (required for gather)
+    indices = indices.long()
+    # Add enough dimensions to indices to match the number of dimensions in data
+    indices = indices.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)  # Add dimensions to match data's dimensions
+    # Expand the indices to match the shape of data except for the 0th dimension
+    
+    dim_0, dim_1, dim_2, dim_3 = data.shape
+    expanded_indices = indices.expand(-1, dim_1, dim_2, dim_3)
+    # Use torch.gather to gather along the 0th dimension
+    gathered_data = torch.gather(data, 0, expanded_indices)
+    return gathered_data
 
 @dataclass
 class InterpreterConfig:
