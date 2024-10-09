@@ -181,11 +181,12 @@ class ArcExamplesDataset(Dataset):
         indices = list(range(num_examples))
         return ArcExamplesDataset([self.examples[i] for i in indices], self.tokenizer)
     
-    def collate_fn(self, batch: List[Example], pad_idx: int, permute: False, device=torch.device('cpu'))-> Tuple[MODEL_INPUT, MODEL_OUTPUT]:
+    @staticmethod
+    def collate_fn(batch: List[Example], pad_idx: int, tokenizer: ArcTokenizer, permute: False, keep_meta=True, device=torch.device('cpu'))-> Tuple[MODEL_INPUT, MODEL_OUTPUT]:
         if permute:
             batch = [ex if ex.is_original else ex.permute() for ex in batch]
 
-        x, y = zip(*[self.tokenizer.encode(ex) for ex in batch])
+        x, y = zip(*[tokenizer.encode(ex) for ex in batch])
 
         cps = [xi.color_permutation for xi in x]
         ats = [xi.array_transform for xi in x]
@@ -194,7 +195,7 @@ class ArcExamplesDataset(Dataset):
         inp_indices = [xi.grid_indices for xi in x]
         out_grids = [yi.grid for yi in y]
         out_indices = [yi.grid_indices for yi in y]
-        meta = [xi.meta for xi in x]
+        meta = [xi.meta for xi in x] if keep_meta else None
 
         prgs = torch.tensor(prgs, dtype=torch.long).to(device, non_blocking=True)
         cps = torch.tensor(cps, dtype=torch.long).to(device, non_blocking=True)
@@ -247,7 +248,12 @@ class ArcExamplesDataset(Dataset):
 
         pad_idx = self.tokenizer.grid_tokenizer.PAD_IDX
 
-        collate_fn = functools.partial(self.collate_fn, pad_idx=pad_idx, device=device, permute=permute)
+        collate_fn = functools.partial(ArcExamplesDataset.collate_fn,
+                                    tokenizer=self.tokenizer,
+                                    pad_idx=pad_idx, 
+                                    device=device,
+                                    keep_meta=True, 
+                                    permute=permute)
 
         batch_sampler = TargetTokenCountBatchSampler(self, approx_token_count=token_count, shuffle=shuffle)
         dl = DataLoader(dataset=self,

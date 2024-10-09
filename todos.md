@@ -18,11 +18,14 @@
 - [x] Analyse the norms of the trained model. Did and nothing special
 - [x] Implement LORA on LM Head
 - [x] Separate LM Head as a param group. (Combined with Lora Params with Program params instead)
+- [x] Create a mapping of v8 runs
+- [x] Start the training of the first submission model
 
-- [ ] Create a mapping of v8 runs
-- [ ] Start the training of the first submission model
+
+## Inference V9
+- [x] Fix Greedy Search 
+- [ ] Implement Beam Search
 - [ ] Start writing inference code and test it against the best ARC_EVAL trained model
-
 - [ ] Create a solver for Synthetic data first!
 
 

@@ -381,7 +381,7 @@ class LoRALinear(nn.Linear):
         Returns:
             Tensor: Output tensor of shape (*, out_features).
         """
-        if self.r > 0:
+        if self.A is not None and self.B is not None:
             # Compute the low-rank adaptation
             # W' = W + (B @ A) * scaling
             lora_weight = torch.matmul(self.B, self.A) * self.scaling
@@ -389,7 +389,7 @@ class LoRALinear(nn.Linear):
             adjusted_weight = self.weight + lora_weight
             return F.linear(input, adjusted_weight, self.bias)
         else:
-            return super(LoRALinear, self).forward(input)
+            return F.linear(input, self.weight, self.bias)
 
     def extra_repr(self):
         return (f'in_features={self.in_features}, out_features={self.out_features}, '
@@ -402,6 +402,7 @@ class REPL(nn.Module):
                 config: REPLConfig):
         super().__init__()
         self.config = config
+        self.n_iter = config.n_iter
         self.n_dim = config.n_dim
         self.n_layer = config.n_layer
         self.pnorm = config.pnorm
@@ -498,7 +499,6 @@ class REPL(nn.Module):
     
     def forward(self, x: MODEL_INPUT,
             y: Optional[MODEL_OUTPUT] = None,
-            num_iters: int = 8,
             return_cache: bool = False
         )-> Tuple[Tensor, Optional[Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]]:
 
@@ -523,7 +523,7 @@ class REPL(nn.Module):
         updated_kv_cache: List[List[Tuple[Tensor, Tensor]]] = [] 
 
         current_state = enc_dec_inp
-        for i in range(num_iters):
+        for i in range(self.n_iter):
             interpreter_out, iter_kv_cache = self.interpreter(
                                             x=current_state,
                                             attn_mask=attn_mask,
@@ -547,7 +547,6 @@ class REPL(nn.Module):
     def forward_inc(self,
             next_y: MODEL_OUTPUT, 
             cache: Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor],
-            num_iters: int = 8,
         ) -> Tuple[Tensor, Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]:
                    
         dec_inp, dec_valid_mask, dec_indices = self.contruct_decoder_input(next_y)
@@ -566,7 +565,7 @@ class REPL(nn.Module):
 
         current_state = dec_inp
 
-        for i in range(num_iters):
+        for i in range(self.n_iter):
             interpreter_out, iter_kv_cache = self.interpreter(
                                             x=current_state,
                                             attn_mask=attn_mask,
@@ -591,7 +590,6 @@ class REPL(nn.Module):
             prog_idx: int,
             input_grid: List[int],
             input_indices: List[Tuple[int, int]],
-            num_iters: int = 8,
             color_perm_idx: int = 0,
             array_tform_idx: int = 0,
             max_length: int = 30*30,
@@ -620,7 +618,6 @@ class REPL(nn.Module):
         _, cache = self.forward(
                 x=x,
                 y=None,
-                num_iters=num_iters,
                 return_cache=True
         )
 
@@ -645,8 +642,7 @@ class REPL(nn.Module):
 
             logits_iters, cache = self.forward_inc(
                 next_y=next_y,
-                cache=cache,
-                num_iters=num_iters
+                cache=cache
             )
 
             # Get the logits from the last iteration
@@ -678,7 +674,9 @@ class REPL(nn.Module):
 
             last_token = token_token_idx
 
+        prefix_list: List[int] = [bos_idx]
         output_list: List[int] = output_sequence.tolist()  # Use .tolist() now since it's supported in TorchScript
+        output_list = prefix_list + output_list
         torch.set_grad_enabled(True)
         return output_list, output_log_prob
     
