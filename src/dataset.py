@@ -182,15 +182,15 @@ class ArcExamplesDataset(Dataset):
         return ArcExamplesDataset([self.examples[i] for i in indices], self.tokenizer)
     
     @staticmethod
-    def collate_fn(batch: List[Example], pad_idx: int, tokenizer: ArcTokenizer, permute: False, keep_meta=True, device=torch.device('cpu'))-> Tuple[MODEL_INPUT, MODEL_OUTPUT]:
+    def collate_fn(batch: List[Example], pad_idx: int, tokenizer: ArcTokenizer, permute: False, keep_meta=True, prog_idx=None, device=torch.device('cpu'))-> Tuple[MODEL_INPUT, MODEL_OUTPUT]:
         if permute:
             batch = [ex if ex.is_original else ex.permute() for ex in batch]
 
         x, y = zip(*[tokenizer.encode(ex) for ex in batch])
 
         cps = [xi.color_permutation for xi in x]
-        ats = [xi.array_transform for xi in x]
-        prgs = [xi.program for xi in x]
+        ats = [xi.array_transform for xi in x] 
+        prgs = [xi.program for xi in x] if prog_idx is None else [[prog_idx]] * len(x)
         inp_grids = [xi.grid for xi in x]
         inp_indices = [xi.grid_indices for xi in x]
         out_grids = [yi.grid for yi in y]
