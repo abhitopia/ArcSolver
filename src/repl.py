@@ -677,7 +677,7 @@ class REPL(nn.Module):
         output_list: List[int] = output_sequence.tolist()  # Use .tolist() now since it's supported in TorchScript
         output_list = prefix_list + output_list
         torch.set_grad_enabled(True)
-        return output_list, output_log_prob
+        return output_list, torch.exp(output_log_prob)
     
     @staticmethod
     def _select_kv_caches(kv_caches: List[List[Tuple[torch.Tensor, torch.Tensor]]], mask_or_indices: torch.Tensor) -> List[List[Tuple[torch.Tensor, torch.Tensor]]]:
@@ -704,6 +704,7 @@ class REPL(nn.Module):
         input_grid: List[int],
         input_indices: List[Tuple[int, int]],
         top_k: int = 5,
+        prob_thresh: float = 0.0,  # Finish when the probability of the top beam is below this threshold
         prog_idx: int = 0,
         color_perm_idx: int = 0,
         array_tform_idx: int = 0,
@@ -713,6 +714,9 @@ class REPL(nn.Module):
         max_grid_height: int = 35,
         max_grid_width: int = 35)-> List[Tuple[List[int], float]]:
     
+        # Compute log_prob_threshold from prob_threshold
+        log_prob_thresh = -float('inf') if prob_thresh == 0.0 else torch.log(prob_thresh) 
+
         # Assume prog_idx and inp_idx are lists of integers
         # Batch size is 1
         device = self.type_emb.weight.device  # Get the device from the embedding layer (assuming it's available)
@@ -826,7 +830,7 @@ class REPL(nn.Module):
 
             for seq, log_prob in zip(completed_sequences, completed_log_probs):
                 seq_list: List[int] = seq.tolist()
-                log_prob: float = float(log_prob.item())
+                log_prob: float = float(torch.exp(log_prob).item())
                 candidate_sequences.append(seq_list)
                 candidate_log_probs.append(log_prob)
 
@@ -836,6 +840,9 @@ class REPL(nn.Module):
 
             # If all sequences are completed, stop
             if output_sequence.size(0) == 0:
+                break
+
+            if torch.all(output_log_probs.sum(dim=-1) < log_prob_thresh):
                 break
 
             # If not, then prepare the next input

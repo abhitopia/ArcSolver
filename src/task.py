@@ -261,7 +261,7 @@ class ArcTasksLoader:
         logger.info(f"Average test examples per task: {len(self.test)/len(self.tasks)}")
     
     def load(self) -> None:
-        json_files = [json for json in Path(self.path).glob("**/*.json")]
+        json_files = sorted([json for json in Path(self.path).glob("**/*.json")])
         tasks = []
         train_examples = []
         test_examples = []
