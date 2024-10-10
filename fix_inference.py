@@ -17,7 +17,10 @@ model = REPL(model_config)
 model.load_state_dict(data['model_state_dict'], strict=True)
 ## Load Tokenizer
 tokenizer = ArcTokenizer.from_dict(data['tokenizer'])
-# %%
+#%%
+
+#%%
+
 model = torch.jit.script(model)
 model.eval()
 

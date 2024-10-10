@@ -5,8 +5,8 @@ import torch.multiprocessing as mp
 import torch
 from tqdm import tqdm
 
-from .archived.interpreter import InterpreterConfig, Interpreter
-from .dataset import GridTokenizer, ProgramTokenizer, TaskToExamples
+from .interpreter import InterpreterConfig, Interpreter
+from ..dataset import GridTokenizer, ProgramTokenizer, TaskToExamples
 #%%
 
 mp.set_start_method("spawn", force=True)
