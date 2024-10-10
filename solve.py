@@ -1,6 +1,7 @@
 #%%
 from dataclasses import dataclass
 import functools
+from itertools import product
 import random
 from typing import Any, List
 
@@ -13,7 +14,7 @@ from src.lazy_adamw import LazyAdamW
 from src.lrscheduler import LambdaLRWithReduceOnPlateau
 from src.repl import REPL, REPLConfig
 from src.tokenizer import ArcTokenizer
-from src.task import ARC_SYNTH, ArcTask, Example, ARC_EVAL
+from src.task import ARC_SYNTH, ArcTask, ArrayTransform, ColorPermutation, Example, ARC_EVAL
 from src.utils import map_to_tensors
 #%%
 loader = ARC_SYNTH
@@ -26,8 +27,9 @@ class ArcSolverConfig:
 
     # Data
     n_train_ex: int = 20
-    bs = 5
-    permute: bool = True
+    tbs: int = 5
+    ebs: int = 5
+    # permute: bool = True
 
     # Train
     n_grad_accum: int = 1
@@ -53,11 +55,8 @@ class ArcSolverConfig:
     plt_warmup: int = 10
     plt_factor: float = 0.8
 
-
-
-    def __post_init__(self):
-        assert self.bs <= self.n_train_ex, 'Batch size must be less than or equal to the number of training examples'
-
+    # def __post_init__(self):
+    #     assert self.bs <= self.n_train_ex, 'Batch size must be less than or equal to the number of training examples'
 
 
 class ARCSolver:
@@ -68,6 +67,7 @@ class ARCSolver:
         self.model.to(self.device)
         self.tokenizer = self.load_tokenizer(config)
         self.pad_idx = self.tokenizer.grid_tokenizer.PAD_IDX
+        self.train_perms, self.eval_perms = self.get_augmentation_split()
         self.reset()
 
     def reset(self):
@@ -77,6 +77,31 @@ class ARCSolver:
         self.metrics = {}
         self.optim = self.optimizer(config, self.model)
         self.scheduler = self.load_scheduler(config, self.optim)
+
+    @staticmethod
+    def get_augmentation_split():
+        tforms = list(ArrayTransform)
+        cps = list(ColorPermutation)
+        augs = list(product(tforms, cps))
+
+        test_cps = set()
+        test_tforms = set()
+
+        eval_tforms = []
+        train_tforms = []
+        for tform, cp in augs[1:]:
+            if cp not in test_cps and tform not in test_tforms:
+                test_cps.add(cp)
+                test_tforms.add(tform)
+                eval_tforms.append((tform, cp))
+            else:
+                train_tforms.append((tform, cp))
+
+            if len(test_cps) == len(cps) and len(test_tforms) == len(tforms):
+                break
+            
+        return train_tforms, eval_tforms
+
 
     @staticmethod
     def load_model(config):
@@ -183,20 +208,19 @@ class ARCSolver:
             self.optim.step()
             self.scheduler.step()
 
-        self.metrics['STL'] =  loss.item()
+        self.metrics['STL'] =  (loss.item(), 3)
         return loss.item()
 
-    def evaluate(self, examples: List[Example], prefix):
+    def evaluate(self, dl, prefix):
         self.model.eval()
-        collate_fn = self.get_collate_fn()
         total_loss = 0
         total_tokens = 0
         total_correct_tokens = 0
         total_samples = 0
         total_correct_samples = 0
-        for example in examples:
-            collate_ex = collate_fn([example])
-            x, y = map_to_tensors(collate_ex, lambda x: x.to(self.device, non_blocking=True))
+        num_batches = len(dl)
+        for batch in dl:
+            x, y = map_to_tensors(batch, lambda x: x.to(self.device, non_blocking=True))
             with torch.no_grad():
                 iter_logits, _ = self.model(x, y)
                 logits = iter_logits[-1]
@@ -211,85 +235,84 @@ class ARCSolver:
             total_correct_samples += ncs
             total_loss += loss.item()
 
-        avg_loss = total_loss / len(examples) if len(examples) > 0 else 0
+        avg_loss = total_loss / num_batches if num_batches > 0 else 0
         token_acc = total_correct_tokens / total_tokens if total_tokens > 0 else 0
         sample_acc = total_correct_samples / total_samples if total_samples > 0 else 0
 
-        self.metrics[f'{prefix}L'] = avg_loss
-        self.metrics[f'{prefix}TA'] = token_acc
-        self.metrics[f'{prefix}SA'] = sample_acc
+        self.metrics[f'{prefix}L'] = (avg_loss, 3)
+        self.metrics[f'{prefix}TA'] = (token_acc, 3)
+        self.metrics[f'{prefix}SA'] = (sample_acc, 2)
         return avg_loss
             
-
 
     def get_collate_fn(self):
         collate_fn = functools.partial(ArcExamplesDataset.collate_fn,
                             pad_idx=self.pad_idx, 
                             tokenizer=self.tokenizer, 
                             prog_idx = 0, 
-                            permute=self.config.permute)
+                            permute=False)
         return collate_fn
         
 
 
-
-    def get_dataloader(self, examples: List[Example]):
+    def get_dataloader(self, examples: List[Example], bs):
         train_ds = ArcExamplesDataset(examples, tokenizer)
         train_dl = torch.utils.data.DataLoader(train_ds,
-                                            batch_size=self.config.bs, 
+                                            batch_size=bs, 
                                             shuffle=True, 
+                                            drop_last=False,
                                             collate_fn=self.get_collate_fn())
         return train_dl
 
-    def get_augment_examples(self, min_num, examples):
-        num_to_augment = max(min_num - len(examples), 0)
-        num_to_augment = min_num
-        augmented_examples = []
-        for i in range(num_to_augment):
-            example_idx = i % len(examples)
-            e = examples[example_idx].clone().permute()
-            augmented_examples.append(e)
-        return augmented_examples
+    def get_train_eval_split(self, examples: List[Example]):
+        train_examples = []
+
+        train_examples = [ex.clone().permute(cp, tf) for ex in examples for tf, cp in self.train_perms]
+        eval_examples = [ex.clone().permute(cp, tf) for ex in examples for tf, cp in self.eval_perms]
+        train_examples += examples
+
+        return train_examples, eval_examples
     
 
     def log_metrics(self):
         metric_str = ''
-        for key, value in self.metrics.items():
+        for key, (value, p) in self.metrics.items():
             if isinstance(value, float):
-                metric_str += f'{key}: {value:.4f}  '
+                metric_str += f'{key}: {value:.{p}f} '
             elif isinstance(value, int):
-                metric_str += f'{key}: {value:3d}  '
+                metric_str += f'{key}: {value:{p}d} '
             else:
-                metric_str += f'{key}: {value}  '
+                metric_str += f'{key}: {value} '
         print(metric_str)
 
     def __call__(self, task: ArcTask) -> Any:
         self.reset()
-        train_examples = task.train
+        train_examples, eval_examples = self.get_train_eval_split(task.train)
         test_examples = task.test
-        aux_examples = self.get_augment_examples(self.config.n_train_ex, train_examples)
-        train_dl = self.get_dataloader(aux_examples + train_examples)
+        train_dl = self.get_dataloader(train_examples, self.config.tbs)
+        eval_dl = self.get_dataloader(eval_examples, self.config.ebs)
+        test_dl = self.get_dataloader(test_examples, self.config.ebs)
 
         total_step = self.config.warmup_steps + self.config.decay_steps
         step = 0
 
         print("Task", task.id)
         print("Program ID", task.prog_id)
-        print("Num Train Examples", len(train_examples))
-        print("Num Test Examples", len(test_examples))
-        print("Num Augmented Examples", len(aux_examples))
+        print("Num Train Examples", len(task.train))
+        print("Num Test Examples", len(task.test))
+        print("Num Augmented Examples", len(train_examples))
+        self.evaluate(test_dl, 'TE')
 
-        self.evaluate(test_examples, 'test')
         self.log_metrics()
         while True:
             for idx, batch in enumerate(train_dl):
-                self.metrics = {'T': step}
+                self.metrics = {'T': (step, 3)}
                 accum_step = step % self.config.n_grad_accum
                 loss = self._train_step(batch, accum_step)
                 if accum_step == self.config.n_grad_accum - 1:
-                    self.evaluate(train_examples, 'TRA')
-                    self.evaluate(test_examples, 'TE')
-                    # self.scheduler.step_metric(self.metrics['TRATA'])
+                    self.evaluate(eval_dl, 'TRA')
+                    self.evaluate(test_dl, 'TE')
+                    self.scheduler.step_metric(self.metrics['TRATA'][0])
                     self.log_metrics()
 
                 step += 1
@@ -300,14 +323,15 @@ class ARCSolver:
                 break
 
 
-ckt_path = '/teamspace/studios/work-horse/ArcSolver/runs/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
+# ckt_path = '/teamspace/studios/work-horse/ArcSolver/runs/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
+ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
 config = ArcSolverConfig(
     lr=0.005,
     wd=0.5,
     dropout=0.1,
-    n_train_ex=20,
     min_lr_scale=0.01,
-    bs = 5,
+    tbs = 5,
+    ebs = 5,
     n_grad_accum=3,
     warmup_steps=30,
     decay_steps=1000,
@@ -319,7 +343,9 @@ config = ArcSolverConfig(
 
 solve = ARCSolver(config=config)
 print("Num Tasks", len(tasks))
-task_id = 3500
+task_id = 0 #3500
 task = tasks[task_id]
 print(task)
 solve(task=task)
+
+# %%

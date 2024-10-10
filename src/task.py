@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import pickle
 import random
-from typing import List
+from typing import List, Optional
 import numpy as np
 from .utils import get_logger, hash_string
 #%%
@@ -132,16 +132,20 @@ class Example:
         cloned._original_output = np.copy(self.output)
         return cloned
 
-    def permute(self, color_perm=None, arr_transform=None):
+    def permute(self, color_perm: Optional[ColorPermutation] = None, arr_transform: Optional[ArrayTransform] = None):
         assert not self._is_original, "Cannot transform an original example. Please clone first."
 
         if color_perm is None:
             cps = list(ColorPermutation)
             color_perm = random.choice(cps)
+        else:
+            assert isinstance(color_perm, ColorPermutation), "color_perm should be an instance of ColorPermutation"
 
         if arr_transform is None:
             ats = list(ArrayTransform)
             arr_transform = random.choice(ats)
+        else:
+            assert isinstance(arr_transform, ArrayTransform), "arr_transform should be an instance of ArrayTransform"
 
         # Try again if the identity transformation is selected with the identity color permutation
         if color_perm == ColorPermutation.CPID and arr_transform == ArrayTransform.IDENT:
@@ -291,7 +295,6 @@ class ArcTasksLoader:
             tasks.append(task)
 
         self._tasks = tasks
-        # self.merge_tasks()
 
     def __len__(self):
         return len(self.tasks)
