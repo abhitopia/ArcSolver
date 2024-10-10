@@ -168,6 +168,7 @@ class ARCSolver:
     
 
     def _train_step(self, batch, accum_step):
+        self.model.train()
         x, y = map_to_tensors(batch, lambda x: x.to(self.device, non_blocking=True))
 
         if accum_step == 0:
@@ -187,6 +188,7 @@ class ARCSolver:
         return loss.item()
 
     def evaluate(self, examples: List[Example], prefix):
+        self.model.eval()
         collate_fn = self.get_collate_fn()
         total_loss = 0
         total_tokens = 0
@@ -196,9 +198,11 @@ class ARCSolver:
         for example in examples:
             collate_ex = collate_fn([example])
             x, y = map_to_tensors(collate_ex, lambda x: x.to(self.device, non_blocking=True))
-            iter_logits, _ = self.model(x, y)
-            logits = iter_logits[-1]
-            loss = self._loss_fn(logits, y.target_grid)
+            with torch.no_grad():
+                iter_logits, _ = self.model(x, y)
+                logits = iter_logits[-1]
+                loss = self._loss_fn(logits, y.target_grid)
+
             nct, tt, ncs, ts = self._accuracy_fn(logits, y.target_grid)
 
             # Update metrics

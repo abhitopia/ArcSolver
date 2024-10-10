@@ -1,3 +1,7 @@
+## V10 
+- [ ] Add inverse transform to the training mix?
+
+
 ## V8 Model (Mission Restore Accuracy) (Test the heck out)
 
 - [x] Added new 2D rope which is extension of the original 1D rope
@@ -24,7 +28,10 @@
 
 ## Inference V9
 - [x] Fix Greedy Search 
-- [ ] Implement Beam Search
+- [x] Implement Beam Search
+- [x] Optimize Beam Search by limiting the prob threshold
+- [x] Write a inference analysis script
+- [ ] Test the inference script
 - [ ] Start writing inference code and test it against the best ARC_EVAL trained model
 - [ ] Create a solver for Synthetic data first!
 
