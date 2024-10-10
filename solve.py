@@ -17,7 +17,8 @@ from src.tokenizer import ArcTokenizer
 from src.task import ARC_SYNTH, ArcTask, ArrayTransform, ColorPermutation, Example, ARC_EVAL
 from src.utils import map_to_tensors
 #%%
-loader = ARC_SYNTH
+# loader = ARC_SYNTH
+loader = ARC_EVAL
 tasks = loader.tasks
 #%%
 
@@ -176,7 +177,10 @@ class ARCSolver:
         loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1), reduction='none').view_as(y)  
         mask = y != self.pad_idx
         loss = (loss * mask).sum() / mask.sum()
-        return loss
+
+        loss_sum = (loss * mask).sum()
+        num_tokens = mask.sum()
+        return loss_sum, num_tokens
     
     def _accuracy_fn(self, logits, y):
         _, predicted_tokens = torch.max(logits, dim=2)
@@ -199,8 +203,8 @@ class ARCSolver:
             self.optim.zero_grad()
 
         logits, _ = self.model(x, y)
-        loss = self._loss_fn(logits[-1], y.target_grid)
-
+        loss_sum, num_tokens = self._loss_fn(logits[-1], y.target_grid)
+        loss = loss_sum / num_tokens
         loss_accum = loss / self.config.n_grad_accum
         loss_accum.backward()
 
@@ -224,7 +228,7 @@ class ARCSolver:
             with torch.no_grad():
                 iter_logits, _ = self.model(x, y)
                 logits = iter_logits[-1]
-                loss = self._loss_fn(logits, y.target_grid)
+                loss, _ = self._loss_fn(logits, y.target_grid)
 
             nct, tt, ncs, ts = self._accuracy_fn(logits, y.target_grid)
 
@@ -235,33 +239,36 @@ class ARCSolver:
             total_correct_samples += ncs
             total_loss += loss.item()
 
-        avg_loss = total_loss / num_batches if num_batches > 0 else 0
+
+
+        avg_loss = total_loss / total_tokens if num_batches > 0 else 0
         token_acc = total_correct_tokens / total_tokens if total_tokens > 0 else 0
         sample_acc = total_correct_samples / total_samples if total_samples > 0 else 0
 
-        self.metrics[f'{prefix}L'] = (avg_loss, 3)
+        self.metrics[f'{prefix}L'] = (avg_loss, 4)
         self.metrics[f'{prefix}TA'] = (token_acc, 3)
         self.metrics[f'{prefix}SA'] = (sample_acc, 2)
+
         return avg_loss
             
 
-    def get_collate_fn(self):
+    def get_collate_fn(self, permute=False):
         collate_fn = functools.partial(ArcExamplesDataset.collate_fn,
                             pad_idx=self.pad_idx, 
                             tokenizer=self.tokenizer, 
                             prog_idx = 0, 
-                            permute=False)
+                            permute=permute)
         return collate_fn
         
 
 
-    def get_dataloader(self, examples: List[Example], bs):
+    def get_dataloader(self, examples: List[Example], bs, permute):
         train_ds = ArcExamplesDataset(examples, tokenizer)
         train_dl = torch.utils.data.DataLoader(train_ds,
                                             batch_size=bs, 
                                             shuffle=True, 
                                             drop_last=False,
-                                            collate_fn=self.get_collate_fn())
+                                            collate_fn=self.get_collate_fn(permute))
         return train_dl
 
     def get_train_eval_split(self, examples: List[Example]):
@@ -289,9 +296,9 @@ class ARCSolver:
         self.reset()
         train_examples, eval_examples = self.get_train_eval_split(task.train)
         test_examples = task.test
-        train_dl = self.get_dataloader(train_examples, self.config.tbs)
-        eval_dl = self.get_dataloader(eval_examples, self.config.ebs)
-        test_dl = self.get_dataloader(test_examples, self.config.ebs)
+        train_dl = self.get_dataloader(train_examples, self.config.tbs, permute=True)
+        eval_dl = self.get_dataloader(task.train, self.config.ebs, permute=False)
+        test_dl = self.get_dataloader(test_examples, self.config.ebs, permute=False)
 
         total_step = self.config.warmup_steps + self.config.decay_steps
         step = 0
@@ -313,6 +320,7 @@ class ARCSolver:
                     self.evaluate(eval_dl, 'TRA')
                     self.evaluate(test_dl, 'TE')
                     self.scheduler.step_metric(self.metrics['TRATA'][0])
+                    self.metrics['lr'] = (self.scheduler.get_last_lr()[0], 4)
                     self.log_metrics()
 
                 step += 1
@@ -323,17 +331,17 @@ class ARCSolver:
                 break
 
 
-# ckt_path = '/teamspace/studios/work-horse/ArcSolver/runs/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
-ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
+ckt_path = '/teamspace/studios/work-horse/ArcSolver/runs/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
+# ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
 config = ArcSolverConfig(
-    lr=0.005,
-    wd=0.5,
-    dropout=0.1,
+    lr=0.01,
+    wd=0.05,
+    dropout=0.01,
     min_lr_scale=0.01,
-    tbs = 5,
-    ebs = 5,
-    n_grad_accum=3,
-    warmup_steps=30,
+    tbs = 10,
+    ebs = 10,
+    n_grad_accum=5,
+    warmup_steps=50,
     decay_steps=1000,
     ckt_path=ckt_path,
     plt_factor=0.5,
@@ -343,7 +351,8 @@ config = ArcSolverConfig(
 
 solve = ARCSolver(config=config)
 print("Num Tasks", len(tasks))
-task_id = 0 #3500
+# task_id = 1009 #3500
+task_id = 111
 task = tasks[task_id]
 print(task)
 solve(task=task)
