@@ -13,14 +13,11 @@ from src.lazy_adamw import LazyAdamW
 from src.lrscheduler import LambdaLRWithReduceOnPlateau
 from src.repl import REPL, REPLConfig
 from src.tokenizer import ArcTokenizer
-from src.task import ARC_SYNTH, ArcTask, Example
+from src.task import ARC_SYNTH, ArcTask, Example, ARC_EVAL
 from src.utils import map_to_tensors
 #%%
 loader = ARC_SYNTH
 tasks = loader.tasks
-task_id = 0
-task = tasks[task_id]
-task
 #%%
 
 @dataclass
@@ -35,7 +32,6 @@ class ArcSolverConfig:
     # Train
     n_grad_accum: int = 1
     
-    
     # Optimizer
     lr: float = 0.001
     wd: float = 0.05
@@ -49,11 +45,14 @@ class ArcSolverConfig:
     warmup_steps: int = 500
     decay_steps: int = 5000
     min_lr_scale: float = 0.01
-    plt_metric = 'accuracy'
-    plt_factor = 0.8
-    plt_patience = 2
-    plt_mode = 'max'
-    plt_warmup = 10
+
+    plt_metric: str = 'accuracy'
+
+    plt_patience: int = 2
+    plt_mode: str = 'max'
+    plt_warmup: int = 10
+    plt_factor: float = 0.8
+
 
 
     def __post_init__(self):
@@ -64,11 +63,11 @@ class ArcSolverConfig:
 class ARCSolver:
     def __init__(self, config: ArcSolverConfig):
         self.config = config
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.model = self.load_model(config)
-
+        self.model.to(self.device)
         self.tokenizer = self.load_tokenizer(config)
         self.pad_idx = self.tokenizer.grid_tokenizer.PAD_IDX
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.reset()
 
     def reset(self):
@@ -184,7 +183,7 @@ class ARCSolver:
             self.optim.step()
             self.scheduler.step()
 
-        self.metrics['step_loss'] =  loss.item()
+        self.metrics['STL'] =  loss.item()
         return loss.item()
 
     def evaluate(self, examples: List[Example], prefix):
@@ -216,9 +215,9 @@ class ARCSolver:
         token_acc = total_correct_tokens / total_tokens if total_tokens > 0 else 0
         sample_acc = total_correct_samples / total_samples if total_samples > 0 else 0
 
-        self.metrics[f'{prefix}_loss'] = avg_loss
-        self.metrics[f'{prefix}_token_acc'] = token_acc
-        self.metrics[f'{prefix}_sample_acc'] = sample_acc
+        self.metrics[f'{prefix}L'] = avg_loss
+        self.metrics[f'{prefix}TA'] = token_acc
+        self.metrics[f'{prefix}SA'] = sample_acc
         return avg_loss
             
 
@@ -244,6 +243,7 @@ class ARCSolver:
 
     def get_augment_examples(self, min_num, examples):
         num_to_augment = max(min_num - len(examples), 0)
+        num_to_augment = min_num
         augmented_examples = []
         for i in range(num_to_augment):
             example_idx = i % len(examples)
@@ -258,22 +258,23 @@ class ARCSolver:
             if isinstance(value, float):
                 metric_str += f'{key}: {value:.4f}  '
             elif isinstance(value, int):
-                metric_str += f'{key}: {value:3d}'
+                metric_str += f'{key}: {value:3d}  '
             else:
                 metric_str += f'{key}: {value}  '
         print(metric_str)
 
     def __call__(self, task: ArcTask) -> Any:
+        self.reset()
         train_examples = task.train
         test_examples = task.test
         aux_examples = self.get_augment_examples(self.config.n_train_ex, train_examples)
-        train_dl = self.get_dataloader(train_examples + aux_examples)
+        train_dl = self.get_dataloader(aux_examples + train_examples)
 
         total_step = self.config.warmup_steps + self.config.decay_steps
         step = 0
 
         print("Task", task.id)
-        print("Program ID", task.program_id)
+        print("Program ID", task.prog_id)
         print("Num Train Examples", len(train_examples))
         print("Num Test Examples", len(test_examples))
         print("Num Augmented Examples", len(aux_examples))
@@ -282,12 +283,15 @@ class ARCSolver:
         self.log_metrics()
         while True:
             for idx, batch in enumerate(train_dl):
-                self.metrics = {'step': step}
+                self.metrics = {'T': step}
                 accum_step = step % self.config.n_grad_accum
                 loss = self._train_step(batch, accum_step)
-                self.evaluate(train_examples, 'train')
-                self.evaluate(test_examples, 'test')
-                self.log_metrics()
+                if accum_step == self.config.n_grad_accum - 1:
+                    self.evaluate(train_examples, 'TRA')
+                    self.evaluate(test_examples, 'TE')
+                    # self.scheduler.step_metric(self.metrics['TRATA'])
+                    self.log_metrics()
+
                 step += 1
                 if step >= total_step:
                     break
@@ -296,14 +300,26 @@ class ARCSolver:
                 break
 
 
+ckt_path = '/teamspace/studios/work-horse/ArcSolver/runs/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
 config = ArcSolverConfig(
-    lr=0.0001,
+    lr=0.005,
+    wd=0.5,
+    dropout=0.1,
+    n_train_ex=20,
+    min_lr_scale=0.01,
+    bs = 5,
     n_grad_accum=3,
-    warmup_steps=500,
-    decay_steps=5000,
-    ckt_path='/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
+    warmup_steps=30,
+    decay_steps=1000,
+    ckt_path=ckt_path,
+    plt_factor=0.5,
+    plt_patience=10,
+    plt_warmup=0
     )
 
 solve = ARCSolver(config=config)
+print("Num Tasks", len(tasks))
+task_id = 3500
+task = tasks[task_id]
+print(task)
 solve(task=task)
-# %%
