@@ -518,10 +518,12 @@ class REPL(nn.Module):
         enc_dec_inp = torch.cat([enc_inp, dec_inp], dim=1)
         enc_dec_indices = torch.cat([enc_indices, dec_indices], dim=1)
 
-        iter_outs = []
+        # iter_outs = []
         updated_kv_cache: List[List[Tuple[Tensor, Tensor]]] = [] 
 
         current_state = enc_dec_inp
+
+        agg_out = current_state  # Dummy initialisation to make TorchScript happy
         for i in range(self.n_iter):
             interpreter_out, iter_kv_cache = self.interpreter(
                                             x=current_state,
@@ -531,12 +533,13 @@ class REPL(nn.Module):
                                             return_kv_caches=return_cache)
             
             agg_out, current_state = self.state_agg(interpreter_out, current_state)
-            iter_outs.append(agg_out)
+            # iter_outs.append(agg_out)
             if iter_kv_cache is not None:
                 updated_kv_cache.append(iter_kv_cache)
 
-        iter_outs = torch.stack(iter_outs, dim=0)
-        logits = self.lm_head(iter_outs[:, :, dec_start_idx:, :])
+        # iter_outs = torch.stack(iter_outs, dim=0)
+        # logits = self.lm_head(iter_outs[:, :, dec_start_idx:, :])
+        logits = self.lm_head(agg_out[:, dec_start_idx:, :])
 
         cache = (updated_kv_cache, enc_valid_mask, dec_valid_mask) if return_cache else None
         return logits, cache

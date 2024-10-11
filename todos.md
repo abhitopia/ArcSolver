@@ -31,6 +31,9 @@
 - [x] Implement Beam Search
 - [x] Optimize Beam Search by limiting the prob threshold
 - [x] Write a inference analysis script
+- [x] Test TaskSet Eval
+- [ ] Find which ARC_EVAL tasks are solved/partially solved by the model
+- [ ] Remove the multiple logits, will it be faster?
 - [ ] Test the inference script
 - [ ] Start writing inference code and test it against the best ARC_EVAL trained model
 - [ ] Create a solver for Synthetic data first!
