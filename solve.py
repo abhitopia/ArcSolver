@@ -1,8 +1,9 @@
 #%%
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import functools
 from itertools import product
-import random
+from pathlib import Path
+import pickle
 from typing import Any, List
 
 import torch
@@ -14,12 +15,10 @@ from src.lazy_adamw import LazyAdamW
 from src.lrscheduler import LambdaLRWithReduceOnPlateau
 from src.repl import REPL, REPLConfig
 from src.tokenizer import ArcTokenizer
-from src.task import ARC_SYNTH, ArcTask, ArrayTransform, ColorPermutation, Example, ARC_EVAL
+from src.task import ARC_SYNTH, ArcTask, ArrayTransform, ColorPermutation, Example, ARC_EVAL, ARC_TRAIN
 from src.utils import map_to_tensors
 #%%
-# loader = ARC_SYNTH
-loader = ARC_EVAL
-tasks = loader.tasks
+
 #%%
 
 @dataclass
@@ -27,16 +26,14 @@ class ArcSolverConfig:
     ckt_path: str
 
     # Data
-    n_train_ex: int = 20
-    tbs: int = 5
-    ebs: int = 5
-    # permute: bool = True
+    tbs: int = 10
+    ebs: int = 10
 
     # Train
-    n_grad_accum: int = 1
+    n_grad_accum: int = 5
     
     # Optimizer
-    lr: float = 0.001
+    lr: float = 0.01
     wd: float = 0.05
     dropout: float = 0.01
 
@@ -45,16 +42,17 @@ class ArcSolverConfig:
     jit: bool = False
 
     # Scheduler
-    warmup_steps: int = 500
-    decay_steps: int = 5000
+    warmup_steps: int = 50
+    decay_steps: int = 150
+    n_steps: int = 1000
     min_lr_scale: float = 0.01
 
     plt_metric: str = 'accuracy'
 
-    plt_patience: int = 2
+    plt_patience: int = 10
     plt_mode: str = 'max'
-    plt_warmup: int = 10
-    plt_factor: float = 0.8
+    plt_warmup: int = 0
+    plt_factor: float = 0.5
 
     # def __post_init__(self):
     #     assert self.bs <= self.n_train_ex, 'Batch size must be less than or equal to the number of training examples'
@@ -64,7 +62,7 @@ class ARCSolver:
     def __init__(self, config: ArcSolverConfig):
         self.config = config
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.model = self.load_model(config)
+        self.model, self.programs = self.load_model(config)
         self.model.to(self.device)
         self.tokenizer = self.load_tokenizer(config)
         self.pad_idx = self.tokenizer.grid_tokenizer.PAD_IDX
@@ -73,8 +71,11 @@ class ARCSolver:
 
     def reset(self):
         if self.config.init_method == 'zero':
+            print("Initializing with zeros")
             self.model.pte[0].weight.data.zero_()
-
+        elif self.config.init_method == 'avg':
+            print("Initializing with average")
+            self.model.pte[0].weight.data.copy_(self.programs.mean(dim=0))
         self.metrics = {}
         self.optim = self.optimizer(config, self.model)
         self.scheduler = self.load_scheduler(config, self.optim)
@@ -105,9 +106,13 @@ class ARCSolver:
 
 
     @staticmethod
-    def load_model(config):
+    def load_model(config, load_programs=True):
         ckt_path = config.ckt_path
         data = torch.load(ckt_path, map_location='cpu', weights_only=False)
+        programs = None
+        if load_programs:
+            programs = data['model_state_dict']['pte.0.weight']
+
         model_config = REPLConfig.from_dict(data['model_config'])
         model_config.prog_vocab_size = 1
         model_config.dropout = config.dropout
@@ -120,8 +125,7 @@ class ARCSolver:
                 param.requires_grad = True
             else:
                 param.requires_grad = False
-
-        return model
+        return model, programs
 
     @staticmethod
     def load_tokenizer(config):
@@ -211,12 +215,13 @@ class ARCSolver:
         if accum_step == self.config.n_grad_accum - 1:
             self.optim.step()
             self.scheduler.step()
-
         self.metrics['STL'] =  (loss.item(), 3)
-        return loss.item()
 
     def evaluate(self, dl, prefix):
         self.model.eval()
+        if len(dl) == 0:
+            return 
+        
         total_loss = 0
         total_tokens = 0
         total_correct_tokens = 0
@@ -248,8 +253,6 @@ class ARCSolver:
         self.metrics[f'{prefix}L'] = (avg_loss, 4)
         self.metrics[f'{prefix}TA'] = (token_acc, 3)
         self.metrics[f'{prefix}SA'] = (sample_acc, 2)
-
-        return avg_loss
             
 
     def get_collate_fn(self, permute=False):
@@ -300,7 +303,7 @@ class ARCSolver:
         eval_dl = self.get_dataloader(task.train, self.config.ebs, permute=False)
         test_dl = self.get_dataloader(test_examples, self.config.ebs, permute=False)
 
-        total_step = self.config.warmup_steps + self.config.decay_steps
+        total_step = self.config.n_steps
         step = 0
 
         print("Task", task.id)
@@ -310,51 +313,72 @@ class ARCSolver:
         print("Num Augmented Examples", len(train_examples))
         self.evaluate(test_dl, 'TE')
 
+        accum_counter = 0
+        metrics = []
         self.log_metrics()
         while True:
             for idx, batch in enumerate(train_dl):
-                self.metrics = {'T': (step, 3)}
-                accum_step = step % self.config.n_grad_accum
+                accum_step = accum_counter % self.config.n_grad_accum
+                accum_counter += 1
                 loss = self._train_step(batch, accum_step)
                 if accum_step == self.config.n_grad_accum - 1:
+                    self.metrics = {'T': (step, 3)}
+                    step += 1
                     self.evaluate(eval_dl, 'TRA')
                     self.evaluate(test_dl, 'TE')
-                    self.scheduler.step_metric(self.metrics['TRATA'][0])
+                    self.scheduler.step_metric(self.metrics['TRAL'][0])
                     self.metrics['lr'] = (self.scheduler.get_last_lr()[0], 4)
                     self.log_metrics()
+                    metrics.append(self.metrics)
 
-                step += 1
                 if step >= total_step:
                     break
 
             if step >= total_step:
                 break
 
+        return metrics
 
-ckt_path = '/teamspace/studios/work-horse/ArcSolver/runs/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
+ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v8/D256E64H8L4I4PN.v1/ckt_188000_37.940.pth'
+# ckt_path = '/teamspace/studios/work-horse/ArcSolver/runs/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
 # ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
 config = ArcSolverConfig(
     lr=0.01,
     wd=0.05,
-    dropout=0.01,
-    min_lr_scale=0.01,
+    dropout=0.0,
     tbs = 10,
     ebs = 10,
     n_grad_accum=5,
-    warmup_steps=50,
-    decay_steps=1000,
+    warmup_steps=25,
+    decay_steps=100,
+    min_lr_scale=0.1,
+    n_steps=200,
     ckt_path=ckt_path,
-    plt_factor=0.5,
+    plt_factor=0.8,
     plt_patience=10,
-    plt_warmup=0
+    plt_warmup=0,
+    init_method='avg'
     )
 
+# loader = ARC_SYNTH
+# loader = ARC_EVAL
+loader = ARC_TRAIN
+tasks = loader.tasks
 solve = ARCSolver(config=config)
 print("Num Tasks", len(tasks))
 # task_id = 1009 #3500
-task_id = 111
-task = tasks[task_id]
-print(task)
-solve(task=task)
+# task_id = 111 # Fast on ARC_TRAIN
+# # task = tasks[task_id]
+# print(task)
+data = {}
+data['config'] = asdict(config)
+file_path = Path('eval.pkl')
+file_path.parent.mkdir(exist_ok=True, parents=True)
+num_tasks = 100
+for idx, task in enumerate(tasks[:num_tasks]):
+    print(f"Processing: {idx}/{num_tasks}")
+    data[task.dataset][task.prog_id] = solve(task=task)
+    pickle.dump(data, file_path.open('wb'))
 
 # %%
+
