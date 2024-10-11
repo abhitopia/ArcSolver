@@ -179,3 +179,4 @@ models/
 
 scripts/eval_taskset/arc_eval.pkl
 scripts/eval_taskset/eval.pkl
+scripts/eval_taskset/arc_eval_result.pkl
