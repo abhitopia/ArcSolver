@@ -176,3 +176,6 @@ runs_v1
 
 
 models/
+
+scripts/eval_taskset/arc_eval.pkl
+scripts/eval_taskset/eval.pkl
