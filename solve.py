@@ -70,6 +70,10 @@ class ARCSolver:
         self.reset()
 
     def reset(self):
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+
         if self.config.init_method == 'zero':
             print("Initializing with zeros")
             self.model.pte[0].weight.data.zero_()
@@ -337,17 +341,19 @@ class ARCSolver:
             if step >= total_step:
                 break
 
-        return metrics
+        program = self.model.pte[0].weight.cpu().detach().numpy().tolist()
+        return metrics, program
 
-ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v8/D256E64H8L4I4PN.v1/ckt_188000_37.940.pth'
+# ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v8/D256E64H8L4I4PN.v1/ckt_188000_37.940.pth'
 # ckt_path = '/teamspace/studios/work-horse/ArcSolver/runs/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
+ckt_path = '/teamspace/studios/work-horse/ArcSolver/runs/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
 # ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
 config = ArcSolverConfig(
     lr=0.01,
     wd=0.05,
     dropout=0.0,
-    tbs = 10,
-    ebs = 10,
+    tbs = 50,
+    ebs = 50,
     n_grad_accum=5,
     warmup_steps=25,
     decay_steps=100,
@@ -361,8 +367,8 @@ config = ArcSolverConfig(
     )
 
 # loader = ARC_SYNTH
-# loader = ARC_EVAL
-loader = ARC_TRAIN
+loader = ARC_EVAL
+# loader = ARC_TRAIN
 tasks = loader.tasks
 solve = ARCSolver(config=config)
 print("Num Tasks", len(tasks))
@@ -370,14 +376,25 @@ print("Num Tasks", len(tasks))
 # task_id = 111 # Fast on ARC_TRAIN
 # # task = tasks[task_id]
 # print(task)
-data = {}
-data['config'] = asdict(config)
 file_path = Path('eval.pkl')
 file_path.parent.mkdir(exist_ok=True, parents=True)
+
+if file_path.exists():
+    data = pickle.load(file_path.open('rb'))
+else:
+    data = {}
+    data[loader.name] = {}
+    data['config'] = asdict(config)
+
 num_tasks = 100
 for idx, task in enumerate(tasks[:num_tasks]):
+    if task.prog_id in data[task.dataset]:
+        continue
     print(f"Processing: {idx}/{num_tasks}")
-    data[task.dataset][task.prog_id] = solve(task=task)
+    data[task.dataset][task.prog_id] = {}
+    metrics, prog = solve(task=task)
+    data[task.dataset][task.prog_id]['metrics'] = metrics
+    data[task.dataset][task.prog_id]['program'] = prog
     pickle.dump(data, file_path.open('wb'))
 
 # %%
