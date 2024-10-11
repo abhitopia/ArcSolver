@@ -32,6 +32,7 @@
 - [x] Optimize Beam Search by limiting the prob threshold
 - [x] Write a inference analysis script
 - [x] Test TaskSet Eval
+- [x] Create a deployment jit model
 - [ ] Find which ARC_EVAL tasks are solved/partially solved by the model
 - [ ] Remove the multiple logits, will it be faster?
 - [ ] Test the inference script

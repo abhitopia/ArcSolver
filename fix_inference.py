@@ -5,7 +5,8 @@ from src.repl import REPLConfig, REPL
 from src.task import ARC_SYNTH, ARC_TRAIN
 from src.tokenizer import ArcTokenizer
 from src.dataset import ArcExamplesDataset
-ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
+# ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
+ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
 #%%
 ## Load model
 
@@ -35,7 +36,7 @@ def get_predicted_tokens(model, tokenizer, example):
                                 device=torch.device('cpu'))
 
     iter_logits, _ = model(x, y)
-    logits = iter_logits[-1]
+    logits = iter_logits
     _, predicted_tokens = torch.max(logits, dim=2)
     predicted_tokens = [start_idx] + predicted_tokens[0].tolist()[:-1]
     return predicted_tokens, y.grid.tolist()[0]

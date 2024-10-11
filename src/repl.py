@@ -566,7 +566,7 @@ class REPL(nn.Module):
         updated_kv_cache: List[List[Tuple[Tensor, Tensor]]] = []
 
         current_state = dec_inp
-
+        agg_out = current_state  # Dummy initialisation to make TorchScript happy
         for i in range(self.n_iter):
             interpreter_out, iter_kv_cache = self.interpreter(
                                             x=current_state,
@@ -580,8 +580,9 @@ class REPL(nn.Module):
             # Store the updated kv-cache for this loop iteration
             updated_kv_cache.append(iter_kv_cache)
 
-        iter_outs = torch.stack(iter_outs, dim=0)
-        logits = self.lm_head(iter_outs)
+        # iter_outs = torch.stack(iter_outs, dim=0)
+        # logits = self.lm_head(iter_outs)
+        logits = self.lm_head(agg_out)
 
         cache = (updated_kv_cache, past_enc_valid_mask, dec_valid_mask)
         return logits, cache
@@ -648,7 +649,8 @@ class REPL(nn.Module):
             )
 
             # Get the logits from the last iteration
-            logits = logits_iters[-1]  
+            # logits = logits_iters[-1]  
+            logits = logits_iters
 
             # Get the logits for the predicted token
             next_logits = logits[:, -1, :]  # Shape: (1, vocab_size)
@@ -780,7 +782,8 @@ class REPL(nn.Module):
                 next_y=next_y,
                 cache=cache
             )
-            logits = logits_iters[-1]
+            # logits = logits_iters[-1]
+            logits = logits_iters
             seq_len = output_sequence.size(1)
             bs = output_sequence.size(0)
 
