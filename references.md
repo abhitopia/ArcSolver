@@ -12,3 +12,4 @@ expandable_segments (experimental, default: False) If set to True, this setting 
 - [CodeIt: Self-Improving Language Models with Prioritized Hindsight Replay](https://openreview.net/forum?id=ac1nup9auY) 
 - [CodeIt: Abstract Reasoning with Iterative Policy-Guided Program Synthesis](https://openreview.net/forum?id=JlSyXwCEIQ)
 - [Intelligence at the edge of chaos](https://arxiv.org/abs/2410.02536)
+- [LEARNING TO SOLVE ABSTRACT REASONING PROBLEMS WITH NEUROSYMBOLIC PROGRAM SYNTHESIS AND TASK GENERATION](https://arxiv.org/pdf/2410.04480)
