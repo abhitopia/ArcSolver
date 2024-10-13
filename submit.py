@@ -93,37 +93,55 @@ class Worker(threading.Thread):
         # self.model.eval()
         self.device = device
         self.daemon = True  # Ensures threads exit when the main thread exits
-        
+
     def run(self):
 
         while True:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.synchronize()
+            try:
+                # Free up GPU cache if available
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
 
-            task = self.input_queue.get()
+                # Get the next task from the input queue
+                task = self.input_queue.get()
 
-            print(f"Worker {self.worker_id} processing task {task.task_id}")
-            if task is None:
-                # Signal to terminate the thread
+                # If None is received, this is the signal to terminate
+                if task is None:
+                    self.input_queue.task_done()
+                    print(f"Worker {self.worker_id} exiting.")
+                    break
+
+                # Log task processing
+                print(f"Worker {self.worker_id} processing task {task.task_id}")
+
+                # Process the input asynchronously
+                try:
+                    # Use torch.jit.fork to process the input
+                    fut = torch.jit.fork(self.model.forward, task, **self.model_args)
+                    
+                    # Wait for the result without blocking the thread
+                    solution = torch.jit.wait(fut)
+
+                    # Prepare the task solution
+                    solution = TaskSolution(solution[0], solution[1], solution[2])
+
+                    # Log task completion
+                    print(f"Worker {self.worker_id} completed task {solution.task_id}")
+
+                    # Put the result into the output queue
+                    self.output_queue.put(solution)
+
+                except Exception as e:
+                    print(f"Worker {self.worker_id}: Error during task processing for task {task.task_id}: {e}")
+                    # Log failure if needed and optionally add retry logic
+
+            except Exception as e:
+                print(f"Worker {self.worker_id}: General error occurred: {e}")
+
+            finally:
+                # Ensure that the task is marked as done
                 self.input_queue.task_done()
-                print(f"Worker {self.worker_id} exiting.")
-                break
-            
-            # Use torch.jit.fork to process the input asynchronously
-            fut = torch.jit.fork(self.model.forward, task, **self.model_args)
-            
-            # Wait for the result without blocking the thread
-            solution = torch.jit.wait(fut)
-            solution = TaskSolution(solution[0], solution[1], solution[2])
-        
-            print(f"Worker {self.worker_id} completed task {solution.task_id}")
-            
-            # Put the result into the output queue
-            self.output_queue.put(solution)
-            
-            self.input_queue.task_done()
-
 # Processing Manager class
 class SubmissionManager:
     def __init__(self, model_path, num_devices, threads_per_device, model_args, submission_path):
@@ -185,13 +203,13 @@ def parse_arguments():
     # Add arguments
     parser.add_argument('--mp', type=str, required=True,
                         help='Path to the model file.')
-    parser.add_argument('--tp', type=str, required=True,
+    parser.add_argument('--tp', type=str, required=False, default='/kaggle/input/arc-prize-2024/arc-agi_test_challenges.json',
                         help='Path to the input challenges file')
     parser.add_argument('--sp', type=str, required=False, default=None,
                         help='Path to optional solutions file')
     parser.add_argument('--np', type=int, default=2,
                         help='Number of processes to run per device.')
-    parser.add_argument('--op', type=str, default='submission.json',
+    parser.add_argument('--op', type=str, default='/kaggle/working/submission.json',
                         help='Path to save the output results.')
     
     # Model Arguments
