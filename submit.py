@@ -236,11 +236,15 @@ def main():
 
     model_path = args.mp
     tasks_path = args.tp
+    solutions_path = args.sp
 
     assert Path(model_path).exists(), f"Model file not found: {model_path}"
     assert Path(tasks_path).exists(), f"Tasks file not found: {tasks_path}"
+
+    if solutions_path is not None:
+        assert Path(solutions_path).exists(), f"Solutions file not found: {solutions_path}"
     
-    tasks = load_tasks(tasks_path)
+    tasks = load_tasks(tasks_json_path=tasks_path, solution_path=solutions_path)
     print(f"Number of Tasks: {len(tasks)}")
 
     # Number of devices (GPUs) and processes per device
