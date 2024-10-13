@@ -68,7 +68,7 @@ class Solver(nn.Module):
             self.step += 1
         self.inner_step += 1
 
-    def metric(self, logits: Tensor, y: MODEL_OUTPUT) -> Tuple[int, int]:
+    def metric(self, logits: Tensor, y: MODEL_OUTPUT) -> Tuple[int, int, int]:
         y: Optional[Tensor] = y.target_grid if y.target_grid is not None else None
         assert y is not None
         _, predicted_tokens = torch.max(logits, dim=2)
@@ -78,7 +78,8 @@ class Solver(nn.Module):
         mask_correct_samples = output_mask.sum(dim=1) == mask_correct_tokens.sum(dim=1)
         num_correct_tokens = mask_correct_tokens.sum().item()
         num_correct_samples = mask_correct_samples.sum().item()
-        return num_correct_tokens, num_correct_samples        
+        num_tokens  = output_mask.sum().item()
+        return num_correct_tokens, num_correct_samples, num_tokens
 
     def evaluate(self, examples: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]]) -> Dict[str, float]:
 
@@ -98,10 +99,10 @@ class Solver(nn.Module):
                 logits, _ = self.model(x, y)
                 assert y is not None
                 loss = loss_fn(logits, y)
-                num_correct_tokens, num_correct_samples = self.metric(logits, y)
+                num_correct_tokens, num_correct_samples, num_tokens = self.metric(logits, y)
+
                 total_correct_samples += num_correct_samples
                 total_correct_tokens += num_correct_tokens
-                num_tokens = y.grid.numel()
                 loss_sum = loss.item() * num_tokens
                 total_loss += loss_sum
                 total_tokens += num_tokens
