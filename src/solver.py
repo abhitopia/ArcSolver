@@ -29,9 +29,9 @@ class Solver(nn.Module):
         self.bad_steps = 0
 
     def print(self, msg: str):
-        # pass
-        if self.verbose:
-            print(msg)
+        pass
+        # if self.verbose:
+        #     print(msg)
 
     def reset(self):
         self.adam.reset()

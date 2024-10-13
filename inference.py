@@ -7,6 +7,16 @@ import traceback
 import os
 from tqdm import tqdm
 import argparse
+import warnings
+
+# Suppress the specific RNN UserWarning
+warnings.filterwarnings(
+    "ignore",
+    message=r".*RNN module weights are not part of single contiguous chunk of memory.*",
+    category=UserWarning
+)
+
+
 
 class Example(NamedTuple):
     input: torch.Tensor
@@ -67,6 +77,10 @@ def worker(device, input_queue, output_queue, model_path, solver_args):
 
     while True:
         try:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+
             print(f"Worker {os.getpid()} waiting for task on device {device}")
             # Get the next input from the queue
             task = input_queue.get(timeout=5)
@@ -130,7 +144,7 @@ def main():
     args = parse_arguments()
 
     # Set the multiprocessing start method to 'spawn' for CUDA compatibility
-    mp.set_start_method('spawn', force=True)
+    mp.set_start_method('spawn')
 
     # Determine devices to use
     available_devices = set()
@@ -140,7 +154,7 @@ def main():
                 # Check if specified GPU is available
                 device_id = device.split(':')[1] if ':' in device else '0'
                 if int(device_id) < torch.cuda.device_count():
-                    available_devices.append(device)
+                    available_devices.add(device)
                 else:
                     print(f"CUDA device {device} is not available.")
             else:
