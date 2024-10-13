@@ -29,9 +29,8 @@ class Solver(nn.Module):
         self.bad_steps = 0
 
     def print(self, msg: str):
-        pass
-        # if self.verbose:
-        #     print(msg)
+        if self.verbose:
+            print(msg)
 
     def reset(self):
         self.adam.reset()
@@ -194,9 +193,8 @@ class Solver(nn.Module):
                 break
 
         preds, scores = self.predict(test_examples, confidence)
-        self.print('Predictions generated! Wrapping into a solution...')
         solution = TaskSolution(task.task_id, preds, scores)
-        self.print('Returning the solution...')
+
         return solution
 
 
