@@ -17,5 +17,7 @@ solver = create_solver(ckt_path)
 # solver = Solver(ckt_path=ckt_path, bs=5, patience=10)
 # solver = torch.jit.script(solver)
 #%%
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+solver.to(device)
 solver(tasks[0], seed=1, thinking_duration=300, min_confidence=0.001)
 # %%

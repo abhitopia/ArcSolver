@@ -251,7 +251,8 @@ def create_solver(
         wd: float = 0.05,
         lr: float = 1e-2,
         patience: int = 20,
-        jit=True
+        jit=True,
+        save=False
     ) -> Solver:
 
     model = load_inference_model(ckpt_path, jit=jit)
@@ -261,7 +262,8 @@ def create_solver(
         path = Path(ckpt_path)
         step = '_'.join(path.stem.split('_')[1:])
         model_path = path.parent / f"solver_{path.parent.stem}_{step}.pt"
-        torch.jit.save(solver, model_path)
+        if save:
+            torch.jit.save(solver, model_path)
     return solver
 
 
