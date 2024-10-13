@@ -34,6 +34,7 @@
 - [x] Test TaskSet Eval
 - [x] Create a deployment jit model
 - [x] Make sure to shuffle the augmentations. Use external seed for that
+- [ ] Add ability to specify the device for the inference
 - [ ] Some quick benefit can be obtained by simply trying again with different seed, till a best result is found
 - [ ] Find which ARC_EVAL tasks are solved/partially solved by the model
 - [ ] Remove the multiple logits, will it be faster?
