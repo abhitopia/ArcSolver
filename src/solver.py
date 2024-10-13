@@ -29,6 +29,7 @@ class Solver(nn.Module):
         self.bad_steps = 0
 
     def print(self, msg: str):
+        # pass
         if self.verbose:
             print(msg)
 
@@ -126,7 +127,7 @@ class Solver(nn.Module):
             return
         
         step: str = str(self.step)
-        step = ''.join([' ' for i in range(max(0, 3 - len(step)))]) + step
+        step = ''.join([' ' for _ in range(max(0, 3 - len(step)))]) + step
         
         metrics: Dict[str, str] = {
             'T': step,
@@ -148,17 +149,19 @@ class Solver(nn.Module):
         
     def forward(self, 
             task: Task, 
-            seed: int = 42, 
-            thinking_duration: int = 100, 
-            patience: int = 20,
-            min_confidence: float = 0.0001, 
+            thinking: int = 100, 
             bs: int = 5,
+            patience: int = 20,
+            confidence: float = 0.0001, 
+            seed: int = 42,
             mode: str = 'vbs')-> TaskSolution:
         torch.manual_seed(seed)
 
         self.bs = bs
         if mode == 'vbs':
             self.verbose = True
+        else:
+            self.verbose = False
 
         self.reset()
         device = str(self.model.get_pte_weight().device)
@@ -183,15 +186,17 @@ class Solver(nn.Module):
                 mt = self.evaluate(test_examples)
                 self.log_stats(me, mt)
 
-                if self.step == thinking_duration or self.bad_steps >= patience:
+                if self.step == thinking or self.bad_steps >= patience:
                     self.print(f"Bad Steps: {self.bad_steps}")
                     break
             
-            if self.step == thinking_duration or self.bad_steps >= patience:
+            if self.step == thinking or self.bad_steps >= patience:
                 break
 
-        preds, scores = self.predict(test_examples, min_confidence)
+        preds, scores = self.predict(test_examples, confidence)
+        self.print('Predictions generated! Wrapping into a solution...')
         solution = TaskSolution(task.task_id, preds, scores)
+        self.print('Returning the solution...')
         return solution
 
 

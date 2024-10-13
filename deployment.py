@@ -33,5 +33,22 @@ for task in tasks:
 #%%
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 solver.to(device)
-solver(task, seed=15, thinking_duration=30, min_confidence=0.001)
+for task in tasks:
+    solution = solver(task, 
+        seed=15, 
+        bs=5,
+        patience=10,
+        thinking=10, 
+        confidence=0.001)
 # %%
+# for pred in solution.predictions:
+#     pred1 = pred[0].tolist()
+#     pred2 = pred[1].tolist()
+#     print(pred1)
+#     print(pred2)
+# %%
+
+
+
+        
+

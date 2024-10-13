@@ -419,4 +419,4 @@ def format_float(val: float, decimals: int) -> str:
             fractional_part += s[i]
 
     result = integer_part + '.' + fractional_part
-    return result
+    return str(result)

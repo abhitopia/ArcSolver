@@ -3,7 +3,7 @@ from typing import List, NamedTuple, Optional
 import torch
 from torch import Tensor
 import torch.multiprocessing as mp
-from torch.multiprocessing import Queue
+import traceback
 import os
 from tqdm import tqdm
 import argparse
@@ -21,6 +21,14 @@ class TaskSolution(NamedTuple):
     task_id: str
     predictions: List[List[Tensor]]
     scores: List[List[float]]
+
+    def to_dict(self):
+        result = []
+        for pred in self.predictions:
+            pred1 = pred[0].tolist()
+            pred2 = pred[1].tolist()
+            result.append({'attempt_1': pred1, 'attempt_2': pred2})
+        return result
 
 def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None) -> List[Task]:
     json_tasks = json.load(open(tasks_json_path, 'r'))
@@ -47,10 +55,9 @@ def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None) -> Lis
         
         task = Task(task_id, train_examples, test_examples)
         tasks.append(task)
-
     return tasks
 
-def worker(device, input_queue, output_queue, model_path):
+def worker(device, input_queue, output_queue, model_path, solver_args):
     # Set the device for this process
     device = torch.device(device)
 
@@ -60,23 +67,37 @@ def worker(device, input_queue, output_queue, model_path):
 
     while True:
         try:
+            print(f"Worker {os.getpid()} waiting for task on device {device}")
             # Get the next input from the queue
             task = input_queue.get(timeout=5)
             if task is None:   # Exit signal received
                 break
 
             # # Process the input data
-            print(f"Processing task {task.task_id} on worker {os.getpid()} on device {device}")
-            solution = model(task)
-            print(f"Task {solution.task_id} processed by worker {os.getpid()} on device {device}")
-            solution = TaskSolution(task_id=solution.task_id, predictions=solution[0], scores=solution[1])
-
-            # Put the result into the output queue
+            print(f"Processing: Task: {task.task_id} Process: {os.getpid()} Device: {device}")
+            solution = model(task, **solver_args)
+            print(f"Finished: Task: {task.task_id} Process: {os.getpid()} Device: {device}")
+            solution = TaskSolution(task_id=solution.task_id, 
+                                    predictions=solution.predictions, 
+                                    scores=solution.scores)
             output_queue.put(solution)
 
         except Exception as e:
             print(f"Exception in worker {os.getpid()}: {e}")
-            break
+            traceback.print_exc()
+            print("Continuing anyway")
+
+def create_dummy_submissions(tasks: List[Task]):
+    submission = {}
+    for task in tasks:
+        submission[task.task_id] = []
+        for _ in task.test:
+            submission[task.task_id].append({
+                'attempt_1': [[6, 0, 0, 6, 5], [0, 4, 5, 5]],
+                'attempt_2': [[6, 0, 0, 6, 5], [0, 4, 5, 5]]
+            })
+
+    return submission
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Process inputs using a TorchScript model with multiprocessing.")
@@ -94,6 +115,12 @@ def parse_arguments():
                         help='Number of processes to run per device.')
     parser.add_argument('--op', type=str, default='submission.json',
                         help='Path to save the output results.')
+    
+    parser.add_argument('--thinking', type=int, default=200)
+    parser.add_argument('--bs', type=int, default=5)
+    parser.add_argument('--patience', type=int, default=30)
+    parser.add_argument('--seed', type=int, default=15)
+    parser.add_argument('--mode', type=str, default='60065')
     # You can add more arguments as needed
 
     args = parser.parse_args()
@@ -152,11 +179,19 @@ def main():
     input_queue = mp.Queue()
     output_queue = mp.Queue()
 
+    solver_args = {
+        'thinking': args.thinking,
+        'bs': args.bs,
+        'patience': args.patience,
+        'seed': args.seed,
+        'mode': args.mode
+    }
+
     # Start the worker processes
     processes = []
     for device in available_devices:
         for _ in range(num_procs_per_device):
-            p = mp.Process(target=worker, args=(device, input_queue, output_queue, model_path))
+            p = mp.Process(target=worker, args=(device, input_queue, output_queue, model_path, solver_args))
             p.start()
             processes.append(p)
 
@@ -169,37 +204,22 @@ def main():
         input_queue.put(None)
 
     # Collect the outputs with a progress bar
-    results = []
-    num_inputs = len(tasks)
-
+    submission = create_dummy_submissions(tasks)
     print("Processing tasks...")
-    with tqdm(total=num_inputs) as pbar:
-        for _ in range(num_inputs):
-            output_data = output_queue.get()
-            results.append(output_data)
+    with tqdm(total=len(tasks)) as pbar:
+        for _ in range(len(tasks)):
+            solution = output_queue.get()
+            submission[solution.task_id] = solution.to_dict()
+            json.dump(submission, open(args.op, 'w'), indent=2)
+            print(f"Saved: Task {solution.task_id}")
             pbar.update(1)
 
     # Wait for all processes to finish
     for p in processes:
         p.join()
 
-    # # Save the results
-    # save_outputs(results, args.output_path)
-
     print("Processing complete. Results saved to:", args.output_path)
 
-
-
-# def save_outputs(outputs, output_path):
-#     """
-#     Save the outputs to the specified path.
-
-#     Args:
-#         outputs (list): List of output tensors.
-#         output_path (str): Path to save the outputs.
-#     """
-#     # Example: Save outputs as a single file
-#     torch.save(outputs, output_path)
 
 if __name__ == '__main__':
     main()
