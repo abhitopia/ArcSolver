@@ -7,7 +7,7 @@ from .deploy_utils import AdamWModule, format_float, split_task, Task, Solution,
 from .repl import REPL, REPLConfig
 
 class Solver(nn.Module):
-    def __init__(self, model: torch.ScriptModule, bs: int = 5,  lr: float = 1e-2, wd: float = 0.05, patience: int = 20) -> None:
+    def __init__(self, model: torch.ScriptModule, bs: int = 5,  lr: float = 1e-2, wd: float = 0.05) -> None:
         super().__init__()
         self.model = model
         self.adam = AdamWModule(self.model.get_pte_weight(),
@@ -19,7 +19,6 @@ class Solver(nn.Module):
         self.inner_step = 0
         self.step = 0
         self.bs = bs
-        self.patience = patience
         self.verbose = False
 
         pte = self.model.get_pte_weight()
@@ -146,7 +145,13 @@ class Solver(nn.Module):
 
         self.print(msg)
         
-    def forward(self, task: Task, seed: int = 42, thinking_duration: int=100, min_confidence: float = 0.0001, mode: str = 'vbs')-> Solution:
+    def forward(self, 
+            task: Task, 
+            seed: int = 42, 
+            thinking_duration: int = 100, 
+            patience: int = 20,
+            min_confidence: float = 0.0001, 
+            mode: str = 'vbs')-> Solution:
         torch.manual_seed(seed)
         if mode == 'vbs':
             self.verbose = True
@@ -174,10 +179,11 @@ class Solver(nn.Module):
                 mt = self.evaluate(test_examples)
                 self.log_stats(me, mt)
 
-                if self.step == thinking_duration or self.bad_steps >= self.patience:
+                if self.step == thinking_duration or self.bad_steps >= patience:
+                    self.print(f"Bad Steps: {self.bad_steps}")
                     break
             
-            if self.step == thinking_duration or self.bad_steps >= self.patience:
+            if self.step == thinking_duration or self.bad_steps >= patience:
                 break
 
         preds, scores = self.predict(test_examples, min_confidence)
@@ -254,13 +260,12 @@ def create_solver(
         bs: int = 5,
         wd: float = 0.05,
         lr: float = 1e-2,
-        patience: int = 20,
         jit=True,
         save=False
     ) -> Solver:
 
     model = load_inference_model(ckpt_path, jit=jit)
-    solver = Solver(model, bs=bs, lr=lr, wd=wd, patience=patience)
+    solver = Solver(model, bs=bs, lr=lr, wd=wd)
     if jit:
         solver = torch.jit.script(solver)
         path = Path(ckpt_path)
