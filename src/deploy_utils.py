@@ -15,7 +15,7 @@ class Task(NamedTuple):
     train: List[Example]
     test: List[Example]
 
-class Solution(NamedTuple):
+class TaskSolution(NamedTuple):
     task_id: str
     predictions: List[List[Tensor]]
     scores: List[List[float]]
@@ -100,7 +100,7 @@ def is_integer(s: str) -> bool:
 
 
 @torch.jit.script
-def deserialize_array(token_indices: List[int]) -> Tensor:
+def deserialize_array(token_indices: List[int], device: str = 'cpu') -> Tensor:
     array_str = detokenize(token_indices)
     s = array_str.strip()
     
@@ -160,7 +160,7 @@ def deserialize_array(token_indices: List[int]) -> Tensor:
 
     # Stack the tensors to form a 2D tensor
     final_tensor = torch.stack(tensors)
-    return final_tensor
+    return final_tensor.to(device)
 
 
 @torch.jit.script

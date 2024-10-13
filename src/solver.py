@@ -3,11 +3,11 @@ from typing import Dict, List, Optional, Tuple
 import torch
 from torch import Tensor
 import torch.nn as nn
-from .deploy_utils import AdamWModule, format_float, split_task, Task, Solution, MODEL_INPUT, MODEL_OUTPUT, loss_fn, deserialize_array
+from .deploy_utils import AdamWModule, format_float, split_task, Task, TaskSolution, MODEL_INPUT, MODEL_OUTPUT, loss_fn, deserialize_array
 from .repl import REPL, REPLConfig
 
 class Solver(nn.Module):
-    def __init__(self, model: torch.ScriptModule, bs: int = 5,  lr: float = 1e-2, wd: float = 0.05) -> None:
+    def __init__(self, model: torch.ScriptModule, lr: float = 1e-2, wd: float = 0.05) -> None:
         super().__init__()
         self.model = model
         self.adam = AdamWModule(self.model.get_pte_weight(),
@@ -18,7 +18,7 @@ class Solver(nn.Module):
         
         self.inner_step = 0
         self.step = 0
-        self.bs = bs
+        self.bs = 5
         self.verbose = False
 
         pte = self.model.get_pte_weight()
@@ -152,8 +152,11 @@ class Solver(nn.Module):
             thinking_duration: int = 100, 
             patience: int = 20,
             min_confidence: float = 0.0001, 
-            mode: str = 'vbs')-> Solution:
+            bs: int = 5,
+            mode: str = 'vbs')-> TaskSolution:
         torch.manual_seed(seed)
+
+        self.bs = bs
         if mode == 'vbs':
             self.verbose = True
 
@@ -188,7 +191,7 @@ class Solver(nn.Module):
                 break
 
         preds, scores = self.predict(test_examples, min_confidence)
-        solution = Solution(task.task_id, preds, scores)
+        solution = TaskSolution(task.task_id, preds, scores)
         return solution
 
 
@@ -211,7 +214,7 @@ class Solver(nn.Module):
             pred_tensors: List[Tensor] = []
             score_tensors: List[float] = []
             for bp, bs in zip(bps, bss):
-                pred_tensors.append(deserialize_array(bp))
+                pred_tensors.append(deserialize_array(bp, device='cpu'))
                 score_tensors.append(bs)
 
             preds.append(pred_tensors)
@@ -258,7 +261,6 @@ def load_inference_model(ckt_path, jit: bool = True):
 
 def create_solver(
         ckpt_path: str,
-        bs: int = 5,
         wd: float = 0.05,
         lr: float = 1e-2,
         jit=True,
@@ -266,13 +268,14 @@ def create_solver(
     ) -> Solver:
 
     model = load_inference_model(ckpt_path, jit=jit)
-    solver = Solver(model, bs=bs, lr=lr, wd=wd)
+    solver = Solver(model, lr=lr, wd=wd)
     if jit:
         solver = torch.jit.script(solver)
         path = Path(ckpt_path)
         step = '_'.join(path.stem.split('_')[1:])
         model_path = path.parent / f"solver_{path.parent.stem}_{step}.pt"
         if save:
+            print(f"Saving the model to {model_path}")
             torch.jit.save(solver, model_path)
     return solver
 
