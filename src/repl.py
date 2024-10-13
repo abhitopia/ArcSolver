@@ -301,6 +301,7 @@ class StateAggregatorRNN(nn.Module):
             batch_first=True,
             dropout=config.dropout
         )
+        self.rnn.flatten_parameters()
         self.rms_out = RMSNorm(config.n_dim)
 
 
@@ -313,6 +314,8 @@ class StateAggregatorRNN(nn.Module):
             output (Tensor): Output tensor of shape (B, T, D).
             h_new (Tensor): New hidden state of shape (B, T, D).
         """
+
+        # self.rnn.flatten_parameters()
         B, T, D = x_current.shape
         x_input = x_current.view(B * T, 1, D)  # Reshape to (B*T, seq_len=1, D)
         if h_prev is not None:

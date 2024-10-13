@@ -232,7 +232,8 @@ def load_inference_model(ckt_path, jit: bool = True):
     model_config.prog_vocab_size = 1
     model_config.dropout = 0.0 # this is important for inference as I cannot change dropout in the scripted Solver
     model = REPL(model_config)
-    model.eval()
+    model.train() # This is because RNN only does backward in training mode
+    model.state_agg.rnn.flatten_parameters()
     model_state_dict = {k: v for k, v in data['model_state_dict'].items() if 'pte.0.weight' not in k}
     model_state_dict['pte.0.weight'] = model.pte[0].weight
     model.load_state_dict(model_state_dict, strict=True)
