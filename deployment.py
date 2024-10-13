@@ -4,15 +4,14 @@ from src.solver import create_solver
 import torch
 torch.manual_seed(42)
 #%%
-# base_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/'
-base_path = '/teamspace/studios/this_studio/ArcSolveR/'
+base_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/'
+# base_path = '/teamspace/studios/this_studio/ArcSolveR/'
 tasks_path = base_path + 'data/arc_kaggle_data/arc-agi_evaluation_challenges.json'
 solution_path = base_path + 'data/arc_kaggle_data/arc-agi_evaluation_solutions.json'
 tasks = load_tasks(tasks_path, solution_path)
 #%%
-# ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/D512E128H16B5I3.v1_ckt_281000_52.168.pt'
-# ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
-ckt_path = '/teamspace/studios/work-horse/ArcSolver/runs/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
+ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
+# ckt_path = '/teamspace/studios/work-horse/ArcSolver/runs/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
 solver = create_solver(ckt_path)
 # solver = Solver(ckt_path=ckt_path, bs=5, patience=10)
 # solver = torch.jit.script(solver)

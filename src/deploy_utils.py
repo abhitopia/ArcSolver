@@ -86,7 +86,7 @@ def serialize_array(array: Tensor) -> Tuple[Tensor, Tensor]:
     indices = grid_indices(array)
     assert num_tokens == len(indices)
     tokenized = tokenize(array_str)
-    return torch.tensor(tokenized), torch.tensor(indices)
+    return torch.tensor(tokenized, device=array.device), torch.tensor(indices, device=array.device)
 
 @torch.jit.script
 def is_integer(s: str) -> bool:
@@ -168,21 +168,21 @@ def array_transform(x: Tensor, name: str) -> Tensor:
     if name == 'IDENT':
         return x
     elif name == 'RT090':
-        return torch.rot90(x, k=1, dims=[0, 1])
+        return torch.rot90(x, k=1, dims=[0, 1]).to(x.device)
     elif name == 'RT180':
-        return torch.rot90(x, k=2, dims=[0, 1])
+        return torch.rot90(x, k=2, dims=[0, 1]).to(x.device)
     elif name == 'RT270':
-        return torch.rot90(x, k=3, dims=[0, 1])
+        return torch.rot90(x, k=3, dims=[0, 1]).to(x.device)
     elif name == 'FLPLR':
-        return torch.flip(x, dims=[1])
+        return torch.flip(x, dims=[1]).to(x.device)
     elif name == 'FLPUD':
-        return torch.flip(x, dims=[0])
+        return torch.flip(x, dims=[0]).to(x.device)
     elif name == 'FLPDG':
-        temp = torch.rot90(x, k=1, dims=[0, 1])
+        temp = torch.rot90(x, k=1, dims=[0, 1]).to(x.device)
         return torch.flip(temp, dims=[0])
     elif name == 'FLPAD':
-        temp = torch.rot90(x, k=1, dims=[0, 1])
-        return torch.flip(temp, dims=[1])
+        temp = torch.rot90(x, k=1, dims=[0, 1]).to(x.device)
+        return torch.flip(temp, dims=[1]).to(x.device)
     else:
         raise ValueError("Unknown transform name: " + name)
 
@@ -190,25 +190,25 @@ def array_transform(x: Tensor, name: str) -> Tensor:
 @torch.jit.script
 def color_transform(x: Tensor, name: str) -> Tensor:
     if name == 'CPID':
-        mapping = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], dtype=torch.long)
+        mapping = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], dtype=torch.long, device=x.device)
     elif name == 'CP01':
-        mapping = torch.tensor([7, 4, 5, 2, 8, 3, 0, 9, 6, 1], dtype=torch.long)
+        mapping = torch.tensor([7, 4, 5, 2, 8, 3, 0, 9, 6, 1], dtype=torch.long, device=x.device)
     elif name == 'CP02':
-        mapping = torch.tensor([0, 9, 4, 5, 6, 8, 1, 3, 2, 7], dtype=torch.long)
+        mapping = torch.tensor([0, 9, 4, 5, 6, 8, 1, 3, 2, 7], dtype=torch.long, device=x.device)
     elif name == 'CP03':
-        mapping = torch.tensor([7, 4, 1, 9, 6, 0, 8, 2, 5, 3], dtype=torch.long)
+        mapping = torch.tensor([7, 4, 1, 9, 6, 0, 8, 2, 5, 3], dtype=torch.long, device=x.device)
     elif name == 'CP04':
-        mapping = torch.tensor([9, 6, 5, 7, 4, 0, 3, 8, 1, 2], dtype=torch.long)
+        mapping = torch.tensor([9, 6, 5, 7, 4, 0, 3, 8, 1, 2], dtype=torch.long, device=x.device)
     elif name == 'CP05':
-        mapping = torch.tensor([1, 8, 0, 3, 9, 5, 6, 2, 7, 4], dtype=torch.long)
+        mapping = torch.tensor([1, 8, 0, 3, 9, 5, 6, 2, 7, 4], dtype=torch.long, device=x.device)
     elif name == 'CP06':
-        mapping = torch.tensor([5, 3, 1, 9, 7, 6, 0, 2, 8, 4], dtype=torch.long)
+        mapping = torch.tensor([5, 3, 1, 9, 7, 6, 0, 2, 8, 4], dtype=torch.long, device=x.device)
     elif name == 'CP07':
-        mapping = torch.tensor([1, 4, 3, 8, 7, 9, 6, 2, 5, 0], dtype=torch.long)
+        mapping = torch.tensor([1, 4, 3, 8, 7, 9, 6, 2, 5, 0], dtype=torch.long, device=x.device)
     elif name == 'CP08':
-        mapping = torch.tensor([6, 0, 2, 1, 3, 4, 7, 8, 5, 9], dtype=torch.long)
+        mapping = torch.tensor([6, 0, 2, 1, 3, 4, 7, 8, 5, 9], dtype=torch.long, device=x.device)
     elif name == 'CP09':
-        mapping = torch.tensor([2, 0, 3, 8, 4, 6, 1, 9, 5, 7], dtype=torch.long)
+        mapping = torch.tensor([2, 0, 3, 8, 4, 6, 1, 9, 5, 7], dtype=torch.long, device=x.device)
     else:
         raise ValueError("Unknown color permutation name: " + name)
     
@@ -240,8 +240,12 @@ def augmentations() -> List[Tuple[Tuple[int, str], Tuple[int, str]]]:
 
 
 @torch.jit.script
-def collate_fnc(ex: Example, augmentation: Tuple[Tuple[int, str], Tuple[int, str]]) -> Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]:
+def collate_fnc(ex: Example, augmentation: Tuple[Tuple[int, str], Tuple[int, str]], device: str = 'cpu') -> Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]:
     x = ex.input
+
+    # Move input to the specified device
+    x = x.to(device)
+
     cpid = augmentation[0][0]
     aid =  augmentation[1][0]
 
@@ -250,9 +254,9 @@ def collate_fnc(ex: Example, augmentation: Tuple[Tuple[int, str], Tuple[int, str
     inpt_grid, inpt_indices = serialize_array(x)
 
     inp = MODEL_INPUT(
-        color_permutation=torch.tensor([[cpid]]),
-        array_transform=torch.tensor([[aid]]),
-        program=torch.tensor([[0]]),
+        color_permutation=torch.tensor([[cpid]], device=x.device),
+        array_transform=torch.tensor([[aid]], device=x.device),
+        program=torch.tensor([[0]], device=x.device),
         grid=inpt_grid.unsqueeze(0),
         grid_indices=inpt_indices.unsqueeze(0)
     )
@@ -260,11 +264,12 @@ def collate_fnc(ex: Example, augmentation: Tuple[Tuple[int, str], Tuple[int, str
     y = ex.output
     if y is None:
         return inp, None
-
+    
+    y = y.to(device)
     y = color_transform(y, augmentation[0][1])
     y = array_transform(y, augmentation[1][1])
     out_grid, out_indices = serialize_array(y)
-    target_grid = torch.cat([out_grid[1:], torch.tensor([0])], dim=0)
+    target_grid = torch.cat([out_grid[1:], torch.tensor([0], device=x.device)], dim=0)
 
     out = MODEL_OUTPUT(
         grid=out_grid.unsqueeze(0),
@@ -304,7 +309,7 @@ def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None) -> Lis
 
 
 @torch.jit.script
-def split_task(task: Task):
+def split_task(task: Task, device: str = 'cpu'):
     augments: List[Tuple[Tuple[int, str], Tuple[int, str]]] = augmentations()
     train_data: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]] = []
     eval_data: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]] = []
@@ -312,14 +317,14 @@ def split_task(task: Task):
 
     for example in task.train:
         for i, augment in enumerate(augments):
-            inp, out = collate_fnc(example, augment)
+            inp, out = collate_fnc(example, augment, device=device)
             if i == 0:
                 eval_data.append((inp, out))
             else:
                 train_data.append((inp, out))
 
     for example in task.test:
-        inp, out = collate_fnc(example, augments[0])
+        inp, out = collate_fnc(example, augments[0], device=device)
         test_data.append((inp, out))
 
     return train_data, eval_data, test_data

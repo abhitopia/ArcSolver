@@ -22,9 +22,10 @@ class Solver(nn.Module):
         self.patience = patience
         self.verbose = False
 
-        self._init = torch.zeros_like(self.model.get_pte_weight(), requires_grad=False)
-        self._init.data.copy_(self.model.get_pte_weight().data)
-        self.solution = torch.zeros_like(self.model.get_pte_weight(), requires_grad=False)
+        pte = self.model.get_pte_weight()
+        self._init = torch.zeros_like(pte, requires_grad=False)
+        self._init.data.copy_(pte.data)
+        self.solution = torch.zeros_like(pte, requires_grad=False)
         self.min_loss = float('inf')
         self.bad_steps = 0
 
@@ -151,10 +152,12 @@ class Solver(nn.Module):
             self.verbose = True
 
         self.reset()
-        train_examples, eval_examples, test_examples = split_task(task)
+        device = str(self.model.get_pte_weight().device)
+
+        train_examples, eval_examples, test_examples = split_task(task, device=device)
 
         self.print(f"TASK: {task.task_id}")
-
+        self.print(f"Device: {device}")
         self.print(f"# TRAIN: {len(train_examples)}")
         self.print(f"# EVAL: {len(eval_examples)}")
         self.print(f"# TEST: {len(test_examples)}")
