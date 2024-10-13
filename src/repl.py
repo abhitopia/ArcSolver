@@ -1,6 +1,7 @@
 #%%
 from dataclasses import dataclass
 import re
+import math
 from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
@@ -298,6 +299,7 @@ class StateAggregatorRNN(nn.Module):
             hidden_size=config.n_dim,
             num_layers=1,
             batch_first=True,
+            dropout=config.dropout
         )
         self.rms_out = RMSNorm(config.n_dim)
 
@@ -459,6 +461,11 @@ class REPL(nn.Module):
                 norm = self.pte[0].weight.norm(p=2, dim=1, keepdim=True)
                 self.pte[0].weight = nn.Parameter(self.pte[0].weight * (self.pnorm / norm))
 
+
+    @torch.jit.export
+    def get_pte_weight(self):
+        return self.pte[0].weight
+
     def contruct_encoder_input(self, x: MODEL_INPUT):
         program = self.pte(x.program)
         program_type = self.type_emb(self.prog_type_idx)
@@ -591,8 +598,8 @@ class REPL(nn.Module):
     @torch.jit.export
     def greedy_search(self, 
             input_grid: List[int],
-            input_indices: List[Tuple[int, int]],
-            prog_idx: int,
+            input_indices: List[List[int]],
+            prog_idx: int = 0,
             color_perm_idx: int = 0,
             array_tform_idx: int = 0,
             max_length: int = 30*30,
@@ -607,14 +614,14 @@ class REPL(nn.Module):
         device = self.type_emb.weight.device  # Get the device from the embedding layer (assuming it's available)
 
         # Convert input_indices to a list of lists to make torchscript happy
-        input_indices_list = [list(t) for t in input_indices]
+        # input_indices_list = [list(t) for t in input_indices]
 
         x = MODEL_INPUT(
             program=torch.tensor([[prog_idx]], dtype=torch.long, device=device),
             color_permutation=torch.tensor([[color_perm_idx]], dtype=torch.long, device=device),
             array_transform=torch.tensor([[array_tform_idx]], dtype=torch.long, device=device),
             grid=torch.tensor([input_grid], dtype=torch.long, device=device),
-            grid_indices=torch.tensor([input_indices_list], dtype=torch.long, device=device),  # Fixed line
+            grid_indices=torch.tensor([input_indices], dtype=torch.long, device=device),  # Fixed line
             meta=None
         )
 
@@ -707,9 +714,9 @@ class REPL(nn.Module):
     @torch.jit.export
     def beam_search(self, 
         input_grid: List[int],
-        input_indices: List[Tuple[int, int]],
+        input_indices: List[List[int]],
         top_k: int = 5,
-        prob_thresh: float = 0.0,  # Finish when the probability of the top beam is below this threshold
+        prob_thresh: float = 0.001,  # Finish when the probability of the top beam is below this threshold
         prog_idx: int = 0,
         color_perm_idx: int = 0,
         array_tform_idx: int = 0,
@@ -717,7 +724,7 @@ class REPL(nn.Module):
         eos_idx: int = GridTokenizer().EOS_IDX,
         new_row_idx: int = GridTokenizer().NEW_ROW_IDX,
         max_grid_height: int = 35,
-        max_grid_width: int = 35)-> List[Tuple[List[int], float]]:
+        max_grid_width: int = 35)-> Tuple[List[List[int]], List[float]]:
     
         # Compute log_prob_threshold from prob_threshold
         log_prob_thresh = -float('inf') if prob_thresh == 0.0 else torch.log(prob_thresh) 
@@ -733,14 +740,14 @@ class REPL(nn.Module):
         torch.set_grad_enabled(False)
 
         # Convert input_indices to a list of lists to make torchscript happy
-        input_indices_list = [list(t) for t in input_indices]
+        # input_indices_list = [list(t) for t in input_indices]
 
         x = MODEL_INPUT(
             program=torch.tensor([[prog_idx]], dtype=torch.long, device=device),
             color_permutation=torch.tensor([[color_perm_idx]], dtype=torch.long, device=device),
             array_transform=torch.tensor([[array_tform_idx]], dtype=torch.long, device=device),
             grid=torch.tensor([input_grid], dtype=torch.long, device=device),
-            grid_indices=torch.tensor([input_indices_list], dtype=torch.long, device=device),  # Fixed line
+            grid_indices=torch.tensor([input_indices], dtype=torch.long, device=device),  # Fixed line
             meta=None
         )
 
@@ -836,7 +843,7 @@ class REPL(nn.Module):
 
             for seq, log_prob in zip(completed_sequences, completed_log_probs):
                 seq_list: List[int] = seq.tolist()
-                log_prob: float = float(torch.exp(log_prob).item())
+                log_prob: float = float(log_prob.item())
                 candidate_sequences.append(seq_list)
                 candidate_log_probs.append(log_prob)
 
@@ -895,14 +902,14 @@ class REPL(nn.Module):
         # This particular way is used for TorchScript compatibility
         # Sort the candidate_log_probs and reorder candidate_sequences based on the sorted candidate_log_probs
         sorted_indices: List[int] = torch.tensor(candidate_log_probs).argsort(descending=True).tolist()  # Sort indices based on log_probs
-        sorted_log_probs = [candidate_log_probs[i] for i in sorted_indices]
+        sorted_probs = [math.exp(candidate_log_probs[i]) for i in sorted_indices]
         sorted_sequences = [[bos_idx] + candidate_sequences[i] for i in sorted_indices]
 
         # Combine sorted log_probs and sequences into the final output
-        output_candidates = [(seq, log_prob) for log_prob, seq in zip(sorted_log_probs, sorted_sequences)]
+        # output_candidates = [(seq, log_prob) for log_prob, seq in zip(sorted_log_probs, sorted_sequences)]
 
         torch.set_grad_enabled(True)
-        return output_candidates
+        return sorted_sequences, sorted_probs
     
     def get_optimizer(
             self, 
