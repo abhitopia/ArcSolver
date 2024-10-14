@@ -40,8 +40,10 @@
 ## Inference improvement
 - [x] Add a dummy submission
 - [x] Create v9 solved/partially/unsolved datasets
+- [x] 1a6449f1 got TTE/TSE. The problem was Augmentation :facepalm: huge.
+- [x] Fix gradient accumulation
+- [ ] Add gradient clipping
 - [ ] May be worth adding "min tolerance" of improvement for patience
-- [ ] Fix gradient accumulation, add gradient clipping
 - [ ] Add functionality to resume from processed submissions
 - [ ] Implement Particle Exploration
 - [ ] Some quick benefit can be obtained by simply trying again with different seed, till a best result is found

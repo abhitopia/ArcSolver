@@ -1,9 +1,10 @@
 #%%
 import sys
+from typing import Optional
 
 src_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver'
 sys.path.append(src_path)  # replace "/path/to/src" with the actual path to the src directory
-
+import torch.nn.functional as F
 
 from src.multilevel_loss import MultiLevelLoss
 import numpy as np
@@ -60,9 +61,7 @@ config = REPLConfig(
         n_embd=16, 
         n_head=8,
         n_layer=3, 
-        pnorm=2.0, 
         dropout=0.0,
-        n_state_layer=3,
     )
 
 
@@ -83,59 +82,48 @@ model = REPL(config)
 
 # scripted_model = torch.jit.optimize_for_inference(torch.jit.script(model))
 # scripted_model = torch.jit.script(model)
-loss_fn = MultiLevelLoss(
-    pad_idx=0,
-    edr=2,
-    min_pct=0.4
-)
-#%%
-logits, cache = model(x, y, return_cache=True)
-loss = loss_fn(logits, y.target_grid)
-logits[-1][:, :, 0], loss
+# loss_fn = MultiLevelLoss(
+#     pad_idx=0,
+#     edr=2,
+#     min_pct=0.4
+# )
 
-loss.backward()
 
-for n, p in model.named_parameters():
-    if p.grad is not None:
-        if p.grad.isnan().any():
-            print(n, p.grad)
+def loss_fn(logits: torch.Tensor, y: MODEL_OUTPUT):
+    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1), reduction='mean', ignore_index=0)
+    return loss
+
 
 #%%
-%%time
-logits, cache = scripted_model(x, y, iters=4, return_cache=True)
-loss_scripted = scripted_model.compute_loss(logits, y)
-
-# assert torch.allclose(loss, loss_scripted), f"Loss mismatch: {loss} != {loss_scripted}"
-# logits[-1][:, :, 0], loss_scripted
-#%%
-def incremental_forward(model, x, y, iters=4):
-    _, cache = model(x, None, iters=iters, return_cache=True)
+def incremental_forward(model, x, y):
+    _, cache = model(x, None, return_cache=True)
 
     len_dec = y.grid.size(1)
 
-    logits_out = [[] for _ in range(iters)]
+    logits_out = []
     for i in range(len_dec):
         y_i = MODEL_OUTPUT(grid=y.grid[:, i:i+1], grid_indices=y.grid_indices[:, i:i+1], target_grid=None)
-        logits, cache = model.forward_inc(y_i, cache, iters=iters)
-        for j in range(iters):
-            logits_out[j].append(logits[j])
+        logits, cache = model.forward_inc(y_i, cache)
+        logits_out.append(logits)
 
-    logits_out = [torch.cat(i, dim=1) for i in logits_out]
-    loss = model.compute_loss(logits_out, y)
+    logits_out = torch.cat(logits_out, dim=1)
+    loss = loss_fn(logits_out, y.target_grid)
     return logits_out, loss
 
 
-logits_inc, loss = incremental_forward(model, x, y, iters=4)
-logits_inc[-1][:, :, 0], loss
+logits_inc, loss = incremental_forward(model, x, y)
+logits_inc[:, :, 1], loss
 
 #%%
-logits_inc, loss_scripted = incremental_forward(scripted_model, x, y, iters=4)
-logits_inc[-1][:, :, 0], loss_scripted
+# logits_inc, loss_scripted = incremental_forward(scripted_model, x, y, iters=4)
+# logits_inc[-1][:, :, 0], loss_scripted
+
+x.grid_indices[:, :, 1], y.grid_indices[:, :, 0]
 #%%
 
-logits, cache = model(x, y, iters=4, return_cache=True)
-loss = model.compute_loss(logits, y)
-logits[-1][:, :, 0], loss
+logits, cache = model(x, y, return_cache=True)
+loss = loss_fn(logits, y.target_grid)
+logits[:, :, 1], loss
 #%%
 logits, cache = model(x, None, iters=4, return_cache=True)
 logits[-1][:, :, 0], y.grid.shape
@@ -183,3 +171,23 @@ predicted, score_scripted = scripted_model.greedy_search(
                         )
 score, score_scripted
 # %%
+
+#%%
+# logits, cache = model(x, y, return_cache=True)
+# loss = loss_fn(logits, y.target_grid)
+# logits[-1][:, :, 0], loss
+
+# loss.backward()
+
+# for n, p in model.named_parameters():
+#     if p.grad is not None:
+#         if p.grad.isnan().any():
+#             print(n, p.grad)
+
+#%%
+# %%time
+# logits, cache = scripted_model(x, y, iters=4, return_cache=True)
+# loss_scripted = scripted_model.compute_loss(logits, y)
+
+# assert torch.allclose(loss, loss_scripted), f"Loss mismatch: {loss} != {loss_scripted}"
+# logits[-1][:, :, 0], loss_scripted
