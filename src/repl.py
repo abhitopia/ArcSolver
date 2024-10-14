@@ -572,7 +572,7 @@ class REPL(nn.Module):
         # Need to strip the attn_mask to match the size of decoder input
         attn_mask = attn_mask[:, :, -seq_len:, :]
 
-        iter_outs = []
+        # iter_outs = []
         updated_kv_cache: List[List[Tuple[Tensor, Tensor]]] = []
 
         current_state = dec_inp
@@ -586,7 +586,7 @@ class REPL(nn.Module):
                                             return_kv_caches=True)
             
             agg_out, current_state = self.state_agg(interpreter_out, current_state)
-            iter_outs.append(agg_out)
+            # iter_outs.append(agg_out)
             # Store the updated kv-cache for this loop iteration
             updated_kv_cache.append(iter_kv_cache)
 
@@ -692,7 +692,7 @@ class REPL(nn.Module):
         output_list: List[int] = output_sequence.tolist()  # Use .tolist() now since it's supported in TorchScript
         output_list = prefix_list + output_list
         torch.set_grad_enabled(True)
-        return output_list, torch.exp(output_log_prob)
+        return output_list, math.exp(output_log_prob)
     
     @staticmethod
     def _select_kv_caches(kv_caches: List[List[Tuple[torch.Tensor, torch.Tensor]]], mask_or_indices: torch.Tensor) -> List[List[Tuple[torch.Tensor, torch.Tensor]]]:
