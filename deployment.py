@@ -18,7 +18,7 @@ ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16
 solver = create_solver(ckt_path,
                 lr=0.01,
                 jit=True,
-                save=True)
+                save_path='models/v9/D512E128H16B5I3.v1/v9.pt')
 #%%
 base_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/'
 # base_path = '/teamspace/studios/this_studio/ArcSolveR/'
