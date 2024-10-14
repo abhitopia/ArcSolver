@@ -347,7 +347,8 @@ class AdamWModule(nn.Module):
         lr: float = 1e-3,
         betas: Tuple[float, float] = (0.9, 0.999),
         weight_decay: float = 0.0,
-        eps: float = 1e-8
+        eps: float = 1e-8,
+        grad_clip: float = 1.0
     ):
         super(AdamWModule, self).__init__()
         self.lr = lr
@@ -356,6 +357,7 @@ class AdamWModule(nn.Module):
         self.weight_decay = weight_decay
         self.eps = eps
         self.param = param
+        self.grad_clip = grad_clip
 
         self.register_buffer('m', torch.zeros_like(param))
         self.register_buffer('v', torch.zeros_like(param))
@@ -375,7 +377,17 @@ class AdamWModule(nn.Module):
 
     @torch.jit.export
     def step(self) -> None:
+
         grad = self.param.grad
+
+        # Clip gradients
+        if grad is not None:
+            # Compute the norm of the gradient
+            grad_norm = torch.norm(grad, p=2)
+            # Compute scaling factor
+            scaling_factor = torch.min(torch.tensor(1.0), self.grad_clip / (grad_norm + 1e-6))
+            # Scale the gradient
+            grad = grad * scaling_factor
 
         # Increment time step
         self.t = self.t + 1

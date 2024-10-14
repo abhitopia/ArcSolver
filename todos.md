@@ -42,7 +42,7 @@
 - [x] Create v9 solved/partially/unsolved datasets
 - [x] 1a6449f1 got TTE/TSE. The problem was Augmentation :facepalm: huge.
 - [x] Fix gradient accumulation
-- [ ] Add gradient clipping
+- [x] Add gradient clipping
 - [ ] May be worth adding "min tolerance" of improvement for patience
 - [ ] Add functionality to resume from processed submissions
 - [ ] Implement Particle Exploration
