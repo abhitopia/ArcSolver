@@ -226,6 +226,8 @@ def augmentations() -> List[Tuple[Tuple[int, str], Tuple[int, str]]]:
         for aid, a in enumerate(array_transforms):
             product_transforms.append(((cid, c), (aid, a)))
 
+    identity_augment = product_transforms[0]
+    product_transforms = product_transforms[1:]
     # Shuffle the list using Fisher-Yates algorithm
     N = len(product_transforms)
     for i in range(N - 1, 0, -1):
@@ -236,7 +238,7 @@ def augmentations() -> List[Tuple[Tuple[int, str], Tuple[int, str]]]:
         temp = product_transforms[i]
         product_transforms[i] = product_transforms[j]
         product_transforms[j] = temp
-    return product_transforms
+    return [identity_augment] + product_transforms
 
 
 @torch.jit.script
