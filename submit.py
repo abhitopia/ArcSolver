@@ -119,7 +119,6 @@ class Worker(threading.Thread):
 
                 # If None is received, this is the signal to terminate
                 if task is None:
-                    self.input_queue.task_done()
                     print(f"Worker {self.worker_id} exiting.")
                     break
 
