@@ -39,7 +39,10 @@
 
 ## Inference improvement
 - [x] Add a dummy submission
-- [ ] Create v9 solved/partially/unsolved datasets
+- [x] Create v9 solved/partially/unsolved datasets
+- [ ] May be worth adding "min tolerance" of improvement for patience
+- [ ] Fix gradient accumulation, add gradient clipping
+- [ ] Add functionality to resume from processed submissions
 - [ ] Implement Particle Exploration
 - [ ] Some quick benefit can be obtained by simply trying again with different seed, till a best result is found
 - [ ] Find which ARC_EVAL tasks are solved/partially solved by the model
