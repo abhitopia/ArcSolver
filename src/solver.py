@@ -63,6 +63,7 @@ class Solver(nn.Module):
         logits, _ = self.model(x, y)
         assert y is not None
         loss = loss_fn(logits, y)
+        loss = loss / self.bs # Gradient accumulation
         loss.backward()
         if self.model_updated():
             self.adam.step()
@@ -210,9 +211,11 @@ class Solver(nn.Module):
             grid: List[int] = x.grid[0].tolist()
             indices: List[List[int]] = x.grid_indices[0].tolist()
             # gp, gs = self.model.greedy_search(grid, indices)
+            # bps, bss = [gp], [gs]
             bps, bss = self.model.beam_search(grid, 
                                               indices,
                                               prob_thresh=min_confidence)
+            
             self.print(f"Processed Test input: {eid + 1}")
             pred_tensors: List[Tensor] = []
             score_tensors: List[float] = []
