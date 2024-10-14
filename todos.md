@@ -38,6 +38,8 @@
 - [x] TASK: 0a1d4ef5 ETA < ESA
 
 ## Inference improvement
+- [x] Add a dummy submission
+- [ ] Create v9 solved/partially/unsolved datasets
 - [ ] Implement Particle Exploration
 - [ ] Some quick benefit can be obtained by simply trying again with different seed, till a best result is found
 - [ ] Find which ARC_EVAL tasks are solved/partially solved by the model

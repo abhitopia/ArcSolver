@@ -9,6 +9,7 @@ from queue import Queue
 from tqdm import tqdm
 import warnings
 from torch import Tensor
+import hashlib
 
 # Suppress the specific RNN UserWarning
 warnings.filterwarnings(
@@ -16,6 +17,16 @@ warnings.filterwarnings(
     message=r".*RNN module weights are not part of single contiguous chunk of memory.*",
     category=UserWarning
 )
+
+
+def checksum_json_file(filename):
+    with open(filename, 'r') as f:
+        data = json.load(f)
+    # Serialize data with sorted keys and compact separators
+    serialized_data = json.dumps(data, sort_keys=True, separators=(',', ':'))
+    checksum = hashlib.md5(serialized_data.encode('utf-8')).hexdigest()
+    return checksum
+
 
 class Example(NamedTuple):
     input: torch.Tensor
@@ -66,7 +77,7 @@ def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None) -> Lis
         tasks.append(task)
     return tasks
 
-def create_dummy_submissions(tasks: List[Task]):
+def create_dummy_submission(tasks: List[Task]):
     submission = {}
     for task in tasks:
         submission[task.task_id] = []
@@ -170,7 +181,7 @@ class SubmissionManager:
 
     def add_inputs(self, tasks):
         self.num_inputs = len(tasks)
-        self.results = create_dummy_submissions(tasks)
+        self.results = create_dummy_submission(tasks)
         # Add inputs to the input queue
         for task in tasks:
             self.input_queue.put(task)
@@ -241,11 +252,23 @@ def main():
     assert Path(model_path).exists(), f"Model file not found: {model_path}"
     assert Path(tasks_path).exists(), f"Tasks file not found: {tasks_path}"
 
+
     if solutions_path is not None:
         assert Path(solutions_path).exists(), f"Solutions file not found: {solutions_path}"
     
     tasks = load_tasks(tasks_json_path=tasks_path, solution_path=solutions_path)
     print(f"Number of Tasks: {len(tasks)}")
+
+    checksum = checksum_json_file(tasks_path)
+    if checksum == 'f346f614a275b133f1a88044ae38468d':
+        print('Detected Dummy Test Data')
+        print("Creating Dummy Submission")
+        output_path = args.op
+        submission = create_dummy_submission(tasks)
+        json.dump(submission, open(output_path, 'w'), indent=2)
+        print(f"Saved Dummy Submission: {output_path}")
+        return
+
 
     # Number of devices (GPUs) and processes per device
     D = torch.cuda.device_count() 

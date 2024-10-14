@@ -27,10 +27,11 @@ class Solver(nn.Module):
         self.solution = torch.zeros_like(pte, requires_grad=False)
         self.min_loss = float('inf')
         self.bad_steps = 0
+        self.print_prefix = ""
 
     def print(self, msg: str):
         if self.verbose:
-            print(msg)
+            print(f"{self.print_prefix}:\t{msg}")
 
     def reset(self):
         self.adam.reset()
@@ -166,14 +167,13 @@ class Solver(nn.Module):
         device = str(self.model.get_pte_weight().device)
 
         train_examples, eval_examples, test_examples = split_task(task, device=device)
-
-        self.print(f"TASK: {task.task_id}")
+        self.print_prefix = f"Task {task.task_id}"
         self.print(f"Device: {device}")
         self.print(f"# TRAIN: {len(train_examples)}")
         self.print(f"# EVAL: {len(eval_examples)}")
         self.print(f"# TEST: {len(test_examples)}")
 
-        self.print(f"\nThinking...")
+        self.print(f"Thinking...")
         while True:
             for batch in train_examples:
                 x: MODEL_INPUT = batch[0]
