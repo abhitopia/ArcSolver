@@ -216,6 +216,21 @@ def color_transform(x: Tensor, name: str) -> Tensor:
     return mapping[x_long]
 
 
+def shuffled_indices(N: int) -> List[int]:
+    # Shuffle the list using Fisher-Yates algorithm
+    indices = list(range(N))
+    for i in range(N - 1, 0, -1):
+        # Generate a random index j such that 0 <= j <= i
+        j = torch.randint(0, i + 1, (1,)).item()
+        
+        # Swap product_transforms[i] with product_transforms[j]
+        temp = indices[i]
+        indices[i] = indices[j]
+        indices[j] = temp
+
+    return indices
+
+
 @torch.jit.script
 def augmentations() -> List[Tuple[Tuple[int, str], Tuple[int, str]]]:
     color_transforms = ['CPID', 'CP01', 'CP02', 'CP03', 'CP04', 'CP05', 'CP06', 'CP07', 'CP08', 'CP09']
@@ -228,21 +243,16 @@ def augmentations() -> List[Tuple[Tuple[int, str], Tuple[int, str]]]:
 
     identity_augment = product_transforms[0]
     product_transforms = product_transforms[1:]
-    # Shuffle the list using Fisher-Yates algorithm
     N = len(product_transforms)
-    for i in range(N - 1, 0, -1):
-        # Generate a random index j such that 0 <= j <= i
-        j = torch.randint(0, i + 1, (1,)).item()
-        
-        # Swap product_transforms[i] with product_transforms[j]
-        temp = product_transforms[i]
-        product_transforms[i] = product_transforms[j]
-        product_transforms[j] = temp
+    indices = shuffled_indices(N)
+    product_transforms = [product_transforms[i] for i in indices]
     return [identity_augment] + product_transforms
 
 
+
+
 @torch.jit.script
-def collate_fnc(ex: Example, augmentation: Tuple[Tuple[int, str], Tuple[int, str]], device: str = 'cpu') -> Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]:
+def collate_fnc(ex: Example, augmentation: Tuple[Tuple[int, str], Tuple[int, str]], prog_idx: int = 0, device: str = 'cpu') -> Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]:
     x = ex.input
 
     # Move input to the specified device
@@ -258,7 +268,7 @@ def collate_fnc(ex: Example, augmentation: Tuple[Tuple[int, str], Tuple[int, str
     inp = MODEL_INPUT(
         color_permutation=torch.tensor([[cpid]], device=x.device),
         array_transform=torch.tensor([[aid]], device=x.device),
-        program=torch.tensor([[0]], device=x.device),
+        program=torch.tensor([[prog_idx]], device=x.device),
         grid=inpt_grid.unsqueeze(0),
         grid_indices=inpt_indices.unsqueeze(0)
     )
@@ -327,6 +337,52 @@ def split_task(task: Task, device: str = 'cpu'):
 
     for example in task.test:
         inp, out = collate_fnc(example, augments[0], device=device)
+        test_data.append((inp, out))
+
+    # Shuffle the training data
+    train_data = [train_data[i] for i in shuffled_indices(len(train_data))]
+
+    return train_data, eval_data, test_data
+
+
+@torch.jit.script
+def split_task_cross(task: Task, device: str = 'cpu', mode: str = 'Rv1'):
+    augments: List[Tuple[Tuple[int, str], Tuple[int, str]]] = augmentations()
+    train_data: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]] = []
+    eval_data: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]] = []
+    test_data: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]] = []
+
+    num_train = len(task.train)
+
+    # Applies the 1 vs rest strategy to create training and evaluation data
+    for i in range(num_train):
+        prog_idx = i + 1 # 0 is reserved for mean program 
+        if mode == '1vR':
+            train_examples = [task.train[i]]
+            eval_examples = task.train[:i] + task.train[i+1:]
+        elif mode == 'Rv1':
+            train_examples = task.train[:i] + task.train[i+1:]
+            eval_examples = [task.train[i]]
+        else:
+            raise ValueError("Unknown mode: " + mode)
+        
+        # Add all augmentations for the training example using the prog_id
+        for train_example in train_examples:
+            for augment in augments:
+                inp, out = collate_fnc(train_example,
+                                    augment, 
+                                    prog_idx=prog_idx, 
+                                    device=device)
+                train_data.append((inp, out))
+
+        # All other examples are used for evaluation with the same program id (only identity augment for speed of evaluation)
+        for example in eval_examples:
+            inp, out = collate_fnc(example, augments[0], prog_idx=prog_idx, device=device)
+            eval_data.append((inp, out))
+
+    # Test examples are only used for debugging so keep them as reference with identity augment
+    for example in task.test:
+        inp, out = collate_fnc(example, augments[0], prog_idx=0, device=device)
         test_data.append((inp, out))
 
     return train_data, eval_data, test_data

@@ -730,7 +730,7 @@ class REPL(nn.Module):
         max_grid_width: int = 35)-> Tuple[List[List[int]], List[float]]:
     
         # Compute log_prob_threshold from prob_threshold
-        log_prob_thresh = -float('inf') if prob_thresh == 0.0 else torch.log(prob_thresh) 
+        log_prob_thresh = -float('inf') if prob_thresh == 0.0 else math.log(prob_thresh) 
 
         # Assume prog_idx and inp_idx are lists of integers
         # Batch size is 1

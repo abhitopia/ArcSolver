@@ -3,10 +3,10 @@ from typing import Dict, List, Optional, Tuple
 import torch
 from torch import Tensor
 import torch.nn as nn
-from .deploy_utils import AdamWModule, format_float, shuffled_indices, split_task, Task, TaskSolution, MODEL_INPUT, MODEL_OUTPUT, loss_fn, deserialize_array
+from .deploy_utils import AdamWModule, format_float, shuffled_indices, split_task_cross, Task, TaskSolution, MODEL_INPUT, MODEL_OUTPUT, loss_fn, deserialize_array
 from .repl import REPL, REPLConfig
 
-class Solver(nn.Module):
+class ParticleSolver(nn.Module):
     def __init__(self, model: torch.ScriptModule, lr: float = 1e-2, wd: float = 0.05) -> None:
         super().__init__()
         self.model = model
@@ -27,12 +27,50 @@ class Solver(nn.Module):
         self.solution = torch.zeros_like(pte, requires_grad=False)
         self.min_loss = float('inf')
         self.bad_steps = 0
-        self.patience = -1
         self.print_prefix = ""
+        self.num_programs: int = 0
+        self.program_scores: Dict[int, List[float]] = {0: []}
 
     def print(self, msg: str):
         if self.verbose:
-            print(f"{self.print_prefix}:\t{msg}")
+            print(f"{self.print_prefix}:\t{msg}")    
+
+    def collapse(self):
+        prog_embedding = self.model.get_pte_weight()
+        avg_embd = torch.zeros(size=(prog_embedding.size(1),), device=prog_embedding.device, requires_grad=False)
+
+        # Get Average Scores for each program
+        avg_scores: List[float] = []
+        for i in range(self.num_programs):
+            scores = self.program_scores[i]
+            avg_score = 0.0
+            if len(scores) > 0:
+                avg_score = sum(scores) / len(scores)
+            avg_scores.append(avg_score)
+        sum_scores = sum(avg_scores)
+
+        # Construct the average embedding as weight sum of the programs embeddings
+        for i, score in enumerate(avg_scores):
+            prog_idx = i + 1
+            prog_embd_i = prog_embedding[prog_idx]
+            avg_embd.data += (score / sum_scores) * prog_embd_i.data
+
+        # Copy over the average embedding to all programs
+        for i in range(self.num_programs):
+            prog_idx = i + 1
+            prog_embedding[prog_idx].data.copy_(avg_embd.data)
+
+        # Copy program embedding to the zeroth program
+        prog_embedding[0].data.copy_(avg_embd.data)
+
+        self.reset_program_scores()
+
+
+
+    def reset_program_scores(self):
+        self.program_scores = {0: []} # TODO: Remove this
+        for i in range(self.num_programs):
+            self.program_scores[i+1] = []
 
     def reset(self):
         self.adam.reset()
@@ -50,7 +88,7 @@ class Solver(nn.Module):
         if not self.model_updated():
             return
         
-        loss = me['ML']
+        loss = me['L']
         if loss < self.min_loss:
             self.min_loss = loss
             self.solution.data.copy_(self.model.get_pte_weight().data)
@@ -68,6 +106,7 @@ class Solver(nn.Module):
         loss.backward()
         if self.model_updated():
             self.adam.step()
+            self.collapse()
             self.step += 1
         self.inner_step += 1
 
@@ -98,13 +137,12 @@ class Solver(nn.Module):
             total_tokens = 0.0
             total_correct_samples = 0.0
             total_correct_tokens = 0.0
-            max_loss = float('-inf')
             for x, y in examples:
                 logits, _ = self.model(x, y)
                 assert y is not None
                 loss = loss_fn(logits, y)
-
-                max_loss = max(max_loss, loss.item())
+                prog_id = x.program.item()
+                self.program_scores[prog_id].append(loss.item())
                 num_correct_tokens, num_correct_samples, num_tokens = self.metric(logits, y)
 
                 total_correct_samples += num_correct_samples
@@ -117,9 +155,9 @@ class Solver(nn.Module):
             sample_accuracy = total_correct_samples / len(examples)
             token_accuracy = total_correct_tokens / total_tokens
 
+            # print(self.program_scores)
             metrics: Dict[str, float] = {
                 'L': avg_loss,
-                'ML': max_loss,
                 'TA': token_accuracy,
                 'SA': sample_accuracy,
             }   
@@ -138,16 +176,12 @@ class Solver(nn.Module):
         metrics: Dict[str, str] = {
             'T': step,
             'EL': format_float(me['L'], 4),
-            'EML': format_float(me['ML'], 4),
             'ETA': format_float(me['TA'], 3),
             'ESA': format_float(me['SA'], 2),
-            'MML': format_float(self.min_loss, 4),
-            'RS': str(self.patience - self.bad_steps),
         }
 
         if len(mt) > 0:
             metrics['TL'] = format_float(mt['L'], 4)
-            metrics['TML'] = format_float(mt['ML'], 4)
             metrics['TTE'] = format_float(mt['TA'], 3)
             metrics['TSE'] = format_float(mt['SA'], 2)
 
@@ -173,13 +207,21 @@ class Solver(nn.Module):
         else:
             self.verbose = False
 
-        self.patience = patience
         self.reset()
         device = str(self.model.get_pte_weight().device)
 
-        train_examples, eval_examples, test_examples = split_task(task, device=device)
+        # train_examples, eval_examples, test_examples = split_task(task, device=device)
+        train_examples, eval_examples, test_examples = split_task_cross(task, 
+                                                                    device=device, 
+                                                                    mode='Rv1')
+
+        self.num_programs = len(task.train)
+        self.reset_program_scores()
+
         self.print_prefix = f"Task {task.task_id}"
-        self.print(f"Device: {device}")
+
+        self.print(f"Device: {device} ({len(task.train)}, {len(task.test)})")
+        self.print(f"# Programs: {self.num_programs}")
         self.print(f"# TRAIN: {len(train_examples)}")
         self.print(f"# EVAL: {len(eval_examples)}")
         self.print(f"# TEST: {len(test_examples)}")
@@ -252,11 +294,11 @@ class Solver(nn.Module):
 
 
 @staticmethod
-def load_inference_model(ckt_path, jit: bool = True):
+def load_inference_model(ckt_path, jit: bool = True, vocab_size: int = 1) -> REPL:
     data = torch.load(ckt_path, map_location='cpu', weights_only=False)
     programs = data['model_state_dict']['pte.0.weight']
     model_config = REPLConfig.from_dict(data['model_config'])
-    model_config.prog_vocab_size = 1
+    model_config.prog_vocab_size = vocab_size
     model_config.dropout = 0.0 # this is important for inference as I cannot change dropout in the scripted Solver
     model = REPL(model_config)
     model.train() # This is because RNN only does backward in training mode
@@ -270,22 +312,24 @@ def load_inference_model(ckt_path, jit: bool = True):
         else:
             param.requires_grad = False
 
-    model.pte[0].weight.data.copy_(programs.data.mean(dim=0))
+    program_mean = programs.data.mean(dim=0).unsqueeze(0).repeat(10, 1)
+    model.pte[0].weight.data.copy_(program_mean.data)
     if jit:
         model = torch.jit.script(model)
     return model 
 
 
-def create_solver(
+def create_particle_solver(
         ckpt_path: str,
         wd: float = 0.05,
         lr: float = 1e-2,
         jit=True,
+        vocab_size: int = 10,
         save_path=None
-    ) -> Solver:
+    ) -> ParticleSolver:
 
-    model = load_inference_model(ckpt_path, jit=jit)
-    solver = Solver(model, lr=lr, wd=wd)
+    model = load_inference_model(ckpt_path, jit=jit, vocab_size=vocab_size)
+    solver = ParticleSolver(model, lr=lr, wd=wd)
     if jit:
         solver = torch.jit.script(solver)
         if save_path is not None:
