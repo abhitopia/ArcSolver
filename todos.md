@@ -43,6 +43,9 @@
 - [x] 1a6449f1 got TTE/TSE. The problem was Augmentation :facepalm: huge.
 - [x] Fix gradient accumulation
 - [x] Add gradient clipping
+- [x] Shuffle the training data
+- [x] Ensure that the best model is used for inference. Don't use overfitted model
+- [ ] Move lr and wd to the forward function
 - [ ] May be worth adding "min tolerance" of improvement for patience
 - [ ] Add functionality to resume from processed submissions
 - [ ] Implement Particle Exploration
