@@ -29,9 +29,13 @@ solver = create_solver(ckt_path,
                 jit=True,
                 save_path=save_path)
 #%%
-tasks_path = base_path / 'solved_challenge.json'
-solution_path = base_path / 'solved_solution.json'
-# solution_path = None
+# tasks_path = base_path / 'partial_solved_challenge.json'
+# solution_path = base_path / 'partial_solved_solution.json'
+# tasks_path = base_path / 'solved_challenge.json'
+# solution_path = base_path / 'solved_solution.json'
+tasks_path = base_path / 'unsolved_challenge.json'
+solution_path = base_path / 'unsolved_solution.json'
+
 tasks = load_tasks(tasks_path, solution_path)
 
 # for task in tasks:
@@ -48,18 +52,18 @@ solver.to(device)
 
 
 params = SolverParams(
-    thinking=100,
-    bs=5,
-    patience=30,
-    lr=0.005,
-    lrs=0.1,
+    thinking=300,
+    bs=20,
+    patience=100,
+    lr=0.01,
+    lrs=1.0,
     wd=0.0,
     wu=1,
     seed=42,
     mode='vbs',
     confidence=0.000001,
     metric='L',
-    strategy='1vR'
+    strategy='Rv1'
 )
 
 # with autocast('cuda'):
@@ -69,3 +73,34 @@ solution = solver(
 
 # %%
 # %%
+# Solves tasks[0] of partial_solved
+# params = SolverParams(
+#     thinking=250,
+#     bs=20,
+#     patience=30,
+#     lr=0.01,
+#     lrs=1.0,
+#     wd=0.0,
+#     wu=1,
+#     seed=42,
+#     mode='vbs',
+#     confidence=0.000001,
+#     metric='L',
+#     strategy='Rv1'
+# )
+
+
+# params = SolverParams(
+#     thinking=500,
+#     bs=10,
+#     patience=100,
+#     lr=0.01,
+#     lrs=1.0,
+#     wd=0.0,
+#     wu=1,
+#     seed=42,
+#     mode='vbs',
+#     confidence=0.000001,
+#     metric='L',
+#     strategy='Rv1'
+# )
