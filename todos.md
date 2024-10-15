@@ -46,17 +46,19 @@
 - [x] Shuffle the training data
 - [x] Ensure that the best model is used for inference. Don't use overfitted model
 - [x] Move lr and wd to the forward function
-- [ ] Add lr schedule
-- [ ] Create a spread sheet of submissions?
+- [x] Add lr schedule
+- [x] Create a spread sheet of submissions?. Started saving git commit and also pass all the hparams
+- [x] Program must terminate. Added a time limit
+- [ ] Test different settings for the inference
 - [ ] May be worth adding "min tolerance" of improvement for patience
 - [ ] Add functionality to resume from processed submissions
 - [ ] Implement Particle Exploration
 - [ ] Some quick benefit can be obtained by simply trying again with different seed, till a best result is found
-- [ ] Find which ARC_EVAL tasks are solved/partially solved by the model
-- [ ] Remove the multiple logits, will it be faster?
-- [ ] Test the inference script
-- [ ] Start writing inference code and test it against the best ARC_EVAL trained model
-- [ ] Create a solver for Synthetic data first!
+- [x] Find which ARC_EVAL tasks are solved/partially solved by the model
+- [x] Remove the multiple logits, will it be faster?
+- [x] Test the inference script
+- [x] Start writing inference code and test it against the best ARC_EVAL trained model
+- [x] Create a solver for Synthetic data first!
 
 
 

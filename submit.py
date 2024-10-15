@@ -1,15 +1,19 @@
 import argparse
 import json
 from pathlib import Path
+import time
 from typing import List, NamedTuple, Optional, get_type_hints
 import torch
 import torch.jit
+import os
 import threading
-from queue import Queue
+from queue import Queue, Empty
 from tqdm import tqdm
 import warnings
 from torch import Tensor
 import hashlib
+import torch.multiprocessing as mp
+
 
 # Suppress the specific RNN UserWarning
 warnings.filterwarnings(
@@ -17,6 +21,17 @@ warnings.filterwarnings(
     message=r".*RNN module weights are not part of single contiguous chunk of memory.*",
     category=UserWarning
 )
+
+warnings.filterwarnings("ignore", category=UserWarning, message=r".*resource_tracker:.*")
+
+
+def drain_queue(queue):
+    """Drains the queue by retrieving and discarding all items."""
+    try:
+        while True:
+            queue.get_nowait()  # Remove items without waiting
+    except Empty:
+        pass  # When the queue is empty, stop draining
 
 
 def checksum_json_file(filename):
@@ -103,33 +118,54 @@ def create_dummy_submission(tasks: List[Task]):
 
     return submission
 
-# Worker thread class
-class Worker(threading.Thread):
-    def __init__(self, device_id, worker_id, model_path, input_queue, output_queue, model_params: ModelParams):
-        threading.Thread.__init__(self)
+
+class Worker(mp.Process):
+    def __init__(self, device_id, worker_id, model_path, input_queue, output_queue, model_params: ModelParams, start_time, time_limit_seconds):
+        super(Worker, self).__init__()
         self.device_id = device_id
         self.worker_id = worker_id
+        self.model_path = model_path
         self.model_params = model_params
         self.input_queue = input_queue
         self.output_queue = output_queue
-        # Load the model instance on the assigned device
-        device = torch.device(f'cuda:{device_id}' if torch.cuda.is_available() else 'cpu')
-        self.model = torch.jit.load(model_path).to(device)
-        # self.model.eval()
-        self.device = device
-        self.daemon = True  # Ensures threads exit when the main thread exits
+        self.start_time = start_time
+        self.time_limit_seconds = time_limit_seconds
+        self.model = None  # Model will be loaded once in the run method
+
+    def load_model(self):
+        """Load the model onto the correct device."""
+        device = torch.device(f'cuda:{self.device_id}' if torch.cuda.is_available() else 'cpu')
+        self.model = torch.jit.load(self.model_path).to(device)
+        print(f"Worker {self.worker_id}: Model loaded on {device}")
+
+    def run_task(self, task):
+        """Runs the model on the task and returns the result."""
+        try:
+            # Run the model's forward method
+            solution = self.model.forward(task, self.model_params)
+            # Prepare the task solution
+            return TaskSolution(solution[0], solution[1], solution[2])
+        except Exception as e:
+            return e  # Return the exception to the parent process
 
     def run(self):
+        # Load the model once when the process starts
+        self.load_model()
 
         while True:
             try:
-                # Free up GPU cache if available
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                    torch.cuda.synchronize()
+                # Check if the time limit has been exceeded
+                elapsed_time = time.time() - self.start_time
+                if elapsed_time > self.time_limit_seconds:
+                    print(f"Worker {self.worker_id} exiting due to time limit.")
+                    break
 
-                # Get the next task from the input queue
-                task = self.input_queue.get()
+                try:
+                    # Get the next task from the input queue with timeout
+                    task = self.input_queue.get(timeout=1)
+                except Empty:
+                    # If the queue is empty, check if it's time to exit
+                    continue
 
                 # If None is received, this is the signal to terminate
                 if task is None:
@@ -139,88 +175,317 @@ class Worker(threading.Thread):
                 # Log task processing
                 print(f"Worker {self.worker_id} processing task {task.task_id}")
 
-                # Process the input asynchronously
-                try:
-                    # Use torch.jit.fork to process the input
-                    fut = torch.jit.fork(self.model.forward, task, self.model_params)
-                    
-                    # Wait for the result without blocking the thread
-                    solution = torch.jit.wait(fut)
+                # Run the task
+                result = self.run_task(task)
 
-                    # Prepare the task solution
-                    solution = TaskSolution(solution[0], solution[1], solution[2])
+                # Check again if the time limit is exceeded
+                elapsed_time = time.time() - self.start_time
+                if elapsed_time > self.time_limit_seconds:
+                    print(f"Worker {self.worker_id}: Time limit exceeded during task {task.task_id}. Exiting.")
+                    break
 
-                    # Log task completion
-                    print(f"Worker {self.worker_id} completed task {solution.task_id}")
-
-                    # Put the result into the output queue
-                    self.output_queue.put(solution)
-
-                except Exception as e:
-                    print(f"Worker {self.worker_id}: Error during task processing for task {task.task_id}: {e}")
-                    # Log failure if needed and optionally add retry logic
+                # Put the result (solution or exception) into the output queue
+                self.output_queue.put(result)
 
             except Exception as e:
                 print(f"Worker {self.worker_id}: General error occurred: {e}")
 
             finally:
-                # Ensure that the task is marked as done
+                # Mark the task as done
                 self.input_queue.task_done()
-# Processing Manager class
+
+
+
+
 class SubmissionManager:
-    def __init__(self, model_path, num_devices, threads_per_device, model_params: ModelParams, submission_path):
+    def __init__(self, model_path, num_devices, threads_per_device, model_params: ModelParams, submission_path, time_limit_seconds):
         self.model_path = model_path
         self.num_devices = num_devices
         self.threads_per_device = threads_per_device
         self.model_params = model_params
         self.submission_path = submission_path
+        self.time_limit_seconds = time_limit_seconds  # Convert time limit to seconds
 
         assert num_devices > 0, "At least one device must be available"
         assert threads_per_device > 0, "At least one thread per device is required"
-        
-        self.input_queue = Queue()
-        self.output_queue = Queue()
+
+        self.input_queue = mp.JoinableQueue()  # Multiprocessing-compatible queue
+        self.output_queue = mp.Queue()
         self.workers = []
         self.results = None
         self.num_inputs = 0
-
+        self.start_time = time.time()  # Track the start time
+    
     def start_workers(self):
+        """Starts the worker processes."""
         for device_id in range(self.num_devices):
             for n in range(self.threads_per_device):
                 worker_id = device_id * self.threads_per_device + n
-                worker = Worker(device_id, worker_id, self.model_path, self.input_queue, self.output_queue, self.model_params)
+                worker = Worker(
+                    device_id, worker_id, self.model_path,
+                    self.input_queue, self.output_queue,
+                    self.model_params, self.start_time,
+                    self.time_limit_seconds
+                )
                 worker.start()
                 self.workers.append(worker)
 
     def add_inputs(self, tasks):
+        """Add tasks to the input queue."""
         self.num_inputs = len(tasks)
         self.results = create_dummy_submission(tasks)
-        # Add inputs to the input queue
         for task in tasks:
             self.input_queue.put(task)
-        # Add termination signals to the input queue
+        # Add termination signals (None) to stop workers
         for _ in self.workers:
             self.input_queue.put(None)
 
+    def terminate_workers(self):
+        """Forcefully terminate all running workers."""
+        for worker in self.workers:
+            if worker.is_alive():
+                print(f"Terminating worker {worker.pid}")
+                worker.terminate()
+                print(f"Joining worker {worker.pid}")
+                worker.join()
+
+        print("All workers terminated.")
+
     def process_inputs(self):
+        """Processes all inputs while checking for time limits."""
         num_processed = 0
         with tqdm(total=self.num_inputs) as pbar:
             while num_processed < self.num_inputs:
-                solution = self.output_queue.get()
-                self.results[solution.task_id] = solution.to_dict()
-                json.dump(self.results, open(self.submission_path, 'w'), indent=2)
-                print(f"Saved Solution: Task {solution.task_id}")
-                num_processed += 1
-                pbar.update(1)
+                # Check if the time limit has been exceeded
+                elapsed_time = time.time() - self.start_time
+                if elapsed_time > self.time_limit_seconds:
+                    print(f"Time limit of {elapsed_time / self.time_limit_seconds} secs exceeded. Terminating workers.")
+                    self.terminate_workers()
+                    print("Cleaning up resources before exiting...")
+
+                    # Drain the queues before shutting down
+                    print("Draining input queue...")
+                    drain_queue(self.input_queue)  # Empty the input queue
+
+                    print("Draining output queue...")
+                    drain_queue(self.output_queue)  # Empty the output queue
+                
+                    # Close and join the queues
+                    self.input_queue.close()
+                    self.input_queue.join_thread()  # Wait for the input queue thread to terminate
+                    self.output_queue.close()
+                    self.output_queue.join_thread()  # Wait for the output queue thread to terminate
+
+                    print("Program exiting due to time limit.")
+                    # exit(0)  # Exit the program if time limit is exceeded
+                    os._exit(0)  # Forcefully exit the program without exceptions
+
+                else:
+                    print(f"Elapsed Time(seconds): {int(elapsed_time)}/{self.time_limit_seconds}")
+
+                try:
+                    # Get a result from the output queue with timeout
+                    result = self.output_queue.get(timeout=1)
+                    if isinstance(result, Exception):
+                        print(f"Error encountered in task: {result}")
+                    else:
+                        # Process the result
+                        self.results[result.task_id] = result.to_dict()
+                        json.dump(self.results, open(self.submission_path, 'w'), indent=2)
+                        print(f"Saved Solution: Task {result.task_id}")
+                    num_processed += 1
+                    pbar.update(1)
+                except Empty:
+                    # If no result is available, continue
+                    pass
 
         # Wait for all tasks to be processed
         self.input_queue.join()
-        # Wait for all worker threads to finish
+
+        # Wait for all worker processes to finish
         for worker in self.workers:
             worker.join()
 
     def get_results(self):
+        """Returns the final results."""
         return self.results
+
+
+# # Worker thread class
+# class Worker(threading.Thread):
+#     def __init__(self, 
+#                  device_id, 
+#                  worker_id, 
+#                  model_path, 
+#                  input_queue, 
+#                  output_queue, 
+#                  model_params: ModelParams,
+#                  start_time: int,
+#                  time_limit_secs: int = 60):
+#         threading.Thread.__init__(self)
+#         self.device_id = device_id
+#         self.worker_id = worker_id
+#         self.model_params = model_params
+#         self.input_queue = input_queue
+#         self.output_queue = output_queue
+#         self.start_time = start_time
+#         self.time_limit_secs = time_limit_secs
+#         # Load the model instance on the assigned device
+#         device = torch.device(f'cuda:{device_id}' if torch.cuda.is_available() else 'cpu')
+#         self.model = torch.jit.load(model_path).to(device)
+#         # self.model.eval()
+#         self.device = device
+#         self.daemon = True  # Ensures threads exit when the main thread exits
+
+#     def run(self):
+
+#         while True:
+#             try:
+#                 # Free up GPU cache if available
+#                 if torch.cuda.is_available():
+#                     torch.cuda.empty_cache()
+#                     torch.cuda.synchronize()
+
+#                 # Check if the time limit has been exceeded
+#                 elapsed_time = time.time() - self.start_time
+#                 if elapsed_time > self.time_limit_secs:
+#                     print(f"Worker {self.worker_id} exiting due to time limit.")
+#                     break
+#                 else:
+#                     print(f"Elapsed Time: {elapsed_time}/{self.time_limit_secs}")
+
+#                 # Get the next task from the input queue
+#                 task = self.input_queue.get()
+
+#                 # If None is received, this is the signal to terminate
+#                 if task is None:
+#                     print(f"Worker {self.worker_id} exiting.")
+#                     break
+
+#                 # Log task processing
+#                 print(f"Worker {self.worker_id} processing task {task.task_id}")
+
+#                 # Process the input asynchronously
+#                 try:
+#                     # Use torch.jit.fork to process the input
+#                     fut = torch.jit.fork(self.model.forward, task, self.model_params)
+#                     print("After Fork")
+#                     # While waiting for the result, periodically check the time limit
+#                     while not fut.done():
+#                         print("Inside While Loop")
+#                         # Check if the time limit has been exceeded
+#                         elapsed_time = time.time() - self.start_time
+#                         if elapsed_time > self.time_limit_seconds:
+#                             print(f"Worker {self.worker_id} exceeded time limit. Terminating task {task.task_id}.")
+#                             break
+#                         else:
+#                             print(f"Elapsed Time: {elapsed_time}/{self.time_limit_secs}")
+#                         time.sleep(1)  # Sleep briefly to avoid busy-waiting
+
+
+#                     # Wait for the result without blocking the thread
+#                     solution = torch.jit.wait(fut)
+
+#                     # Prepare the task solution
+#                     solution = TaskSolution(solution[0], solution[1], solution[2])
+
+#                     # Log task completion
+#                     print(f"Worker {self.worker_id} completed task {solution.task_id}")
+
+#                     # Put the result into the output queue
+#                     self.output_queue.put(solution)
+
+#                 except Exception as e:
+#                     print(f"Worker {self.worker_id}: Error during task processing for task {task.task_id}: {e}")
+#                     # Log failure if needed and optionally add retry logic
+
+#             except Exception as e:
+#                 print(f"Worker {self.worker_id}: General error occurred: {e}")
+
+#             finally:
+#                 # Ensure that the task is marked as done
+#                 self.input_queue.task_done()
+# # Processing Manager class
+# class SubmissionManager:
+#     def __init__(self, 
+#                 model_path, 
+#                 num_devices, 
+#                 threads_per_device, 
+#                 model_params: ModelParams, 
+#                 submission_path,
+#                 time_limit_secs: int):
+#         self.model_path = model_path
+#         self.num_devices = num_devices
+#         self.threads_per_device = threads_per_device
+#         self.model_params = model_params
+#         self.submission_path = submission_path
+#         self.time_limit_secs = time_limit_secs
+
+#         assert num_devices > 0, "At least one device must be available"
+#         assert threads_per_device > 0, "At least one thread per device is required"
+        
+#         self.input_queue = Queue()
+#         self.output_queue = Queue()
+#         self.workers = []
+#         self.results = None
+#         self.num_inputs = 0
+#         self.start_time = time.time()  # Track the start time
+
+
+#     def start_workers(self):
+#         for device_id in range(self.num_devices):
+#             for n in range(self.threads_per_device):
+#                 worker_id = device_id * self.threads_per_device + n
+#                 worker = Worker(device_id=device_id, 
+#                                 worker_id=worker_id, 
+#                                 model_path=self.model_path, 
+#                                 input_queue=self.input_queue, 
+#                                 output_queue=self.output_queue, 
+#                                 model_params=self.model_params,
+#                                 start_time=self.start_time,
+#                                 time_limit_secs=self.time_limit_secs
+#                                 )
+#                 worker.start()
+#                 self.workers.append(worker)
+
+#     def add_inputs(self, tasks):
+#         self.num_inputs = len(tasks)
+#         self.results = create_dummy_submission(tasks)
+#         # Add inputs to the input queue
+#         for task in tasks:
+#             self.input_queue.put(task)
+#         # Add termination signals to the input queue
+#         for _ in self.workers:
+#             self.input_queue.put(None)
+
+#     def process_inputs(self):
+#         num_processed = 0
+#         with tqdm(total=self.num_inputs) as pbar:
+#             while num_processed < self.num_inputs:
+            
+#                 # Check if the time limit has been exceeded
+#                 elapsed_time = time.time() - self.start_time
+#                 if elapsed_time > self.time_limit_secs:
+#                     print(f"Time limit of {self.time_limit_secs} seconds exceeded. Terminating gracefully...")
+#                     break
+#                 else:
+#                     print(f"Elapsed Time: {elapsed_time}/{self.time_limit_secs}")
+
+#                 solution = self.output_queue.get()
+#                 self.results[solution.task_id] = solution.to_dict()
+#                 json.dump(self.results, open(self.submission_path, 'w'), indent=2)
+#                 print(f"Saved Solution: Task {solution.task_id}")
+#                 num_processed += 1
+#                 pbar.update(1)
+
+#         # Wait for all tasks to be processed
+#         self.input_queue.join()
+#         # Wait for all worker threads to finish
+#         for worker in self.workers:
+#             worker.join()
+
+#     def get_results(self):
+#         return self.results
     
 
 def parse_args_from_namedtuple(namedtuple_class, parser):    
@@ -257,11 +522,77 @@ def parse_arguments():
                         help='Number of processes to run per device.')
     parser.add_argument('--op', type=str, default='/kaggle/working/submission.json',
                         help='Path to save the output results.')
+    parser.add_argument('--tl', type=int, default=int(10.5*3600), help='Time limit in seconds for processing tasks.')
     
     # Model Arguments
     parser = parse_args_from_namedtuple(ModelParams, parser)
     args = parser.parse_args()
     return args
+
+# def main():
+#     args = parse_arguments()
+
+#     # Filter out extra arguments that aren't in SolverParams
+#     model_params_dict = {key: value for key, value in vars(args).items() if key in ModelParams._fields}
+
+#     # Create the SolverParams instance with only the required fields
+#     model_params = ModelParams(**model_params_dict)
+#     model_path = args.mp
+#     tasks_path = args.tp
+#     solutions_path = args.sp
+
+#     assert Path(model_path).exists(), f"Model file not found: {model_path}"
+#     assert Path(tasks_path).exists(), f"Tasks file not found: {tasks_path}"
+
+
+#     if solutions_path is not None:
+#         assert Path(solutions_path).exists(), f"Solutions file not found: {solutions_path}"
+    
+#     tasks = load_tasks(tasks_json_path=tasks_path, solution_path=solutions_path)
+#     print(f"Number of Tasks: {len(tasks)}")
+
+#     checksum = checksum_json_file(tasks_path)
+#     if checksum == 'f346f614a275b133f1a88044ae38468d':
+#         print('Detected Dummy Test Data')
+#         print("Creating Dummy Submission")
+#         output_path = args.op
+#         submission = create_dummy_submission(tasks)
+#         json.dump(submission, open(output_path, 'w'), indent=2)
+#         print(f"Saved Dummy Submission: {output_path}")
+#         return
+
+
+#     # Number of devices (GPUs) and processes per device
+#     D = torch.cuda.device_count() 
+#     N = args.np   # Number of model instances per device
+
+#     devices = [f'cuda:{i}' for i in range(D)] if D > 0 else ['cpu']
+#     D = 1 if D == 0 else D  # Use CPU if no GPUs are available
+    
+#     print(f"Using devices: {devices}")
+#     print(f'Number of Cuda devices: {D}')
+#     print(f'Number of threads per device: {N}')
+
+#     # Initialize the processing manager
+#     manager = SubmissionManager(model_path=model_path, 
+#                                 num_devices=D, 
+#                                 threads_per_device=N, 
+#                                 model_params=model_params,
+#                                 submission_path=args.op,
+#                                 time_limit_secs=args.tl)
+
+#     # Start worker threads
+#     manager.start_workers()
+
+#     # Add inputs to the queue
+#     manager.add_inputs(tasks)
+
+#     # Process inputs and collect outputs
+#     manager.process_inputs()
+
+# if __name__ == '__main__':
+#     main()
+
 
 def main():
     args = parse_arguments()
@@ -277,7 +608,6 @@ def main():
 
     assert Path(model_path).exists(), f"Model file not found: {model_path}"
     assert Path(tasks_path).exists(), f"Tasks file not found: {tasks_path}"
-
 
     if solutions_path is not None:
         assert Path(solutions_path).exists(), f"Solutions file not found: {solutions_path}"
@@ -295,7 +625,6 @@ def main():
         print(f"Saved Dummy Submission: {output_path}")
         return
 
-
     # Number of devices (GPUs) and processes per device
     D = torch.cuda.device_count() 
     N = args.np   # Number of model instances per device
@@ -307,21 +636,23 @@ def main():
     print(f'Number of Cuda devices: {D}')
     print(f'Number of threads per device: {N}')
 
-    # Initialize the processing manager
+    # Initialize the processing manager with a time limit
     manager = SubmissionManager(model_path=model_path, 
                                 num_devices=D, 
                                 threads_per_device=N, 
                                 model_params=model_params,
-                                submission_path=args.op)    
+                                submission_path=args.op, 
+                                time_limit_seconds=args.tl)  # Set time limit (e.g., 10 hours)
 
-    # Start worker threads
+    # Start worker processes
     manager.start_workers()
 
     # Add inputs to the queue
     manager.add_inputs(tasks)
 
-    # Process inputs and collect outputs
+    # Process inputs and collect outputs, with time limit checking
     manager.process_inputs()
 
 if __name__ == '__main__':
+    mp.set_start_method('spawn', force=True)  # Use spawn method for multiprocessing with CUDA
     main()
