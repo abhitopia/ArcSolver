@@ -176,6 +176,7 @@ class Solver(nn.Module):
         )-> TaskSolution:
         
         self.verbose = True if params.mode == 'vbs' else False
+        self.print_prefix = f"Task {task.task_id}"
         torch.manual_seed(params.seed)
         self.bs = params.bs
         self.print(f"Params: {params}")
@@ -184,7 +185,6 @@ class Solver(nn.Module):
         device = str(self.model.get_pte_weight().device)
 
         train_examples, eval_examples, test_examples = split_task(task, device=device)
-        self.print_prefix = f"Task {task.task_id}"
         self.print(f"Device: {device}")
         self.print(f"# TRAIN: {len(train_examples)}")
         self.print(f"# EVAL: {len(eval_examples)}")
