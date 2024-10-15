@@ -138,125 +138,39 @@ class Worker(mp.Process):
         self.model = torch.jit.load(self.model_path).to(device)
         print(f"Worker {self.worker_id}: Model loaded on {device}")
 
-    # def run_task(self, task):
-    #     """Runs the model on the task and returns the result."""
-    #     try:
-    #         # fut = torch.jit.fork(self.model.forward, task, self.model_params)
-    #         # solution = torch.jit.wait(fut)
-    #         # Run the model's forward method
-    #         solution = self.model.forward(task, self.model_params)
-    #         # Prepare the task solution
-    #         return TaskSolution(solution[0], solution[1], solution[2])
-    #     except Exception as e:
-    #         print("Recieved exception", task.task_id)
-    #         return e  # Return the exception to the parent process
-
-    # def run(self):
-    #     # Load the model once when the process starts
-    #     self.load_model()
-
-    #     while True:
-    #         try:
-    #             # Check if the time limit has been exceeded
-    #             elapsed_time = time.time() - self.start_time
-    #             if elapsed_time > self.time_limit_seconds:
-    #                 print(f"Worker {self.worker_id} exiting due to time limit.")
-    #                 break
-
-    #             try:
-    #                 # Get the next task from the input queue with timeout
-    #                 task = self.input_queue.get(timeout=1)
-    #             except Empty:
-    #                 # If the queue is empty, check if it's time to exit
-    #                 continue
-
-    #             # If None is received, this is the signal to terminate
-    #             if task is None:
-    #                 print(f"Worker {self.worker_id} exiting.")
-    #                 self.input_queue.task_done()
-    #                 break
-
-    #             # Log task processing
-    #             print(f"Worker {self.worker_id} processing task {task.task_id}")
-
-    #             # Run the task
-    #             result = self.run_task(task)
-
-    #             # Task processing is done, mark the task as complete
-    #             self.input_queue.task_done()
-
-    #             # Check again if the time limit is exceeded
-    #             elapsed_time = time.time() - self.start_time
-    #             if elapsed_time > self.time_limit_seconds:
-    #                 print(f"Worker {self.worker_id}: Time limit exceeded during task {task.task_id}. Exiting.")
-    #                 break
-    #             else:
-    #                 print(f"Elapsed time: {elapsed_time}/{self.time_limit_seconds}")
-
-    #             # Put the result (solution or exception) into the output queue
-    #             self.output_queue.put(result)
-
-    #         except Exception as e:
-    #             print(f"Worker {self.worker_id}: General error occurred: {e}")
-    #             self.output_queue.put(e)  # Send the exception back to the main process
-    #             self.input_queue.task_done()
-
-
     def run(self):
      # Load the model once when the process starts
         self.load_model()
         while True:
-            print("Startin while loop")
             try:
-                # Check if the time limit has been exceeded
-                # elapsed_time = time.time() - self.start_time
-                # if elapsed_time > self.time_limit_seconds:
-                #     print(f"Worker {self.worker_id} exiting due to time limit.")
-                #     break
-
                 try:
                     # Get the next task from the input queue with timeout
                     task = self.input_queue.get(timeout=1)
                 except Empty:
-                    print("Received Empty, trying agains")
-                    # If the queue is empty, check if it's time to exit
                     continue
 
                 # If None is received, this is the signal to terminate
                 if task is None:
-                    print("Received exit signal")
                     self.input_queue.task_done()  # This call is correct for 'None' signal.
                     print(f"Worker {self.worker_id} exiting.")
-                    # self.output_queue.cancel_join_thread()
 
                     time.sleep(5) # This is super important for processing without error. No one knows why
                     break
 
                 # Log task processing
-                print(f"Worker {self.worker_id} processing task {task.task_id}")
+                print(f"Worker {self.worker_id} ({task.task_id}): Started")
 
                 try:
                     # Run the task
                     # result = self.run_task(task)
                     solution = self.model.forward(task, self.model_params)
-                    print(f"Worker {self.worker_id} Received solution: {solution}")
                     result = TaskSolution(solution[0], solution[1], solution[2])
-                    print(f"Worker {self.worker_id} Received result: {result}")
 
                     # Task processing is done, mark the task as complete
                     self.input_queue.task_done()
-                    print("Successfully set Task Done")
-                    # # Check again if the time limit is exceeded
-                    # elapsed_time = time.time() - self.start_time
-                    # if elapsed_time > self.time_limit_seconds:
-                    #     print(f"Worker {self.worker_id}: Time limit exceeded during task {task.task_id}. Exiting.")
-                    #     break
-                    # else:
-                    #     print(f"Elapsed time: {elapsed_time}/{self.time_limit_seconds}")
-
                     # Put the result (solution or exception) into the output queue
                     self.output_queue.put(result)
-                    print("Successfully put the result in the output queue")
+                    print(f"Worker {self.worker_id}: Successfully put the result in the output queue")
 
                 except Exception as task_error:
                     # Handle exceptions during task processing
@@ -268,8 +182,6 @@ class Worker(mp.Process):
                 print(f"Worker {self.worker_id}: General error occurred: {general_error}")
                 self.output_queue.put(general_error)  # Send the exception back to the main process
                 # Do NOT call task_done() here, as there might not have been a task retrieved.
-
-        # self.output_queue.cancel_join_thread()
 
 
 class SubmissionManager:
@@ -333,90 +245,38 @@ class SubmissionManager:
         num_processed = 0
         with tqdm(total=self.num_inputs) as pbar:
             while num_processed < self.num_inputs:
+
+                elapsed_time = time.time() - self.start_time
+                if elapsed_time > self.time_limit_seconds:
+                    print(f"Main: Time limit reached ({elapsed_time:.2f} seconds). Terminating workers.")
+                    self.terminate_workers()
+                    break
+
                 try:
                     # Get a result from the output queue with timeout
                     result = self.output_queue.get(timeout=1)
-                    print("Received result in main:", result)
+                    print(f"Main: Received result for {result.task_id}")
                     if isinstance(result, Exception):
-                        print(f"Error encountered in task: {result}")
+                        print(f"Main: Error encountered in task: {result}")
                     else:
                         # Process the result
                         self.results[result.task_id] = result.to_dict()
                         json.dump(self.results, open(self.submission_path, 'w'), indent=2)
-                        print(f"Saved Solution: Task {result.task_id}")
+                        print(f"Main: Saved Solution: Task {result.task_id}")
                     num_processed += 1
                     pbar.update(1)
 
                 except Empty:
                     # If no result is available, continue waiting
-                    print("Main received empty queue, waiting for more results.")
                     if self.all_workers_finished():  # Check if all workers are done
-                        print("All workers finished, no more results.")
+                        print("Main: All workers finished, no more results.")
                         break  # Exit the loop if all workers are done
 
         # Close and join the queue in the manager only after all workers are finished
-        print("Closing output queue")
+        print("Main: Closing output queue")
         self.output_queue.close()
         self.output_queue.join_thread()
 
-
-    # def process_inputs(self):
-    #     """Processes all inputs while checking for time limits."""
-    #     num_processed = 0
-    #     with tqdm(total=self.num_inputs) as pbar:
-    #         while num_processed < self.num_inputs:
-    #             # Check if the time limit has been exceeded
-    #             elapsed_time = time.time() - self.start_time
-    #             if elapsed_time > self.time_limit_seconds:
-    #                 print(f"Time limit of {elapsed_time / self.time_limit_seconds} secs exceeded. Terminating workers.")
-    #                 self.terminate_workers()
-    #                 print("Cleaning up resources before exiting...")
-
-    #                 # Drain the queues before shutting down
-    #                 print("Draining input queue...")
-    #                 drain_queue(self.input_queue)  # Empty the input queue
-
-    #                 print("Draining output queue...")
-    #                 drain_queue(self.output_queue)  # Empty the output queue
-                
-    #                 # Close and join the queues
-    #                 self.input_queue.close()
-    #                 self.input_queue.join_thread()  # Wait for the input queue thread to terminate
-    #                 self.output_queue.close()
-    #                 self.output_queue.join_thread()  # Wait for the output queue thread to terminate
-
-    #                 print("Program exiting due to time limit.")
-    #                 # exit(0)  # Exit the program if time limit is exceeded
-    #                 os._exit(0)  # Forcefully exit the program without exceptions
-
-    #             else:
-    #                 # pass
-    #                 print(f"Elapsed Time(seconds): {int(elapsed_time)}/{self.time_limit_seconds}")
-
-    #             try:
-    #                 # Get a result from the output queue with timeout
-    #                 result = self.output_queue.get(timeout=1)
-    #                 print("Recieved result in main", result)
-    #                 if isinstance(result, Exception):
-    #                     print(f"Error encountered in task: {result}")
-    #                 else:
-    #                     # Process the result
-    #                     self.results[result.task_id] = result.to_dict()
-    #                     json.dump(self.results, open(self.submission_path, 'w'), indent=2)
-    #                     print(f"Saved Solution: Task {result.task_id}")
-    #                 num_processed += 1
-    #                 pbar.update(1)
-    #             except Empty:
-    #                 print("Main received empty queue")
-    #                 # If no result is available, continue
-    #                 pass
-
-    #     # Wait for all tasks to be processed
-    #     self.input_queue.join()
-
-    #     # Wait for all worker processes to finish
-    #     for worker in self.workers:
-    #         worker.join()
 
     def get_results(self):
         """Returns the final results."""
@@ -520,7 +380,7 @@ def main():
     manager.start_workers()
 
     # Add inputs to the queue
-    manager.add_inputs(tasks[:4])
+    manager.add_inputs(tasks)
 
     # Process inputs and collect outputs, with time limit checking
     manager.process_inputs()

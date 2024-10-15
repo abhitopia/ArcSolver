@@ -5,6 +5,7 @@ from torch import Tensor
 import torch.nn as nn
 from .deploy_utils import AdamWModule, format_float, generate_lr_schedule, shuffled_indices, split_task, Task, TaskSolution, MODEL_INPUT, MODEL_OUTPUT, loss_fn, deserialize_array
 from .repl import REPL, REPLConfig
+from torch.amp import autocast
 
 
 class SolverParams(NamedTuple):
@@ -72,11 +73,15 @@ class Solver(nn.Module):
             self.bad_steps += 1
         
     def train_step(self, x: MODEL_INPUT, y: Optional[MODEL_OUTPUT], lr: float, wd: float):
+
+
         if self.inner_step % self.bs == 0:
             self.adam.zero_grad()
-        logits, _ = self.model(x, y)
         assert y is not None
-        loss = loss_fn(logits, y)
+        with autocast('cuda'):
+            logits, _ = self.model(x, y)
+            loss = loss_fn(logits, y)
+
         loss = loss / self.bs # Gradient accumulation
         loss.backward()
         if self.model_updated():
@@ -113,9 +118,11 @@ class Solver(nn.Module):
             total_correct_tokens = 0.0
             max_loss = float('-inf')
             for x, y in examples:
-                logits, _ = self.model(x, y)
                 assert y is not None
-                loss = loss_fn(logits, y)
+
+                with autocast('cuda'):
+                    logits, _ = self.model(x, y)
+                    loss = loss_fn(logits, y)
 
                 max_loss = max(max_loss, loss.item())
                 num_correct_tokens, num_correct_samples, num_tokens = self.metric(logits, y)

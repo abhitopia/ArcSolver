@@ -47,8 +47,8 @@ solver.to(device)
 
 
 params = SolverParams(
-    thinking=200,
-    bs=15,
+    thinking=100,
+    bs=5,
     patience=30,
     lr=0.01,
     lrs=0.1,
