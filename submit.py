@@ -66,8 +66,8 @@ class TaskSolution(NamedTuple):
         return result
 
 class ModelParams(NamedTuple):
-    thinking: int = 500
-    bs: int = 25
+    thinking: int = 200
+    bs: int = 15
     patience: int = 30
     lr: float = 0.005
     wd: float = 0.05
