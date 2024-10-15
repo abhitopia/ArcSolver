@@ -4,6 +4,8 @@ from src.solver import create_solver, SolverParams
 import torch
 from pathlib import Path
 import warnings
+
+from src.utils import get_git_commit_hash
 # Suppress the specific RNN UserWarning
 warnings.filterwarnings(
     "ignore",
@@ -19,9 +21,11 @@ base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.v1/'
 ckt_path = base_path / 'ckt_281000_52.168.pth'
 # ckt_path = 'models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
 
+save_path = f"{get_git_commit_hash()[:7]}.pt"
+
 solver = create_solver(ckt_path,
                 jit=True,
-                save_path=None)
+                save_path=save_path)
 #%%
 tasks_path = base_path / 'solved_challenge.json'
 solution_path = base_path / 'solved_solution.json'
@@ -57,4 +61,5 @@ solution = solver(
         task=tasks[3],
         params=params)
 
+# %%
 # %%
