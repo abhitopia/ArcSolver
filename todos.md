@@ -49,6 +49,7 @@
 - [x] Add lr schedule
 - [x] Create a spread sheet of submissions?. Started saving git commit and also pass all the hparams
 - [x] Program must terminate. Added a time limit
+- [ ] Use Mixed precision to fasten the inference/evaluation
 - [ ] Test different settings for the inference
 - [ ] May be worth adding "min tolerance" of improvement for patience
 - [ ] Add functionality to resume from processed submissions
