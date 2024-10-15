@@ -77,6 +77,7 @@ class ModelParams(NamedTuple):
     mode: str = '60065'
     confidence: float = 0.0001
     metric: str = 'L'
+    strategy: str = 'Rv1'
 
 
 def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None) -> List[Task]:
