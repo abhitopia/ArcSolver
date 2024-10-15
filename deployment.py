@@ -22,7 +22,7 @@ ckt_path = base_path / 'ckt_281000_52.168.pth'
 # ckt_path = 'models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
 
 git_hash = get_git_commit_hash(7)
-save_path = f"{get_git_commit_hash(7)}.pt" if git_hash else None
+save_path = f"{get_git_commit_hash(7)}.pt" if git_hash else 'test.pt'
 
 solver = create_solver(ckt_path,
                 jit=True,
@@ -47,15 +47,17 @@ solver.to(device)
 
 
 params = SolverParams(
-    thinking=100,
-    bs=25,
+    thinking=200,
+    bs=15,
     patience=30,
     lr=0.01,
+    lrs=0.1,
     wd=0.05,
     wu=10,
-    seed=15,
+    seed=42,
     mode='vbs',
-    confidence=0.001,
+    confidence=0.0001,
+    metric='ML'
 )
 
 solution = solver(

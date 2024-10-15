@@ -44,7 +44,7 @@ class Solver(nn.Module):
         self.print_prefix = ""
 
     def print(self, msg: str):
-        if self.verbose:
+        if self.verbose :
             print(f"{self.print_prefix}:\t{msg}")
 
     def reset(self):

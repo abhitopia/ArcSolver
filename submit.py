@@ -61,7 +61,7 @@ class TaskSolution(NamedTuple):
         result = []
         for pred in self.predictions:
             pred1 = pred[0].tolist()
-            pred2 = pred[1].tolist()
+            pred2 = pred[1].tolist() if len(pred) > 0 else pred1
             result.append({'attempt_1': pred1, 'attempt_2': pred2})
         return result
 
@@ -141,6 +141,8 @@ class Worker(mp.Process):
     def run_task(self, task):
         """Runs the model on the task and returns the result."""
         try:
+            # fut = torch.jit.fork(self.model.forward, task, self.model_params)
+            # solution = torch.jit.wait(fut)
             # Run the model's forward method
             solution = self.model.forward(task, self.model_params)
             # Prepare the task solution
@@ -170,6 +172,7 @@ class Worker(mp.Process):
                 # If None is received, this is the signal to terminate
                 if task is None:
                     print(f"Worker {self.worker_id} exiting.")
+                    self.input_queue.task_done()
                     break
 
                 # Log task processing
@@ -178,22 +181,24 @@ class Worker(mp.Process):
                 # Run the task
                 result = self.run_task(task)
 
+                # Task processing is done, mark the task as complete
+                self.input_queue.task_done()
+
                 # Check again if the time limit is exceeded
                 elapsed_time = time.time() - self.start_time
                 if elapsed_time > self.time_limit_seconds:
                     print(f"Worker {self.worker_id}: Time limit exceeded during task {task.task_id}. Exiting.")
                     break
+                else:
+                    print(f"Elapsed time: {elapsed_time}/{self.time_limit_seconds}")
 
                 # Put the result (solution or exception) into the output queue
                 self.output_queue.put(result)
 
             except Exception as e:
                 print(f"Worker {self.worker_id}: General error occurred: {e}")
-
-            finally:
-                # Mark the task as done
+                self.output_queue.put(e)  # Send the exception back to the main process
                 self.input_queue.task_done()
-
 
 
 
@@ -281,7 +286,8 @@ class SubmissionManager:
                     os._exit(0)  # Forcefully exit the program without exceptions
 
                 else:
-                    print(f"Elapsed Time(seconds): {int(elapsed_time)}/{self.time_limit_seconds}")
+                    pass
+                    # print(f"Elapsed Time(seconds): {int(elapsed_time)}/{self.time_limit_seconds}")
 
                 try:
                     # Get a result from the output queue with timeout
@@ -605,9 +611,11 @@ def main():
     model_path = args.mp
     tasks_path = args.tp
     solutions_path = args.sp
+    output_path = args.op
 
     assert Path(model_path).exists(), f"Model file not found: {model_path}"
     assert Path(tasks_path).exists(), f"Tasks file not found: {tasks_path}"
+    assert Path(output_path).parent.exists(), f"Output path not found: {output_path}"
 
     if solutions_path is not None:
         assert Path(solutions_path).exists(), f"Solutions file not found: {solutions_path}"
@@ -641,14 +649,14 @@ def main():
                                 num_devices=D, 
                                 threads_per_device=N, 
                                 model_params=model_params,
-                                submission_path=args.op, 
+                                submission_path=output_path, 
                                 time_limit_seconds=args.tl)  # Set time limit (e.g., 10 hours)
 
     # Start worker processes
     manager.start_workers()
 
     # Add inputs to the queue
-    manager.add_inputs(tasks)
+    manager.add_inputs(tasks[:2])
 
     # Process inputs and collect outputs, with time limit checking
     manager.process_inputs()
