@@ -400,17 +400,13 @@ class AdamWModule(nn.Module):
     def __init__(
         self, 
         param: torch.Tensor,
-        lr: float = 1e-3,
         betas: Tuple[float, float] = (0.9, 0.999),
-        weight_decay: float = 0.0,
         eps: float = 1e-8,
         grad_clip: float = 1.0
     ):
         super(AdamWModule, self).__init__()
-        self.lr = lr
         self.beta1 = betas[0]
         self.beta2 = betas[1]
-        self.weight_decay = weight_decay
         self.eps = eps
         self.param = param
         self.grad_clip = grad_clip
@@ -432,7 +428,7 @@ class AdamWModule(nn.Module):
             self.param.grad.zero_()
 
     @torch.jit.export
-    def step(self) -> None:
+    def step(self, lr: float = 1e-2, wd: float = 0.05) -> None:
 
         grad = self.param.grad
 
@@ -449,8 +445,8 @@ class AdamWModule(nn.Module):
         self.t = self.t + 1
 
         # Apply weight decay
-        if self.weight_decay != 0.0:
-            grad = grad + self.weight_decay * self.param
+        if wd != 0.0:
+            grad = grad + wd * self.param
 
         # Update biased first moment estimate
         self.m = self.beta1 * self.m + (1 - self.beta1) * grad
@@ -466,7 +462,7 @@ class AdamWModule(nn.Module):
 
         # Compute parameter update
         denom = v_hat.sqrt() + self.eps
-        new_param = self.param - self.lr * m_hat / denom
+        new_param = self.param - lr * m_hat / denom
         self.param.data.copy_(new_param.data)
         
     

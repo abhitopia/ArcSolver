@@ -2,6 +2,7 @@
 from src.deploy_utils import load_tasks
 from src.solver import create_solver
 import torch
+from pathlib import Path
 import warnings
 # Suppress the specific RNN UserWarning
 warnings.filterwarnings(
@@ -10,23 +11,20 @@ warnings.filterwarnings(
     category=UserWarning
 )
 
+#%%
 torch.manual_seed(42)
+# base_path = Path('/Users/abhishekaggarwal/synced_repos/ArcSolver/')
+base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.v1/'
 
-ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
-# ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
-# ckt_path = '/teamspace/studios/work-horse/ArcSolver/runs/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
-# ckt_path = '/teamspace/studios/this_studio/ArcSolveR/models/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
+ckt_path = base_path / 'ckt_281000_52.168.pth'
+# ckt_path = 'models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
+
 solver = create_solver(ckt_path,
-                lr=0.005,
                 jit=True,
                 save_path=None)
 #%%
-base_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/'
-# base_path = '/teamspace/studios/this_studio/ArcSolveR/'
-# tasks_path = base_path + 'data/arc_kaggle_data/arc-agi_evaluation_challenges.json'
-# solution_path = base_path + 'data/arc_kaggle_data/arc-agi_evaluation_solutions.json'
-tasks_path = base_path + 'models/v9/D512E128H16B5I3.v1/solved_challenge.json'
-solution_path = base_path + 'models/v9/D512E128H16B5I3.v1/solved_solution.json'
+tasks_path = base_path / 'solved_challenge.json'
+solution_path = base_path / 'solved_solution.json'
 # solution_path = None
 tasks = load_tasks(tasks_path, solution_path)
 
@@ -44,8 +42,10 @@ solver.to(device)
 
 solution = solver(tasks[3], 
     seed=15, 
-    bs=5,
-    patience=20,
+    bs=15,
+    lr=0.0001,
+    wd=0.05,
+    patience=30,
     thinking=100, 
     confidence=0.001)
 

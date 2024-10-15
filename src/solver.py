@@ -6,15 +6,14 @@ import torch.nn as nn
 from .deploy_utils import AdamWModule, format_float, shuffled_indices, split_task, Task, TaskSolution, MODEL_INPUT, MODEL_OUTPUT, loss_fn, deserialize_array
 from .repl import REPL, REPLConfig
 
+
 class Solver(nn.Module):
-    def __init__(self, model: torch.ScriptModule, lr: float = 1e-2, wd: float = 0.05) -> None:
+    def __init__(self, model: torch.ScriptModule) -> None:
         super().__init__()
         self.model = model
         self.adam = AdamWModule(self.model.get_pte_weight(),
                                 betas=(0.9, 0.95),
-                                eps=1e-8,
-                                weight_decay=wd,
-                                lr=lr)  # Initialize with desired hyperparameters
+                                eps=1e-8) 
         
         self.inner_step = 0
         self.step = 0
@@ -50,7 +49,7 @@ class Solver(nn.Module):
         if not self.model_updated():
             return
         
-        loss = me['ML']
+        loss = me['L']
         if loss < self.min_loss:
             self.min_loss = loss
             self.solution.data.copy_(self.model.get_pte_weight().data)
@@ -58,7 +57,7 @@ class Solver(nn.Module):
         else:
             self.bad_steps += 1
         
-    def train_step(self, x: MODEL_INPUT, y: Optional[MODEL_OUTPUT]):
+    def train_step(self, x: MODEL_INPUT, y: Optional[MODEL_OUTPUT], lr: float, wd: float):
         if self.inner_step % self.bs == 0:
             self.adam.zero_grad()
         logits, _ = self.model(x, y)
@@ -67,7 +66,7 @@ class Solver(nn.Module):
         loss = loss / self.bs # Gradient accumulation
         loss.backward()
         if self.model_updated():
-            self.adam.step()
+            self.adam.step(lr=lr, wd=wd)
             self.step += 1
         self.inner_step += 1
 
@@ -162,6 +161,8 @@ class Solver(nn.Module):
             thinking: int = 100, 
             bs: int = 5,
             patience: int = 20,
+            lr: float = 1e-2,
+            wd: float = 0.05,
             confidence: float = 0.0001, 
             seed: int = 42,
             mode: str = 'vbs')-> TaskSolution:
@@ -191,7 +192,7 @@ class Solver(nn.Module):
                 x: MODEL_INPUT = batch[0]
                 y: Optional[MODEL_OUTPUT] = batch[1]
 
-                self.train_step(x, y)
+                self.train_step(x, y, lr=lr, wd=wd)
                 me = self.evaluate(eval_examples)
                 self.update_solution(me)
                 mt = self.evaluate(test_examples)
@@ -278,14 +279,12 @@ def load_inference_model(ckt_path, jit: bool = True):
 
 def create_solver(
         ckpt_path: str,
-        wd: float = 0.05,
-        lr: float = 1e-2,
         jit=True,
         save_path=None
     ) -> Solver:
 
     model = load_inference_model(ckpt_path, jit=jit)
-    solver = Solver(model, lr=lr, wd=wd)
+    solver = Solver(model)
     if jit:
         solver = torch.jit.script(solver)
         if save_path is not None:
