@@ -78,9 +78,8 @@ class Solver(nn.Module):
         if self.inner_step % self.bs == 0:
             self.adam.zero_grad()
         assert y is not None
-        with autocast('cuda'):
-            logits, _ = self.model(x, y)
-            loss = loss_fn(logits, y)
+        logits, _ = self.model(x, y)
+        loss = loss_fn(logits, y)
 
         loss = loss / self.bs # Gradient accumulation
         loss.backward()
@@ -120,9 +119,8 @@ class Solver(nn.Module):
             for x, y in examples:
                 assert y is not None
 
-                with autocast('cuda'):
-                    logits, _ = self.model(x, y)
-                    loss = loss_fn(logits, y)
+                logits, _ = self.model(x, y)
+                loss = loss_fn(logits, y)
 
                 max_loss = max(max_loss, loss.item())
                 num_correct_tokens, num_correct_samples, num_tokens = self.metric(logits, y)

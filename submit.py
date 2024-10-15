@@ -250,6 +250,11 @@ class SubmissionManager:
                 if elapsed_time > self.time_limit_seconds:
                     print(f"Main: Time limit reached ({elapsed_time:.2f} seconds). Terminating workers.")
                     self.terminate_workers()
+                    # Drain the queues before shutting down
+                    print("Main: Draining input queue...")
+                    drain_queue(self.input_queue)  # Empty the input queue
+                    print("Main: Draining output queue...")
+                    drain_queue(self.output_queue)  # Empty the output queue
                     break
 
                 try:
@@ -276,6 +281,9 @@ class SubmissionManager:
         print("Main: Closing output queue")
         self.output_queue.close()
         self.output_queue.join_thread()
+        print("Main: Closing input queue")
+        self.input_queue.close()
+        self.input_queue.join_thread()
 
 
     def get_results(self):

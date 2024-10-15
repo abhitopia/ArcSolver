@@ -48,18 +48,19 @@ solver.to(device)
 
 params = SolverParams(
     thinking=100,
-    bs=5,
+    bs=15,
     patience=30,
-    lr=0.01,
+    lr=0.005,
     lrs=0.1,
     wd=0.05,
     wu=10,
     seed=42,
     mode='vbs',
-    confidence=0.0001,
-    metric='ML'
+    confidence=0.00001,
+    metric='L'
 )
 
+# with autocast('cuda'):
 solution = solver(
         task=tasks[3],
         params=params)
