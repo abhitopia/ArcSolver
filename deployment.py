@@ -19,10 +19,11 @@ torch.manual_seed(42)
 base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.v1/'
 
 ckt_path = base_path / 'ckt_281000_52.168.pth'
+# ckt_path = base_path / 'ckt_162000_39.205.pth'
 # ckt_path = 'models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
 
 git_hash = get_git_commit_hash(7)
-save_path = f"{get_git_commit_hash(7)}.pt" if git_hash else 'test.pt'
+save_path = f"{get_git_commit_hash(7)}_{ckt_path.parent.stem}_{ckt_path.stem}.pt" if git_hash else 'test.pt'
 
 solver = create_solver(ckt_path,
                 jit=True,
@@ -33,14 +34,14 @@ solution_path = base_path / 'solved_solution.json'
 # solution_path = None
 tasks = load_tasks(tasks_path, solution_path)
 
-for task in tasks:
-    if task.task_id == '9110e3c5':
-        break
-else:
-    print("Task not found")
+# for task in tasks:
+#     if task.task_id == '9110e3c5':
+#         break
+# else:
+#     print("Task not found")
 
-print("Task ID: ", task.task_id)    
-print(tasks[0].task_id)
+# print("Task ID: ", task.task_id)    
+# print(tasks[0].task_id)
 #%%
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 solver.to(device)
@@ -48,21 +49,22 @@ solver.to(device)
 
 params = SolverParams(
     thinking=100,
-    bs=15,
+    bs=5,
     patience=30,
     lr=0.005,
     lrs=0.1,
-    wd=0.05,
-    wu=10,
+    wd=0.0,
+    wu=1,
     seed=42,
     mode='vbs',
-    confidence=0.00001,
-    metric='L'
+    confidence=0.000001,
+    metric='L',
+    strategy='1vR'
 )
 
 # with autocast('cuda'):
 solution = solver(
-        task=tasks[3],
+        task=tasks[0],
         params=params)
 
 # %%

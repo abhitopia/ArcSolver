@@ -3,9 +3,8 @@ from typing import Dict, List, NamedTuple, Optional, Tuple
 import torch
 from torch import Tensor
 import torch.nn as nn
-from .deploy_utils import AdamWModule, format_float, generate_lr_schedule, shuffled_indices, split_task, Task, TaskSolution, MODEL_INPUT, MODEL_OUTPUT, loss_fn, deserialize_array
+from .deploy_utils import AdamWModule, format_float, generate_lr_schedule, shuffled_indices, split_task, Task, TaskSolution, MODEL_INPUT, MODEL_OUTPUT, loss_fn, deserialize_array, split_task_cross
 from .repl import REPL, REPLConfig
-from torch.amp import autocast
 
 
 class SolverParams(NamedTuple):
@@ -20,6 +19,7 @@ class SolverParams(NamedTuple):
     mode: str = '60065'
     confidence: float = 0.0001
     metric: str = 'L'
+    strategy: str = 'Rv1'
 
 
 class Solver(nn.Module):
@@ -43,6 +43,7 @@ class Solver(nn.Module):
         self.patience = -1
         self.bs = 5
         self.print_prefix = ""
+        self.num_programs: int = 0
 
     def print(self, msg: str):
         if self.verbose :
@@ -71,6 +72,15 @@ class Solver(nn.Module):
             self.bad_steps = 0
         else:
             self.bad_steps += 1
+
+    
+    def collapse(self):
+        if self.num_programs > 0:
+            prog_embedding = self.model.get_pte_weight()
+            vocab_size = prog_embedding.size(0)
+            mean_embedding = prog_embedding[1:(self.num_programs+1)].data.mean(dim=0).unsqueeze(0).repeat(vocab_size, 1)
+            # print(f"Mean Embedding: {mean_embedding.shape}")
+            prog_embedding.data.copy_(mean_embedding.data)
         
     def train_step(self, x: MODEL_INPUT, y: Optional[MODEL_OUTPUT], lr: float, wd: float):
 
@@ -85,7 +95,9 @@ class Solver(nn.Module):
         loss.backward()
         if self.model_updated():
             self.adam.step(lr=lr, wd=wd)
+            self.collapse()
             self.step += 1
+
         self.inner_step += 1
 
     def metric(self, logits: Tensor, y: MODEL_OUTPUT) -> Tuple[int, int, int]:
@@ -189,8 +201,16 @@ class Solver(nn.Module):
         self.reset()
         device = str(self.model.get_pte_weight().device)
 
-        train_examples, eval_examples, test_examples = split_task(task, device=device)
-        self.print(f"Device: {device}")
+        if params.strategy == '1v1':
+            self.num_programs = 0
+            train_examples, eval_examples, test_examples = split_task(task, device=device)
+        else:
+            self.num_programs = len(task.train)
+            train_examples, eval_examples, test_examples = split_task_cross(task, device=device, mode=params.strategy)
+
+
+        self.print(f"Device: {device} ({len(task.train)}, {len(task.test)})")
+        self.print(f"# Programs: {self.num_programs}")
         self.print(f"# TRAIN: {len(train_examples)}")
         self.print(f"# EVAL: {len(eval_examples)}")
         self.print(f"# TEST: {len(test_examples)}")
@@ -264,13 +284,12 @@ class Solver(nn.Module):
 
         return preds, scores
 
-
 @staticmethod
-def load_inference_model(ckt_path, jit: bool = True):
+def load_inference_model(ckt_path, jit: bool = True, vocab_size: int = 10) -> REPL:
     data = torch.load(ckt_path, map_location='cpu', weights_only=False)
     programs = data['model_state_dict']['pte.0.weight']
     model_config = REPLConfig.from_dict(data['model_config'])
-    model_config.prog_vocab_size = 1
+    model_config.prog_vocab_size = vocab_size
     model_config.dropout = 0.0 # this is important for inference as I cannot change dropout in the scripted Solver
     model = REPL(model_config)
     model.train() # This is because RNN only does backward in training mode
@@ -284,7 +303,8 @@ def load_inference_model(ckt_path, jit: bool = True):
         else:
             param.requires_grad = False
 
-    model.pte[0].weight.data.copy_(programs.data.mean(dim=0))
+    program_mean = programs.data.mean(dim=0).unsqueeze(0).repeat(vocab_size, 1)
+    model.pte[0].weight.data.copy_(program_mean.data)
     if jit:
         model = torch.jit.script(model)
     return model 

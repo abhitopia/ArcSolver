@@ -49,11 +49,11 @@
 - [x] Add lr schedule
 - [x] Create a spread sheet of submissions?. Started saving git commit and also pass all the hparams
 - [x] Program must terminate. Added a time limit
-- [ ] Use Mixed precision to fasten the inference/evaluation
+- [x] Use Mixed precision to fasten the inference/evaluation. It doesn't work!
+- [x] Implement Particle Exploration
+- [ ] Add functionality to resume from processed submissions
 - [ ] Test different settings for the inference
 - [ ] May be worth adding "min tolerance" of improvement for patience
-- [ ] Add functionality to resume from processed submissions
-- [ ] Implement Particle Exploration
 - [ ] Some quick benefit can be obtained by simply trying again with different seed, till a best result is found
 - [x] Find which ARC_EVAL tasks are solved/partially solved by the model
 - [x] Remove the multiple logits, will it be faster?
