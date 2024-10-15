@@ -1,4 +1,5 @@
 #%%
+from typing import NamedTuple
 from src.deploy_utils import load_tasks
 from src.solver import create_solver
 import torch
@@ -40,13 +41,29 @@ print(tasks[0].task_id)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 solver.to(device)
 
-solution = solver(tasks[3], 
-    seed=15, 
+class SolverParams(NamedTuple):
+    thinking: int = 500
+    bs: int = 25
+    patience: int = 30
+    lr: float = 0.005
+    wd: float = 0.05
+    seed: int = 60065
+    mode: str = '60065'
+    confidence: float = 0.0001
+
+params = SolverParams(
+    thinking=100,
     bs=15,
+    patience=30,
     lr=0.0001,
     wd=0.05,
-    patience=30,
-    thinking=100, 
-    confidence=0.001)
+    seed=15,
+    mode='15',
+    confidence=0.001,
+)
+
+solution = solver(
+        task=tasks[3],
+        params=params)
 
 # %%

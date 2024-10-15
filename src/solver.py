@@ -1,10 +1,21 @@
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 import torch
 from torch import Tensor
 import torch.nn as nn
 from .deploy_utils import AdamWModule, format_float, shuffled_indices, split_task, Task, TaskSolution, MODEL_INPUT, MODEL_OUTPUT, loss_fn, deserialize_array
 from .repl import REPL, REPLConfig
+
+
+class SolverParams(NamedTuple):
+    thinking: int = 500
+    bs: int = 25
+    patience: int = 30
+    lr: float = 0.005
+    wd: float = 0.05
+    seed: int = 60065
+    mode: str = '60065'
+    confidence: float = 0.0001
 
 
 class Solver(nn.Module):
@@ -17,7 +28,6 @@ class Solver(nn.Module):
         
         self.inner_step = 0
         self.step = 0
-        self.bs = 5
         self.verbose = False
 
         pte = self.model.get_pte_weight()
@@ -27,6 +37,7 @@ class Solver(nn.Module):
         self.min_loss = float('inf')
         self.bad_steps = 0
         self.patience = -1
+        self.bs = 5
         self.print_prefix = ""
 
     def print(self, msg: str):
@@ -158,23 +169,15 @@ class Solver(nn.Module):
         
     def forward(self, 
             task: Task, 
-            thinking: int = 100, 
-            bs: int = 5,
-            patience: int = 20,
-            lr: float = 1e-2,
-            wd: float = 0.05,
-            confidence: float = 0.0001, 
-            seed: int = 42,
-            mode: str = 'vbs')-> TaskSolution:
-        torch.manual_seed(seed)
+            params: SolverParams,
+        )-> TaskSolution:
+        
+        torch.manual_seed(params.seed)
+        print(f"Params: {params}")
+        self.bs = params.bs
+        self.verbose = True if params.mode == 'vbs' else False
 
-        self.bs = bs
-        if mode == 'vbs':
-            self.verbose = True
-        else:
-            self.verbose = False
-
-        self.patience = patience
+        self.patience = params.patience
         self.reset()
         device = str(self.model.get_pte_weight().device)
 
@@ -192,26 +195,26 @@ class Solver(nn.Module):
                 x: MODEL_INPUT = batch[0]
                 y: Optional[MODEL_OUTPUT] = batch[1]
 
-                self.train_step(x, y, lr=lr, wd=wd)
+                self.train_step(x, y, lr=params.lr, wd=params.wd)
                 me = self.evaluate(eval_examples)
                 self.update_solution(me)
                 mt = self.evaluate(test_examples)
                 self.log_stats(me, mt)
 
-                if self.step == thinking or self.bad_steps >= patience:
+                if self.step == params.thinking or self.bad_steps >= params.patience:
                     self.print(f"Bad Steps: {self.bad_steps}")
                     break
             
-            if self.step == thinking or self.bad_steps >= patience:
+            if self.step == params.thinking or self.bad_steps >= params.patience:
                 break
 
-        preds, scores = self.predict(test_examples, confidence)
+        preds, scores = self.predict(test_examples, params.confidence)
         solution = TaskSolution(task.task_id, preds, scores)
 
         return solution
 
 
-    def predict(self, test_examples: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]], min_confidence: float)-> Tuple[List[List[Tensor]], List[List[float]]]:
+    def predict(self, test_examples: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]], confidence: float)-> Tuple[List[List[Tensor]], List[List[float]]]:
         self.print("Generating predictions ...")
         # Load the best solution
         self.model.get_pte_weight().data.copy_(self.solution.data)
@@ -226,7 +229,7 @@ class Solver(nn.Module):
             # bps, bss = [gp], [gs]
             bps, bss = self.model.beam_search(grid, 
                                               indices,
-                                              prob_thresh=min_confidence)
+                                              prob_thresh=confidence)
             
             self.print(f"Processed Test input: {eid + 1}")
             pred_tensors: List[Tensor] = []

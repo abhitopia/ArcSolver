@@ -45,7 +45,9 @@
 - [x] Add gradient clipping
 - [x] Shuffle the training data
 - [x] Ensure that the best model is used for inference. Don't use overfitted model
-- [ ] Move lr and wd to the forward function
+- [x] Move lr and wd to the forward function
+- [ ] Add lr schedule
+- [ ] Create a spread sheet of submissions?
 - [ ] May be worth adding "min tolerance" of improvement for patience
 - [ ] Add functionality to resume from processed submissions
 - [ ] Implement Particle Exploration
