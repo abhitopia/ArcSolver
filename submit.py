@@ -325,7 +325,7 @@ def parse_arguments():
                         help='Number of processes to run per device.')
     parser.add_argument('--op', type=str, default='/kaggle/working/submission.json',
                         help='Path to save the output results.')
-    parser.add_argument('--tl', type=int, default=int(10.5*3600), help='Time limit in seconds for processing tasks.')
+    parser.add_argument('--tl', type=int, default=int(11.5*3600), help='Time limit in seconds for processing tasks.')
     
     # Model Arguments
     parser = parse_args_from_namedtuple(ModelParams, parser)
