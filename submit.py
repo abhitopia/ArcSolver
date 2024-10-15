@@ -1,7 +1,7 @@
 import argparse
 import json
 from pathlib import Path
-from typing import List, NamedTuple, Optional
+from typing import List, NamedTuple, Optional, get_type_hints
 import torch
 import torch.jit
 import threading
@@ -50,6 +50,20 @@ class TaskSolution(NamedTuple):
             result.append({'attempt_1': pred1, 'attempt_2': pred2})
         return result
 
+class ModelParams(NamedTuple):
+    thinking: int = 500
+    bs: int = 25
+    patience: int = 30
+    lr: float = 0.005
+    wd: float = 0.05
+    wu: int = 10
+    lrs: float = 0.1
+    seed: int = 60065
+    mode: str = '60065'
+    confidence: float = 0.0001
+    metric: str = 'L'
+
+
 def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None) -> List[Task]:
     json_tasks = json.load(open(tasks_json_path, 'r'))
     solutions = json.load(open(solution_path, 'r')) if solution_path is not None else {}
@@ -91,11 +105,11 @@ def create_dummy_submission(tasks: List[Task]):
 
 # Worker thread class
 class Worker(threading.Thread):
-    def __init__(self, device_id, worker_id, model_path, input_queue, output_queue, model_args):
+    def __init__(self, device_id, worker_id, model_path, input_queue, output_queue, model_params: ModelParams):
         threading.Thread.__init__(self)
         self.device_id = device_id
         self.worker_id = worker_id
-        self.model_args = model_args
+        self.model_params = model_params
         self.input_queue = input_queue
         self.output_queue = output_queue
         # Load the model instance on the assigned device
@@ -128,7 +142,7 @@ class Worker(threading.Thread):
                 # Process the input asynchronously
                 try:
                     # Use torch.jit.fork to process the input
-                    fut = torch.jit.fork(self.model.forward, task, **self.model_args)
+                    fut = torch.jit.fork(self.model.forward, task, self.model_params)
                     
                     # Wait for the result without blocking the thread
                     solution = torch.jit.wait(fut)
@@ -154,11 +168,11 @@ class Worker(threading.Thread):
                 self.input_queue.task_done()
 # Processing Manager class
 class SubmissionManager:
-    def __init__(self, model_path, num_devices, threads_per_device, model_args, submission_path):
+    def __init__(self, model_path, num_devices, threads_per_device, model_params: ModelParams, submission_path):
         self.model_path = model_path
         self.num_devices = num_devices
         self.threads_per_device = threads_per_device
-        self.model_args = model_args
+        self.model_params = model_params
         self.submission_path = submission_path
 
         assert num_devices > 0, "At least one device must be available"
@@ -174,7 +188,7 @@ class SubmissionManager:
         for device_id in range(self.num_devices):
             for n in range(self.threads_per_device):
                 worker_id = device_id * self.threads_per_device + n
-                worker = Worker(device_id, worker_id, self.model_path, self.input_queue, self.output_queue, self.model_args)
+                worker = Worker(device_id, worker_id, self.model_path, self.input_queue, self.output_queue, self.model_params)
                 worker.start()
                 self.workers.append(worker)
 
@@ -208,6 +222,28 @@ class SubmissionManager:
     def get_results(self):
         return self.results
     
+
+def parse_args_from_namedtuple(namedtuple_class, parser):    
+    # Get type hints and default values
+    type_hints = get_type_hints(namedtuple_class)
+    defaults = namedtuple_class._field_defaults
+
+    for field, field_type in type_hints.items():
+        default_value = defaults.get(field)
+        
+        # Map Python types to argparse argument types
+        if field_type == int:
+            parser.add_argument(f"--{field}", type=int, default=default_value, help=f"{field} (default: {default_value})")
+        elif field_type == float:
+            parser.add_argument(f"--{field}", type=float, default=default_value, help=f"{field} (default: {default_value})")
+        elif field_type == str:
+            parser.add_argument(f"--{field}", type=str, default=default_value, help=f"{field} (default: {default_value})")
+        else:
+            parser.add_argument(f"--{field}", default=default_value, help=f"{field} (default: {default_value})")
+
+    return parser
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Process ")
     # Add arguments
@@ -217,33 +253,24 @@ def parse_arguments():
                         help='Path to the input challenges file')
     parser.add_argument('--sp', type=str, required=False, default=None,
                         help='Path to optional solutions file')
-    parser.add_argument('--np', type=int, default=2,
+    parser.add_argument('--np', type=int, default=5, required=False,
                         help='Number of processes to run per device.')
     parser.add_argument('--op', type=str, default='/kaggle/working/submission.json',
                         help='Path to save the output results.')
     
     # Model Arguments
-    parser.add_argument('--thinking', type=int, default=200)
-    parser.add_argument('--bs', type=int, default=5)
-    parser.add_argument('--patience', type=int, default=30)
-    parser.add_argument('--seed', type=int, default=15)
-    parser.add_argument('--mode', type=str, default='60065')
-    # You can add more arguments as needed
+    parser = parse_args_from_namedtuple(ModelParams, parser)
     args = parser.parse_args()
     return args
 
 def main():
     args = parse_arguments()
 
-    model_args = {
-        'thinking': args.thinking,
-        'bs': args.bs,
-        'patience': args.patience,
-        'seed': args.seed,
-        'mode': args.mode
-    }
+    # Filter out extra arguments that aren't in SolverParams
+    model_params_dict = {key: value for key, value in vars(args).items() if key in ModelParams._fields}
 
-
+    # Create the SolverParams instance with only the required fields
+    model_params = ModelParams(**model_params_dict)
     model_path = args.mp
     tasks_path = args.tp
     solutions_path = args.sp
@@ -284,7 +311,7 @@ def main():
     manager = SubmissionManager(model_path=model_path, 
                                 num_devices=D, 
                                 threads_per_device=N, 
-                                model_args=model_args,
+                                model_params=model_params,
                                 submission_path=args.op)    
 
     # Start worker threads

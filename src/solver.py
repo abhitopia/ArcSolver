@@ -3,7 +3,7 @@ from typing import Dict, List, NamedTuple, Optional, Tuple
 import torch
 from torch import Tensor
 import torch.nn as nn
-from .deploy_utils import AdamWModule, format_float, shuffled_indices, split_task, Task, TaskSolution, MODEL_INPUT, MODEL_OUTPUT, loss_fn, deserialize_array
+from .deploy_utils import AdamWModule, format_float, generate_lr_schedule, shuffled_indices, split_task, Task, TaskSolution, MODEL_INPUT, MODEL_OUTPUT, loss_fn, deserialize_array
 from .repl import REPL, REPLConfig
 
 
@@ -13,9 +13,12 @@ class SolverParams(NamedTuple):
     patience: int = 30
     lr: float = 0.005
     wd: float = 0.05
+    wu: int = 10
+    lrs: float = 0.1
     seed: int = 60065
     mode: str = '60065'
     confidence: float = 0.0001
+    metric: str = 'L'
 
 
 class Solver(nn.Module):
@@ -56,11 +59,11 @@ class Solver(nn.Module):
     def model_updated(self) -> bool:
         return self.inner_step % self.bs  == self.bs - 1
 
-    def update_solution(self, me: Dict[str, float]) -> None:
+    def update_solution(self, me: Dict[str, float], metric: str) -> None:
         if not self.model_updated():
             return
         
-        loss = me['L']
+        loss = me[metric]
         if loss < self.min_loss:
             self.min_loss = loss
             self.solution.data.copy_(self.model.get_pte_weight().data)
@@ -172,11 +175,10 @@ class Solver(nn.Module):
             params: SolverParams,
         )-> TaskSolution:
         
-        torch.manual_seed(params.seed)
-        print(f"Params: {params}")
-        self.bs = params.bs
         self.verbose = True if params.mode == 'vbs' else False
-
+        torch.manual_seed(params.seed)
+        self.bs = params.bs
+        self.print(f"Params: {params}")
         self.patience = params.patience
         self.reset()
         device = str(self.model.get_pte_weight().device)
@@ -188,6 +190,8 @@ class Solver(nn.Module):
         self.print(f"# EVAL: {len(eval_examples)}")
         self.print(f"# TEST: {len(test_examples)}")
 
+        lr_schedule = generate_lr_schedule(params.lr, params.wu, params.thinking, params.lrs)
+
         self.print(f"Thinking...")
         while True:
             for idx in shuffled_indices(len(train_examples)):
@@ -195,9 +199,10 @@ class Solver(nn.Module):
                 x: MODEL_INPUT = batch[0]
                 y: Optional[MODEL_OUTPUT] = batch[1]
 
-                self.train_step(x, y, lr=params.lr, wd=params.wd)
+                lr_step = lr_schedule[self.step]
+                self.train_step(x, y, lr=lr_step, wd=params.wd)
                 me = self.evaluate(eval_examples)
-                self.update_solution(me)
+                self.update_solution(me, params.metric)
                 mt = self.evaluate(test_examples)
                 self.log_stats(me, mt)
 

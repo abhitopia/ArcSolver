@@ -486,3 +486,32 @@ def format_float(val: float, decimals: int) -> str:
 
     result = integer_part + '.' + fractional_part
     return str(result)
+
+@torch.jit.script
+def generate_lr_schedule(
+    lr: float,
+    warmup_steps: int,
+    total_steps: int,
+    min_lr_scale: float = 0.1
+) -> List[float]:
+    max_lr = lr
+    min_lr = max_lr * min_lr_scale
+    step_until_decay = total_steps - 1  # Adjusted to ensure correct range
+
+    lr_values: List[float] = []  # Initialize empty list to store learning rates
+
+    for step in range(total_steps):
+        if step < warmup_steps:
+            # Linear warmup
+            lr_value = max_lr * (step + 1) / warmup_steps
+        elif step >= step_until_decay:
+            # After decay ends, use minimum learning rate
+            lr_value = min_lr
+        else:
+            # Linear decay
+            decay_ratio = (step - warmup_steps) / (step_until_decay - warmup_steps)
+            decay_ratio = max(0.0, min(decay_ratio, 1.0))  # Clamp between 0 and 1
+            lr_value = max_lr - decay_ratio * (max_lr - min_lr)
+        lr_values.append(lr_value)
+
+    return lr_values
