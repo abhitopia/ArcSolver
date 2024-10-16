@@ -52,7 +52,9 @@
 - [x] Use Mixed precision to fasten the inference/evaluation. It doesn't work!
 - [x] Implement Particle Exploration
 - [x] Run it sorted 
-- [ ] Create an ExcelSheet of submissions
+- [x] Create an GSheet of submissions
+- [x] 'ca8f78db' ETA == 1.0 but ESA == 0.67. No error just rounding up
+- [x] Add dynamic batch size
 - [ ] switch to GS if time is running out?
 - [ ] Add functionality to resume from processed submissions
 - [ ] Test different settings for the inference

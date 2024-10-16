@@ -4,20 +4,23 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 from .deploy_utils import AdamWModule, format_float, generate_lr_schedule, shuffled_indices, split_task, Task, TaskSolution, MODEL_INPUT, MODEL_OUTPUT, loss_fn, deserialize_array, split_task_cross
+from .deploy_utils import get_batch_size
 from .repl import REPL, REPLConfig
 
 
 class SolverParams(NamedTuple):
-    thinking: int = 500
-    bs: int = 25
-    patience: int = 30
-    lr: float = 0.005
-    wd: float = 0.05
-    wu: int = 10
-    lrs: float = 0.1
+    thinking: int = 250
+    btc: int = 8000
+    min_bs: int = 4
+    max_bs: int = 16
+    patience: int = 50
+    lr: float = 0.01
+    wd: float = 0.0
+    wu: int = 1
+    lrs: float = 0.5
     seed: int = 60065
     mode: str = '60065'
-    confidence: float = 0.0001
+    confidence: float = 0.00001
     metric: str = 'L'
     strategy: str = 'Rv1'
 
@@ -122,7 +125,7 @@ class Solver(nn.Module):
             
             if examples[0][1] is None:
                 return {}
-
+                
             total_loss = 0.0
             total_tokens = 0.0
             total_correct_samples = 0.0
@@ -195,8 +198,11 @@ class Solver(nn.Module):
         self.verbose = True if params.mode == 'vbs' else False
         self.print_prefix = f"Task {task.task_id}"
         torch.manual_seed(params.seed)
-        self.bs = params.bs
+        max_bs = min(2*len(task.train), params.max_bs)
+        min_bs = max(len(task.train), params.min_bs)
+        self.bs = get_batch_size(task, params.btc, min_bs, max_bs)
         self.print(f"Params: {params}")
+        self.print(f"Batch Size: {self.bs}")
         self.patience = params.patience
         self.reset()
         device = str(self.model.get_pte_weight().device)

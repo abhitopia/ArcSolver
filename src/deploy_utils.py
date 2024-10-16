@@ -1,4 +1,5 @@
 
+import math
 from typing import Dict, List, NamedTuple, Optional, Tuple
 import json
 from torch import Tensor
@@ -525,3 +526,22 @@ def generate_lr_schedule(
         lr_values.append(lr_value)
 
     return lr_values
+
+@torch.jit.script
+def train_token_count(task: Task) -> int:
+    input_count: int = 0
+    output_count: int = 0
+    for example in task.train:
+        input_count += example.input.numel()
+        output_opt: Optional[Tensor] = example.output
+        if output_opt is not None:
+            output_count += output_opt.numel()
+    return input_count + output_count
+
+
+@torch.jit.script
+def get_batch_size(task: Task, batch_token_count: int, min_bs: int, max_bs: int)-> int:
+    token_count = train_token_count(task)
+    bs = math.ceil(batch_token_count/token_count)
+    return max(min_bs, min(max_bs, bs))
+

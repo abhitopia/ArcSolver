@@ -1,4 +1,5 @@
 #%%
+import math
 from src.deploy_utils import load_tasks
 from src.solver import create_solver, SolverParams
 import torch
@@ -31,30 +32,36 @@ solver = create_solver(ckt_path,
 #%%
 # tasks_path = base_path / 'partial_solved_challenge.json'
 # solution_path = base_path / 'partial_solved_solution.json'
-# tasks_path = base_path / 'solved_challenge.json'
-# solution_path = base_path / 'solved_solution.json'
-tasks_path = base_path / 'unsolved_challenge.json'
-solution_path = base_path / 'unsolved_solution.json'
+tasks_path = base_path / 'solved_challenge.json'
+solution_path = base_path / 'solved_solution.json'
+# tasks_path = base_path / 'unsolved_challenge.json'
+# solution_path = base_path / 'unsolved_solution.json'
 
 tasks = load_tasks(tasks_path, solution_path)
+#%%
+
 
 # for task in tasks:
-#     if task.task_id == '9110e3c5':
-#         break
-# else:
-#     print("Task not found")
+#     print(task.task_id, task.complexity())
 
-# print("Task ID: ", task.task_id)    
+for task in tasks:
+    if task.task_id == 'ca8f78db':
+        break
+else:
+    print("Task not found")
+
+print("Task ID: ", task.task_id)    
 # print(tasks[0].task_id)
 #%%
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 solver.to(device)
 
-
 params = SolverParams(
-    thinking=300,
-    bs=20,
-    patience=100,
+    thinking=5,
+    btc = 5000,
+    min_bs = 4,
+    max_bs = 16,
+    patience=50,
     lr=0.01,
     lrs=1.0,
     wd=0.0,
@@ -68,7 +75,7 @@ params = SolverParams(
 
 # with autocast('cuda'):
 solution = solver(
-        task=tasks[0],
+        task=task,
         params=params)
 
 # %%
@@ -104,3 +111,5 @@ solution = solver(
 #     metric='L',
 #     strategy='Rv1'
 # )
+
+#%%

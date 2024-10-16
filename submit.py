@@ -73,19 +73,20 @@ class TaskSolution(NamedTuple):
         return result
 
 class ModelParams(NamedTuple):
-    thinking: int = 200
-    bs: int = 15
-    patience: int = 30
-    lr: float = 0.005
-    wd: float = 0.05
-    wu: int = 10
+    thinking: int = 250
+    btc: int = 8000
+    min_bs: int = 4
+    max_bs: int = 16
+    patience: int = 50
+    lr: float = 0.01
+    wd: float = 0.0
+    wu: int = 1
     lrs: float = 0.5
     seed: int = 60065
     mode: str = '60065'
-    confidence: float = 0.0001
+    confidence: float = 0.00001
     metric: str = 'L'
     strategy: str = 'Rv1'
-
 
 def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None, sort_by_complexity=True) -> List[Task]:
     json_tasks = json.load(open(tasks_json_path, 'r'))
@@ -364,7 +365,7 @@ def main():
     if solutions_path is not None:
         assert Path(solutions_path).exists(), f"Solutions file not found: {solutions_path}"
     
-    tasks = load_tasks(tasks_json_path=tasks_path, solution_path=solutions_path)
+    tasks = load_tasks(tasks_json_path=tasks_path, solution_path=solutions_path, sort_by_complexity=True)
     print(f"Number of Tasks: {len(tasks)}")
 
     checksum = checksum_json_file(tasks_path)
