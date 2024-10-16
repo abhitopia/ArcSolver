@@ -93,11 +93,11 @@ def get_diff_dict(dict_src, dict_trg):
 
     return diff_dict
 
-def get_git_commit_hash(n):
+def get_git_commit_hash(n=None):
     try:
         # Run the git command to get the current commit hash
         commit_hash = subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode('ascii').strip()
-        return commit_hash[:n]
+        return commit_hash if n is None else commit_hash[:n]
     except subprocess.CalledProcessError:
         # Handle the case where the git command fails (e.g., not a git repository)
         print("Failed to retrieve git commit hash")
