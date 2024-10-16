@@ -52,6 +52,13 @@ class Task(NamedTuple):
     train: List[Example]
     test: List[Example]
 
+    def complexity(self)-> float:
+        max_ratio = max([e.output.numel()/e.input.numel() for e in self.train])
+        max_inp_size = max([e.input.numel() for e in self.test])
+        max_test_output_size = max_ratio * max_inp_size
+        ratio_test2train = len(self.test) / len(self.train)
+        return max_test_output_size * ratio_test2train
+
 class TaskSolution(NamedTuple):
     task_id: str
     predictions: List[List[Tensor]]
@@ -72,7 +79,7 @@ class ModelParams(NamedTuple):
     lr: float = 0.005
     wd: float = 0.05
     wu: int = 10
-    lrs: float = 0.1
+    lrs: float = 0.5
     seed: int = 60065
     mode: str = '60065'
     confidence: float = 0.0001
@@ -80,7 +87,7 @@ class ModelParams(NamedTuple):
     strategy: str = 'Rv1'
 
 
-def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None) -> List[Task]:
+def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None, sort_by_complexity=True) -> List[Task]:
     json_tasks = json.load(open(tasks_json_path, 'r'))
     solutions = json.load(open(solution_path, 'r')) if solution_path is not None else {}
 
@@ -105,6 +112,10 @@ def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None) -> Lis
         
         task = Task(task_id, train_examples, test_examples)
         tasks.append(task)
+
+    if sort_by_complexity:
+        print("Sorting tasks by complexity")
+        tasks = sorted(tasks, key=lambda x: x.complexity())
     return tasks
 
 def create_dummy_submission(tasks: List[Task]):

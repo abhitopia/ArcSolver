@@ -51,6 +51,9 @@
 - [x] Program must terminate. Added a time limit
 - [x] Use Mixed precision to fasten the inference/evaluation. It doesn't work!
 - [x] Implement Particle Exploration
+- [x] Run it sorted 
+- [ ] Create an ExcelSheet of submissions
+- [ ] switch to GS if time is running out?
 - [ ] Add functionality to resume from processed submissions
 - [ ] Test different settings for the inference
 - [ ] May be worth adding "min tolerance" of improvement for patience
