@@ -305,7 +305,8 @@ class TrainerBase:
     def loss_fn(self):
         if self._loss_fn is None:
             self._loss_fn = self.hparams.init_loss_fn()
-            self._loss_fn.to(self.device)
+            if hasattr(self._loss_fn, 'to'):
+                self._loss_fn.to(self.device)
         return self._loss_fn
     
     @property

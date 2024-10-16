@@ -510,6 +510,14 @@ ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_data
 ARC_TAMA = ArcTasksLoader(name='ARC_TAMA', path='data/arc_dataset_collection/dataset/arc-dataset-tama/data')
 ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
 
+## Inverse loaders
+ARC_EVAL_INV = ArcTasksLoader(name='ARC_EVAL_INV', path='data/arc_dataset_collection/dataset/ARC/data/evaluation', inverse=True, prog_prefix='inv_')
+ARC_TAMA_INV = ArcTasksLoader(name='ARC_TAMA_INV', path='data/arc_dataset_collection/dataset/arc-dataset-tama/data', inverse=True, prog_prefix='inv_')
+ARC_TRAIN_INV = ArcTasksLoader(name='ARC_TRAIN_INV', path='data/arc_dataset_collection/dataset/ARC/data/training', inverse=True, prog_prefix='inv_')
+ARC_COMMUNITY_INV = ArcTasksLoader(name='ARC_COMMUNITY_INV', path='data/arc_dataset_collection/dataset/arc-community/data', inverse=True, prog_prefix='inv_')
+ARC_NOSOUND_INV = ArcTasksLoader(name='ARC_NOSOUND_INV', path='data/arc_dataset_collection/dataset/nosound/data', inverse=True, prog_prefix='inv_')
+ARC_MINI_INV = ArcTasksLoader(name='ARC_MINI_INV', path='data/arc_dataset_collection/dataset/Mini-ARC/data', inverse=True, prog_prefix='inv_')
+ARC_SYNTH_RIDDLES_INV = ArcTasksLoader(name='ARC_SYNTH_RIDDLES_INV', path='data/arc_dataset_collection/dataset/synth_riddles/data', inverse=True, prog_prefix='inv_')
 
 train_collection = [
     ARC_1D,
@@ -531,11 +539,23 @@ train_collection = [
     ARC_TRAIN,
 ]
 
+inv_collection = [
+    ARC_EVAL_INV,
+    ARC_TAMA_INV,
+    ARC_TRAIN_INV,
+    ARC_COMMUNITY_INV,
+    ARC_NOSOUND_INV,
+    ARC_MINI_INV,
+    ARC_SYNTH_RIDDLES_INV
+]
+
 
 class DatasetLoader(Enum):
     TRAIN_ONLY = train_collection
+    TRAIN_INV = train_collection + inv_collection
     EVAL_ONLY = [ARC_EVAL]
     TRAIN_EVAL = train_collection + [ARC_EVAL]
+    TRAIN_EVAL_INV = train_collection + [ARC_EVAL] + inv_collection
 
     def load(self, *, max_height, max_width, min_test, min_train, max_test, max_train, no_cache=False):
         base_path = Path(__file__).resolve().parent.parent / ".cache"

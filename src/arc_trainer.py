@@ -22,8 +22,7 @@ class ArcTrainer(TrainerBase):
 
     def at_training_start(self):
         self.tokenizer = self.hparams.state['tokenizer']
-        self.n_iter = self.hparams.optim['n_iter']
-
+        self.pad_idx = self.tokenizer.grid_tokenizer.PAD_IDX
         ## Set up complexity levels
         self.num_levels = 5
         complexities = [m['complexity'] for x, y in self.train_dl for m in x.meta]
@@ -92,6 +91,7 @@ class ArcTrainer(TrainerBase):
         metrics_obj = self.train_metrics if is_train else self.eval_metrics
         metrics_obj.add_metric('Loss', loss.item())
 
+        assert len(iter_logits) == 1, "Only one iteration is supported for now."
         # Extract the dataset names and  complexities for each sample in the batch
         datasets = [meta['dataset'] for meta in x.meta]
         complexities = [meta['complexity'] for meta in x.meta]
@@ -113,15 +113,15 @@ class ArcTrainer(TrainerBase):
             num_tokens_correct = correct_tokens_mask.sum().item()
             num_samples_correct = correct_samples_mask.sum().item()
             total_samples_batch = y.grid.size(0)
-            metrics_obj.add_metric(
-                    f'TokenAcc/I{i+1}',
-                    num_tokens_correct,
-                    total_tokens)
+            # metrics_obj.add_metric(
+            #         f'TokenAcc/I{i+1}',
+            #         num_tokens_correct,
+            #         total_tokens)
             
-            metrics_obj.add_metric(
-                    f'SampleAcc/I{i+1}',
-                    num_samples_correct, 
-                    total_samples_batch)
+            # metrics_obj.add_metric(
+            #         f'SampleAcc/I{i+1}',
+            #         num_samples_correct, 
+            #         total_samples_batch)
                 
 
             # Only for last iteration!
@@ -168,16 +168,16 @@ class ArcTrainer(TrainerBase):
 
     def train_step(self, batch):
         x, y = batch
-        iter_logits, _ = self.model(x, y,  self.n_iter)
-        loss = self.loss_fn(iter_logits, y.target_grid)
-        self._add_step_metrics(loss, x, y, iter_logits, is_train=True)
+        logits, _ = self.model(x, y)
+        loss = self.loss_fn(logits, y.target_grid, self.pad_idx)
+        self._add_step_metrics(loss, x, y, [logits], is_train=True)
         return loss
     
     def eval_step(self, batch):
         x, y = batch
-        iter_logits, _ = self.model(x, y, self.n_iter)
-        loss = self.loss_fn(iter_logits, y.target_grid)
-        self._add_step_metrics(loss, x, y, iter_logits, is_train=False)
+        logits, _ = self.model(x, y)
+        loss = self.loss_fn(logits, y.target_grid, self.pad_idx)
+        self._add_step_metrics(loss, x, y, [logits], is_train=False)
         return loss
     
     def post_train_step(self, batch):

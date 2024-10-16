@@ -143,9 +143,10 @@ def train(
         "n_embd": n_embd,
         "n_head": n_head,
         "n_layer": n_layer,
+        "n_iter": n_iter,
         "pnorm": pnorm,
         "lora_r": lora_r,
-        "lora_alpha": lora_alpha if lora_alpha is not None else lora_r
+        "lora_alpha": lora_alpha if lora_alpha is not None else lora_r,
     }
 
     if lora_r > 0:
@@ -163,7 +164,6 @@ def train(
         "l1_prog": pl1,
 
         # Loss / Compute Config
-        "n_iter": n_iter,
         # "edr": edr,
         # "mctp": mctp,
 
@@ -307,6 +307,7 @@ def fork(
     }
 
     model_config = {
+        "n_iter": n_iter,
     }
 
     if any(option is not None for option in [mlr, plr, lr_decay, lr_min_scale, lr_warmup, lr_schedule, plt_patience, plt_factor]):
@@ -325,7 +326,6 @@ def fork(
         "l1_prog": pl1,
 
         # Compute / Loss Config
-        "n_iter": n_iter,
         # "edr": edr,
         # "mctp": mctp,
 

@@ -5,7 +5,7 @@ import torch.optim as optim
 import torch.nn as nn
 import math
 from torch.utils.data import DataLoader
-
+import torch.nn.functional as F
 from .dataset import ArcExamplesDataset
 from .multilevel_loss import MultiLevelLoss, exp_spacing
 from .repl import REPL, REPLConfig
@@ -54,6 +54,22 @@ def const_schedule(step, warmup_steps):
     
     return max_lr
 
+def loss_func(logits, target, pad_idx):
+    """
+    Compute the loss function for the model.
+
+    Args:
+        logits (torch.Tensor): Model predictions.
+        target (torch.Tensor): Target values.
+        pad_idx (int): Padding index.
+
+    Returns:
+        torch.Tensor: Loss value.
+    """
+    # Compute the loss
+    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), target.view(-1), ignore_index=pad_idx, reduction='mean')
+    return loss
+
 def lin_decay_schedule(step, warmup_steps, decay_steps, min_lr_scale=0.1):
     max_lr = 1.0
     min_lr = max_lr * min_lr_scale
@@ -91,9 +107,9 @@ class ArcHparams(Hparams):
         self.reset_state()
 
         if self.data.include_eval and self.data.include_train:
-            dataset_loader = DatasetLoader.TRAIN_EVAL
+            dataset_loader = DatasetLoader.TRAIN_EVAL if not self.data.include_inv else DatasetLoader.TRAIN_EVAL_INV
         elif self.data.include_train:
-            dataset_loader = DatasetLoader.TRAIN_ONLY
+            dataset_loader = DatasetLoader.TRAIN_ONLY if not self.data.include_inv else DatasetLoader.TRAIN_INV
         elif self.data.include_eval:
             dataset_loader = DatasetLoader.EVAL_ONLY
         else:
@@ -153,21 +169,21 @@ class ArcHparams(Hparams):
             dropout=self.optim.dropout,
             lora_r=self.model.lora_r,
             lora_alpha=self.model.lora_alpha,
-            n_iter=self.optim.n_iter,
+            n_iter=self.model.n_iter,
         )
 
         self.state['model'] = REPL(config)
 
         ## LOSS
-        loss = MultiLevelLoss(
-                    pad_idx=self.state['tokenizer'].grid_tokenizer.PAD_IDX,
-                    edr=self.optim.edr,
-                    min_pct=self.optim.mctp)
+        # loss = MultiLevelLoss(
+        #             pad_idx=self.state['tokenizer'].grid_tokenizer.PAD_IDX,
+        #             edr=self.optim.edr,
+        #             min_pct=self.optim.mctp)
         
-        spacing = exp_spacing(self.optim.n_iter, self.optim.edr, self.optim.mctp)
-        logger.info(f"\nLoss Error Rate per Iteration: {[f'{c:.2f}' for c in spacing.tolist()]}")
+        # spacing = exp_spacing(self.optim.n_iter, self.optim.edr, self.optim.mctp)
+        # logger.info(f"\nLoss Error Rate per Iteration: {[f'{c:.2f}' for c in spacing.tolist()]}")
 
-        self.state['loss'] = loss
+        self.state['loss'] = loss_func
 
 
     def init_dataloaders(self)-> Tuple[DataLoader, DataLoader]:
