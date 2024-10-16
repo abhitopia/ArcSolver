@@ -253,6 +253,21 @@ class SubmissionManager:
 
     def all_workers_finished(self):
         return all(not worker.is_alive() for worker in self.workers)
+    
+    def close_queues(self):
+        # Drain the queues before shutting down
+        print("Main: Draining input queue...")
+        drain_queue(self.input_queue)  # Empty the input queue
+        print("Main: Draining output queue...")
+        drain_queue(self.output_queue)  # Empty the output queue
+
+        # Close and join the queue in the manager only after all workers are finished
+        print("Main: Closing output queue")
+        self.output_queue.close()
+        self.output_queue.join_thread()
+        print("Main: Closing input queue")
+        self.input_queue.close()
+        self.input_queue.join_thread()
 
     def process_inputs(self):
         num_processed = 0
@@ -263,11 +278,6 @@ class SubmissionManager:
                 if elapsed_time > self.time_limit_seconds:
                     print(f"Main: Time limit reached ({elapsed_time:.2f} seconds). Terminating workers.")
                     self.terminate_workers()
-                    # Drain the queues before shutting down
-                    print("Main: Draining input queue...")
-                    drain_queue(self.input_queue)  # Empty the input queue
-                    print("Main: Draining output queue...")
-                    drain_queue(self.output_queue)  # Empty the output queue
                     break
 
                 try:
@@ -290,14 +300,7 @@ class SubmissionManager:
                         print("Main: All workers finished, no more results.")
                         break  # Exit the loop if all workers are done
 
-        # Close and join the queue in the manager only after all workers are finished
-        print("Main: Closing output queue")
-        self.output_queue.close()
-        self.output_queue.join_thread()
-        print("Main: Closing input queue")
-        self.input_queue.close()
-        self.input_queue.join_thread()
-
+        self.close_queues()
 
     def get_results(self):
         """Returns the final results."""
@@ -397,14 +400,20 @@ def main():
                                 submission_path=output_path, 
                                 time_limit_seconds=args.tl)  # Set time limit (e.g., 10 hours)
 
-    # Start worker processes
-    manager.start_workers()
+    try:
+        # Start worker processes
+        manager.start_workers()
 
-    # Add inputs to the queue
-    manager.add_inputs(tasks)
+        # Add inputs to the queue
+        manager.add_inputs(tasks)
 
-    # Process inputs and collect outputs, with time limit checking
-    manager.process_inputs()
+        # Process inputs and collect outputs, with time limit checking
+        manager.process_inputs()
+    except KeyboardInterrupt:
+        print("Keyboard interrupt detected. Terminating workers.")
+        manager.terminate_workers()
+        manager.close_queues()
+        raise # Re-raise the KeyboardInterrupt
 
 if __name__ == '__main__':
     mp.set_start_method('spawn', force=True)  # Use spawn method for multiprocessing with CUDA
