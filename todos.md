@@ -1,9 +1,10 @@
 ## V10 
-- [ ] Add inverse transform to the training mix?
+- [x] Add inverse transform to the training mix?
+- [x] Add inverse dataset to Hparams
+- [x] Make the ArcTrainer work again now that progressive loss is removed
 
 
 ## V8 Model (Mission Restore Accuracy) (Test the heck out)
-
 - [x] Added new 2D rope which is extension of the original 1D rope
 - [x] LR Warm up seems broken. It's not, I was looking at the log scale
 - [x] Train the model and pray to the universe to be kind to me this time. 

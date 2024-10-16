@@ -209,12 +209,13 @@ class ArcTask:
     
 
 class ArcTasksLoader:
-    def __init__(self, name: str, path: str, prog_prefix='', identical_task_per_folder=False):
+    def __init__(self, name: str, path: str, prog_prefix='', identical_task_per_folder=False, inverse=False):
         base_path = Path(__file__).resolve().parent.parent    
         self.path = base_path / Path(path)
         assert self.path.exists(), f'Path does not exist: {self.path}'
         self.name = name
         self.prog_prefix = prog_prefix
+        self.inverse = inverse
         self._tasks = None
         self._train_examples = None
         self._test_examples = None
@@ -243,8 +244,8 @@ class ArcTasksLoader:
             examples.append(
                     Example(
                     idx=idx,
-                    input=np.asarray(example['input']),
-                    output=np.asarray(example['output']),
+                    input=np.asarray(example['input']) if not self.inverse else np.asarray(example['output']),
+                    output=np.asarray(example['output']) if not self.inverse else np.asarray(example['input']),
                     program_id=prog_id,
                     task_id=task_id,
                     dataset=self.name,

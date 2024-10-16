@@ -62,8 +62,8 @@ def train(
         n_iter: int = typer.Option(8, min=2, help="Number of iterations for the model"),
 
         # Loss / Compute Config
-        edr: Optional[float] = typer.Option(-1, min=-1.0, max=1.0,  help="Rate of error decay gradient. -1 falls back to regular cross entropy if mctp is 0.0"),
-        mctp: Optional[float] = typer.Option(0.0, min=0.0, help="Error % aftr the first iteration."),
+        # edr: Optional[float] = typer.Option(-1, min=-1.0, max=1.0,  help="Rate of error decay gradient. -1 falls back to regular cross entropy if mctp is 0.0"),
+        # mctp: Optional[float] = typer.Option(0.0, min=0.0, help="Error % aftr the first iteration."),
 
         # Learning Rate Config
         mlr: Optional[float] = typer.Option(0.001, min=-1.0, help="Learning Rate"),
@@ -95,6 +95,7 @@ def train(
         # Dataset Config
         include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
         include_train: bool = typer.Option(True, help="Include training data for training"),
+        include_inv: bool = typer.Option(False, help="Include inverse data for training"),
 
         # Misc Config
         n_steps: Optional[int] = typer.Option(1000000, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
@@ -129,6 +130,7 @@ def train(
     data_config = {
         'include_eval': include_eval,
         'include_train': include_train,
+        'include_inv': include_inv,
         'min_train_pp': min_train_pp,
         'max_train_pp': max_train_pp if max_train_pp is not None else min_train_pp,
         'min_test_pp': min_test_pp,
@@ -162,8 +164,8 @@ def train(
 
         # Loss / Compute Config
         "n_iter": n_iter,
-        "edr": edr,
-        "mctp": mctp,
+        # "edr": edr,
+        # "mctp": mctp,
 
         # Learning Rate
         "lr_model": mlr if not lr_find else (1 if mlr > 0 else 0),
@@ -220,10 +222,12 @@ def fork(
         ebs: Optional[int] = typer.Option(None, min=1, help="Eval Batch Size (in tokens)"),
         grad_accum: Optional[int] = typer.Option(None, min=1, help="Number of steps to accumulate gradients over."),
 
-        # Loss Config
+        # Model Config
         n_iter: Optional[int] = typer.Option(None, min=2, help="Number of iterations for the model"),
-        edr: Optional[float] = typer.Option(None, min=0.0, help="Loss Error Decay Rate"),
-        mctp: Optional[float] = typer.Option(None, min=0.0, help="Min Correct Tokens Percentage"),
+
+        # Loss Config
+        # edr: Optional[float] = typer.Option(None, min=0.0, help="Loss Error Decay Rate"),
+        # mctp: Optional[float] = typer.Option(None, min=0.0, help="Min Correct Tokens Percentage"),
 
         # Misc Config
         n_steps: Optional[int] = typer.Option(1_000_000, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
@@ -255,8 +259,9 @@ def fork(
         max_train_pp: Optional[int] = typer.Option(None, help="Maximum number of Train Examples Per Program"),
         min_test_pp: Optional[int] = typer.Option(None, help="Minimum number of Test Examples Per Program"),
         max_test_pp: Optional[int] = typer.Option(None, help="Maximum number of Test Examples Per Program"),
-        include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
         include_train: bool = typer.Option(True, help="Include training data for training"),
+        include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
+        include_inv: bool = typer.Option(False, help="Include inverse data for training"),
         permute: bool = typer.Option(False, help="Permute the training set for each batch"),
 
         # Misc Config
@@ -293,6 +298,7 @@ def fork(
     data_config = {
         'include_eval': include_eval,
         'include_train': include_train,
+        'include_inv': include_inv,
         'min_train_pp': min_train_pp,
         'max_train_pp': max_train_pp,
         'min_test_pp': min_test_pp,
@@ -320,8 +326,8 @@ def fork(
 
         # Compute / Loss Config
         "n_iter": n_iter,
-        "edr": edr,
-        "mctp": mctp,
+        # "edr": edr,
+        # "mctp": mctp,
 
         # Learning Rate
         "lr_model": mlr if not lr_find else (1 if mlr > 0 else 0),
