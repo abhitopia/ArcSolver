@@ -72,8 +72,9 @@ def train(
         lr_min_scale: Optional[float] = typer.Option(0.0, min=0.0, help="Learning Rate reached after decay phase is obtained by scaling the max learning rate by this factor"),
         lr_decay: int = typer.Option(None, min=0, help="Number of steps for learning rate decay. If None, then it is set to n_steps - lr_warmup"),
         lr_schedule: LRSchedule = typer.Option(LRSchedule.noam, help="Learning rate scheduler. Options: noam, alt, const"),
-        plt_patience: int = typer.Option(10, min=0, help="Patience for plateau scheduler to reduce learning rate"),
+        plt_patience: int = typer.Option(10, min=0, help="Patience in number of training epochs which don't improve"),
         plt_factor: float = typer.Option(0.8, min=0.0, help="Factor for plateau scheduler to reduce learning rate"),
+        plt_warmup: int = typer.Option(0, min=0, help="Warm up in number of updates before Pleateau Scheduler starts tracking Plateau metric"),
 
         # Regularisation/ Weight Decay Config
         mwd: float = typer.Option(0.1, min=0.0, help="Weight Decay"),
@@ -132,6 +133,7 @@ def train(
                         # Plateau Metric is always this
                         plt_metric='SampleAcc(%)',
                         plt_metric_increases=True,
+                        plt_warmup=plt_warmup,
                         plateau_patience=plt_patience,
                         accumulation_steps=grad_accum,
                         plateau_factor=plt_factor,
@@ -256,6 +258,7 @@ def fork(
         lr_schedule: Optional[LRSchedule] = typer.Option(None, help="Learning rate scheduler. Options: noam, alt, const"),
         plt_patience: Optional[int] = typer.Option(None, min=0, help="Patience for plateau scheduler to reduce learning rate"),
         plt_factor: Optional[float] = typer.Option(None, min=0.0, help="Factor for plateau scheduler to reduce learning rate"),
+        plt_warmup: Optional[int] = typer.Option(None, min=0, help="Warm up in number of updates before Pleateau Scheduler starts tracking Plateau metric"),
         resume: Optional[bool] = typer.Option(True, help="Resume training from the checkpoint. If False, then optimizer and scheduler are not loaded, only model is loaded"),
 
         # Regularisation/ Weight Decay Config
@@ -305,6 +308,7 @@ def fork(
         "target_metric": 'ARC_EVAL/Accuracy(%)' if include_eval else 'ARC_TRAIN/Accuracy(%)',
         "plateau_patience": plt_patience,
         "plateau_factor": plt_factor,
+        "plt_warmup": plt_warmup,
         "accumulation_steps": grad_accum,
 
     }

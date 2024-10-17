@@ -21,6 +21,12 @@ class ArcTrainer(TrainerBase):
             torch.mps.empty_cache() # clear the MPS cache
 
     def at_training_start(self):
+
+
+        # LR Schedule
+        self.info(f"LR Warm-Up (# Updates): {self.hparams.optim.lr_warmup_steps}")
+        self.info(f"LR Decay (# Updates): {self.hparams.optim.lr_decay_steps}")
+
         self.tokenizer = self.hparams.state['tokenizer']
         self.pad_idx = self.tokenizer.grid_tokenizer.PAD_IDX
         ## Set up complexity levels

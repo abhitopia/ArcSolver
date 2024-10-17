@@ -90,17 +90,18 @@ class Hparams:
     seed: int = 1337  # Seed everything for reproducibility
     device: str = None # Device to use for training, None means automatically determine the best device
     eval_interval: Optional[int] = None # Evaluate every n steps, None means evaluate after every epoch
-    num_checkpoints_to_keep: int = 3,
+    num_checkpoints_to_keep: int = 3
 
     # Used for the purposes of tracking checkpoint
-    target_metric: str ='loss', # This applies to evaluation
-    target_metric_increases: bool = False, # This applies to both target and plt metrics
+    target_metric: str ='loss' # This applies to evaluation
+    target_metric_increases: bool = False # This applies to both target
 
     # Used to control the Learning Rate Scheduler
-    plt_metric: str = 'loss', # This applies to training
-    plt_metric_increases: bool =False, # This applies to both target and plt metrics
-    plateau_patience: int = 3, # Number of target_metric evaluations to wait before reducing LR
-    plateau_factor: float = 0.5, # Factor by which to reduce LR
+    plt_metric: str = 'loss' # This applies to training
+    plt_metric_increases: bool =False # This applies to plt metrics
+    plt_warmup: int = 0 # Number of warmup steps for the Plateau
+    plateau_patience: int = 3 # Number of target_metric evaluations to wait before reducing LR
+    plateau_factor: float = 0.5 # Factor by which to reduce LR
     console_metrics: Optional[List[str]] = field(default_factory=lambda: ['loss'])
     grok_alpha: Optional[float] = 0.0
     grok_lambda: Optional[float] = 0.0
@@ -186,6 +187,7 @@ class Hparams:
             mode='max' if self.plt_metric_increases else 'min',
             factor=self.plateau_factor,
             patience=self.plateau_patience,
+            warmup_epochs=self.plt_warmup,
             verbose=True
         )
 
@@ -498,6 +500,15 @@ class TrainerBase:
         self.info(f"Training batches: {len(self.train_dl)}")
         self.info(f"Evaluation batches: {len(self.eval_dl)}")
         self.info(f'Evaluation Interval (Steps): {self.eval_interval}')
+        self.info(f'Gradient Accumulation Steps: {self.hparams.accumulation_steps}')
+        num_updates_per_epoch = len(self.train_dl) / self.hparams.accumulation_steps
+        self.info(f'Number of updates per epoch: {num_updates_per_epoch}')
+
+        # Pleateau 
+        self.info(f"Plateau Metric (tracks Train): {self.hparams.plt_metric}")
+        self.info(f"Effective Plateau Patience (# Updates): {num_updates_per_epoch * self.hparams.plateau_patience}")
+        self.info(f"Plateau Warmup (in number of updates): {self.hparams.plt_warmup}")
+        self.info(f"Plateau Warmup (from epoch #): {math.ceil(self.hparams.plt_warmup / num_updates_per_epoch)}")
 
         self.debug(f'Setting torch float32 matmul precision to high for faster training!')
         torch.set_float32_matmul_precision('high')

@@ -17,7 +17,7 @@ class LambdaLRWithReduceOnPlateau(LRScheduler):
                  patience=10,
                  threshold=1e-4,
                  threshold_mode='rel',
-                 warmup_epochs=3000,
+                 warmup_epochs=0,  # Remember that the regular epochs are already decreased frequency due to gradient accumulation
                  cooldown=0,
                  min_lr=0,
                  eps=1e-8,
