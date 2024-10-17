@@ -198,9 +198,7 @@ class Solver(nn.Module):
         self.verbose = True if params.mode == 'vbs' else False
         self.print_prefix = f"Task {task.task_id}"
         torch.manual_seed(params.seed)
-        max_bs = min(2*len(task.train), params.max_bs)
-        min_bs = max(len(task.train), params.min_bs)
-        self.bs = get_batch_size(task, params.btc, min_bs, max_bs)
+        self.bs = get_batch_size(task, params.btc, params.min_bs, params.max_bs)
         self.print(f"Params: {params}")
         self.print(f"Batch Size: {self.bs}")
         self.patience = params.patience
