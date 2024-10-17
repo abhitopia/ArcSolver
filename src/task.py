@@ -520,6 +520,14 @@ ARC_MINI_INV = ArcTasksLoader(name='ARC_MINI_INV', path='data/arc_dataset_collec
 ARC_SYNTH_RIDDLES_INV = ArcTasksLoader(name='ARC_SYNTH_RIDDLES_INV', path='data/arc_dataset_collection/dataset/synth_riddles/data', inverse=True, prog_prefix='inv_')
 
 train_collection = [
+    ARC_TRAIN
+]
+
+eval_collection = [
+    ARC_EVAL
+]
+
+aux_collection = [
     ARC_1D,
     ARC_COMMUNITY, 
     ARC_CONCEPT, 
@@ -536,7 +544,6 @@ train_collection = [
     ARC_SYNTHTASK,
     ARC_SYNTH_RIDDLES, 
     ARC_TAMA,
-    ARC_TRAIN,
 ]
 
 inv_collection = [
@@ -550,26 +557,34 @@ inv_collection = [
 ]
 
 
-class DatasetLoader(Enum):
-    TRAIN_ONLY = train_collection
-    TRAIN_INV = train_collection + inv_collection
-    EVAL_ONLY = [ARC_EVAL]
-    TRAIN_EVAL = train_collection + [ARC_EVAL]
-    TRAIN_EVAL_INV = train_collection + [ARC_EVAL] + inv_collection
+def get_task_loaders(*, train=True, evl=True, aux=True, inv=False):
+    loaders = []
+    if train:
+        loaders.extend(train_collection)
+    if evl:
+        loaders.extend(eval_collection)
+    if aux:
+        loaders.extend(aux_collection)
+    if inv:
+        loaders.extend(inv_collection)
+    return loaders
 
-    def load(self, *, max_height, max_width, min_test, min_train, max_test, max_train, no_cache=False):
-        base_path = Path(__file__).resolve().parent.parent / ".cache"
-        print(f"Base path: {base_path}")
-        hash_params = f"{self.name}_{max_height}_{max_width}_{min_test}_{max_test}_{max_train}_{min_train}"
-        cache_file = base_path / f"{hash_string(hash_params)}.pkl"
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        if cache_file.exists() and not no_cache:
-            print(f"Loading dataset from cache: {cache_file}")
-            dataset = pickle.load(cache_file.open("rb"))
-        else:
-            loaders = self.value
-            dataset = ArcTrainingDataset(loaders=loaders)
-            dataset.filter(max_height=max_height, max_width=max_width)
-            dataset.augment(min_test=min_test, max_test=max_test, max_train=max_train, min_train=min_train)
-            pickle.dump(dataset, cache_file.open("wb"))
-        return dataset
+
+def load_dataset(*, task_loaders, max_height, max_width, min_test, min_train, max_test, max_train, no_cache=False):
+    sorted_loaders = sorted(task_loaders, key=lambda x: x.name)
+    loader_hash = hash_string("_".join([loader.name for loader in sorted_loaders]))
+
+    base_path = Path(__file__).resolve().parent.parent / ".cache"
+    hash_params = f"{loader_hash}_{max_height}_{max_width}_{min_test}_{max_test}_{max_train}_{min_train}"
+    cache_file = base_path / f"{hash_string(hash_params)}.pkl"
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    if cache_file.exists() and not no_cache:
+        print(f"Loading dataset from cache: {cache_file}")
+        dataset = pickle.load(cache_file.open("rb"))
+    else:
+        dataset = ArcTrainingDataset(loaders=sorted_loaders)
+        dataset.filter(max_height=max_height, max_width=max_width)
+        dataset.augment(min_test=min_test, max_test=max_test, max_train=max_train, min_train=min_train)
+        pickle.dump(dataset, cache_file.open("wb"))
+    return dataset
+

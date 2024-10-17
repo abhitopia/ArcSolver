@@ -93,8 +93,9 @@ def train(
         permute: bool = typer.Option(True, help="Permute the training set for each batch"),
 
         # Dataset Config
-        include_eval: bool = typer.Option(True, help="Include evaluation data for training"),
         include_train: bool = typer.Option(True, help="Include training data for training"),
+        include_aux: bool = typer.Option(True, help="Include auxiliary data for training"),
+        include_eval: bool = typer.Option(True, help="Include evaluation data for training"),
         include_inv: bool = typer.Option(False, help="Include inverse data for training"),
 
         # Misc Config
@@ -140,8 +141,9 @@ def train(
     assert include_eval or include_train, "At least one of include_eval or include_train must be True"
 
     data_config = {
-        'include_eval': include_eval,
         'include_train': include_train,
+        'include_aux': include_aux,
+        'include_eval': include_eval,
         'include_inv': include_inv,
         'min_train_pp': min_train_pp,
         'max_train_pp': max_train_pp if max_train_pp is not None else min_train_pp,
@@ -272,6 +274,7 @@ def fork(
         min_test_pp: Optional[int] = typer.Option(None, help="Minimum number of Test Examples Per Program"),
         max_test_pp: Optional[int] = typer.Option(None, help="Maximum number of Test Examples Per Program"),
         include_train: bool = typer.Option(True, help="Include training data for training"),
+        include_aux: bool = typer.Option(True, help="Include auxiliary data for training"),
         include_eval: bool = typer.Option(True, help="Include evaluation data for training"),
         include_inv: bool = typer.Option(False, help="Include inverse data for training"),
         permute: bool = typer.Option(False, help="Permute the training set for each batch"),
@@ -309,8 +312,9 @@ def fork(
     assert include_eval or include_train, "At least one of include_eval or include_train must be True"
 
     data_config = {
-        'include_eval': include_eval,
         'include_train': include_train,
+        'include_aux': include_aux,
+        'include_eval': include_eval,
         'include_inv': include_inv,
         'min_train_pp': min_train_pp,
         'max_train_pp': max_train_pp,

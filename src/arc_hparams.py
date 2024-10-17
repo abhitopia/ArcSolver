@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from .dataset import ArcExamplesDataset
 from .multilevel_loss import MultiLevelLoss, exp_spacing
 from .repl import REPL, REPLConfig
-from .task import DatasetLoader
+from .task import get_task_loaders, load_dataset
 from .tokenizer import ArcTokenizer
 from .trainer import Hparams
 from .utils import get_logger
@@ -99,18 +99,17 @@ class ArcHparams(Hparams):
     def build_state(self):
         self.reset_state()
 
-        if self.data.include_eval and self.data.include_train:
-            dataset_loader = DatasetLoader.TRAIN_EVAL if not self.data.include_inv else DatasetLoader.TRAIN_EVAL_INV
-        elif self.data.include_train:
-            dataset_loader = DatasetLoader.TRAIN_ONLY if not self.data.include_inv else DatasetLoader.TRAIN_INV
-        elif self.data.include_eval:
-            dataset_loader = DatasetLoader.EVAL_ONLY
-        else:
-            raise ValueError("Invalid Dataset Configuration")
-
+        task_loaders = get_task_loaders(
+                        train=self.data.include_train,
+                        evl=self.data.include_eval,
+                        aux=self.data.include_aux,
+                        inv=self.data.include_inv)
+        
+        assert len(task_loaders) > 0, "No Task Loaders Selected"
         logger.info(f"Augmenting examples to be in range:\n Test: [{self.data.min_test_pp}, {self.data.max_test_pp}], Train:[{self.data.min_train_pp}, {self.data.max_train_pp}]")
 
-        training_data = dataset_loader.load(
+        training_data = load_dataset(
+            task_loaders=task_loaders,
             max_height=45,
             max_width=45,
             min_test=self.data.min_test_pp,
@@ -118,6 +117,7 @@ class ArcHparams(Hparams):
             max_train=self.data.max_train_pp,
             min_train=self.data.min_train_pp,
         )
+
         training_data.stats()
 
         train_examples = training_data.train_examples

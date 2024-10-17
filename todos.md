@@ -7,8 +7,11 @@
 
 # Submission Experiments
 - [x] Increase batch size and resubmit 1v1
+- [ ] Implement Auto LR scheduler/scaler based on Eval Loss
 - [ ] Submit The new model with one of the same configs
-- [ ] Add ability to add only ARC_DATA
+
+# V9 Model
+- [x] Add ability to add only ARC_DATA. Added ability to checkpick which task collection to use
 - [ ] Fine tune on ARC_TRAIN and ARC_EVAL?
 
 ## V8 Model (Mission Restore Accuracy) (Test the heck out)
