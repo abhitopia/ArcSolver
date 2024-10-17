@@ -93,7 +93,7 @@ def train(
         permute: bool = typer.Option(True, help="Permute the training set for each batch"),
 
         # Dataset Config
-        include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
+        include_eval: bool = typer.Option(True, help="Include evaluation data for training"),
         include_train: bool = typer.Option(True, help="Include training data for training"),
         include_inv: bool = typer.Option(False, help="Include inverse data for training"),
 
@@ -114,11 +114,23 @@ def train(
     if _DEV_MODE:
         experiment = f"dev_{experiment}"
 
+
+    
+
     hparams = ArcHparams(experiment=experiment,
                         run=run, 
                         seed=seed, 
                         device=device, 
                         eval_interval=eval_int,
+
+                        # Track Metric of interest for checkpointing purposes
+                        target_metric='ARC_EVAL/Accuracy(%)' if include_eval else 'ARC_TRAIN/Accuracy(%)',
+                        target_metric_increases=True,
+                        num_checkpoints_to_keep=10, # Just in case
+
+                        # Plateau Metric is always this
+                        plt_metric='SampleAcc(%)',
+                        plt_metric_increases=True,
                         plateau_patience=plt_patience,
                         accumulation_steps=grad_accum,
                         plateau_factor=plt_factor,
@@ -260,7 +272,7 @@ def fork(
         min_test_pp: Optional[int] = typer.Option(None, help="Minimum number of Test Examples Per Program"),
         max_test_pp: Optional[int] = typer.Option(None, help="Maximum number of Test Examples Per Program"),
         include_train: bool = typer.Option(True, help="Include training data for training"),
-        include_eval: bool = typer.Option(False, help="Include evaluation data for training"),
+        include_eval: bool = typer.Option(True, help="Include evaluation data for training"),
         include_inv: bool = typer.Option(False, help="Include inverse data for training"),
         permute: bool = typer.Option(False, help="Permute the training set for each batch"),
 
@@ -287,6 +299,7 @@ def fork(
         "grok_alpha": grok_alpha,
         "grok_lambda": grok_lambda,
         "eval_interval": eval_int,
+        "target_metric": 'ARC_EVAL/Accuracy(%)' if include_eval else 'ARC_TRAIN/Accuracy(%)',
         "plateau_patience": plt_patience,
         "plateau_factor": plt_factor,
         "accumulation_steps": grad_accum,

@@ -7,8 +7,6 @@ from torch import nn
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
-from copy import deepcopy
 import random
 import wandb
 import numpy as np
@@ -92,11 +90,17 @@ class Hparams:
     seed: int = 1337  # Seed everything for reproducibility
     device: str = None # Device to use for training, None means automatically determine the best device
     eval_interval: Optional[int] = None # Evaluate every n steps, None means evaluate after every epoch
-    num_checkpoints_to_keep=3,
-    target_metric='loss',
-    target_metric_increases=False,
-    plateau_patience=3, # Number of target_metric evaluations to wait before reducing LR
-    plateau_factor=0.5, # Factor by which to reduce LR
+    num_checkpoints_to_keep: int = 3,
+
+    # Used for the purposes of tracking checkpoint
+    target_metric: str ='loss', # This applies to evaluation
+    target_metric_increases: bool = False, # This applies to both target and plt metrics
+
+    # Used to control the Learning Rate Scheduler
+    plt_metric: str = 'loss', # This applies to training
+    plt_metric_increases: bool =False, # This applies to both target and plt metrics
+    plateau_patience: int = 3, # Number of target_metric evaluations to wait before reducing LR
+    plateau_factor: float = 0.5, # Factor by which to reduce LR
     console_metrics: Optional[List[str]] = field(default_factory=lambda: ['loss'])
     grok_alpha: Optional[float] = 0.0
     grok_lambda: Optional[float] = 0.0
@@ -179,7 +183,7 @@ class Hparams:
         scheduler = LambdaLRWithReduceOnPlateau(
             optimizer,
             lr_lambda=schedule,
-            mode='max' if self.target_metric_increases else 'min',
+            mode='max' if self.plt_metric_increases else 'min',
             factor=self.plateau_factor,
             patience=self.plateau_patience,
             verbose=True
@@ -578,6 +582,10 @@ class TrainerBase:
 
     def _at_epoch_end(self):
         epoch_metrics = self.train_metrics.mean_metrics()
+
+        # Track for plateau if the training metric stopped improving
+        self.scheduler.step_metric(epoch_metrics[self.hparams.plt_metric])
+
         self.info(self._metrics_string("(TRAIN-EPOCH)", epoch_metrics))
         self._log_metrics(suffix='train', metrics=epoch_metrics)
         self.at_epoch_end()
@@ -637,12 +645,11 @@ class TrainerBase:
         self._log_metrics(suffix='eval', metrics=epoch_metrics)
         self.model.train()
         if save_checkpoint:
-
-            # This prevents the scheduler from regustering metric right after loading the checkpoint
-            # typically this value can be much higher, which can then influence the learning rate reduction even if subsequent 
-            # values are increasing. Please note this this does not help if the training is resumed, as then the scheduler will
-            # retore the past best metric.
-            self.scheduler.step_metric(epoch_metrics[self.hparams.target_metric])
+            # # This prevents the scheduler from regustering metric right after loading the checkpoint
+            # # typically this value can be much higher, which can then influence the learning rate reduction even if subsequent 
+            # # values are increasing. Please note this this does not help if the training is resumed, as then the scheduler will
+            # # retore the past best metric.
+            # self.scheduler.step_metric(epoch_metrics[self.hparams.target_metric])
             self._save_checkpoint(epoch_metrics)
 
         self.at_eval_end()

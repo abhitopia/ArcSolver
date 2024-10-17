@@ -94,14 +94,7 @@ def get_alt_schedulers(num_steps_in_epoch):
 
 @dataclass
 class ArcHparams(Hparams):
-    target_metric: str = 'SampleAcc(%)'  # Change target metric (target evaluation metric)
-    target_metric_increases: bool = True  # Now, higher is better
-    eval_interval: Optional[int] = None # Evaluate every n steps, None means evaluate after every epoch
-    plateau_patience: int = 5  # 5 Evaluations without improvement
-    plateau_factor: float = 0.9  # Reduce LR by 10%
     console_metrics: List[str] = field(default_factory=lambda: ['Loss', 'SampleAcc(%)', 'TokenAcc(%)', 'ΔT(ms)', '#TokensPerSec'])
-    num_checkpoints_to_keep: int = 4  # Keep more checkpoints
-
 
     def build_state(self):
         self.reset_state()

@@ -2,7 +2,14 @@
 - [x] Add inverse transform to the training mix?
 - [x] Add inverse dataset to Hparams
 - [x] Make the ArcTrainer work again now that progressive loss is removed
+- [x] Separate out Learning Rate Metric and Checkpoint metric
+    - Made it such that target metric track validation metric (either ARC_TRAIN/ARC_EVAL) and plateau metric track the train SampleAcc(%)
 
+# Submission Experiments
+- [x] Increase batch size and resubmit 1v1
+- [ ] Submit The new model with one of the same configs
+- [ ] Add ability to add only ARC_DATA
+- [ ] Fine tune on ARC_TRAIN and ARC_EVAL?
 
 ## V8 Model (Mission Restore Accuracy) (Test the heck out)
 - [x] Added new 2D rope which is extension of the original 1D rope
@@ -56,16 +63,17 @@
 - [x] Create an GSheet of submissions
 - [x] 'ca8f78db' ETA == 1.0 but ESA == 0.67. No error just rounding up
 - [x] Add dynamic batch size
-- [ ] switch to GS if time is running out?
-- [ ] Add functionality to resume from processed submissions
-- [ ] Test different settings for the inference
-- [ ] May be worth adding "min tolerance" of improvement for patience
-- [ ] Some quick benefit can be obtained by simply trying again with different seed, till a best result is found
 - [x] Find which ARC_EVAL tasks are solved/partially solved by the model
 - [x] Remove the multiple logits, will it be faster?
 - [x] Test the inference script
 - [x] Start writing inference code and test it against the best ARC_EVAL trained model
 - [x] Create a solver for Synthetic data first!
+- [ ] If EL stops decreasing, decrease the LR?
+- [ ] switch to GS if time is running out?
+- [ ] Add functionality to resume from processed submissions
+- [ ] Test different settings for the inference
+- [ ] May be worth adding "min tolerance" of improvement for patience
+- [ ] Some quick benefit can be obtained by simply trying again with different seed, till a best result is found
 
 
 
@@ -139,17 +147,13 @@ don't access future tokens making it causal by default)
 - [x] Something wrong with either tokenAcc or SampleAcc or both as I noticed SampleAcc would go to 100 while TokenAcc still remained 28%. Need to investigate.
         - There was a bug in tokenacc computation.
 - [x] Try training only the ARC_TRAIN dataset (without any auxiliary tasks). Use high regularisation. It trains but doesn't get to high enough accuracy
-
 - [x] Add the ARCSynthTasks dataset to the training mix
-
 - [x] Detangle the datasets. It seems combining ARC with REARC is hurting performance on ARC. Add prefix to ARC datasets. 
 - [x] Also add a plug for arc synth tasks
 - [x] Make ARC_TRAIN accuracy as the measure of success. 
 - [x] Further, add plateau LR scheduler based on the measure of success
 - [x] Make program vocab size additive. (No need for my usecase)
-
 - [ ] Make relevant changes to the train.py and test if the training works
-
 
 
 
