@@ -18,9 +18,10 @@ warnings.filterwarnings(
 torch.manual_seed(42)
 # base_path = Path('/Users/abhishekaggarwal/synced_repos/ArcSolver/')
 base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.v1/'
+ckt_path = base_path / 'ckt_162000_39.205.pth'
 
-ckt_path = base_path / 'ckt_281000_52.168.pth'
-# ckt_path = base_path / 'ckt_162000_39.205.pth'
+# base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.ft/'
+# ckt_path = base_path / 'ckt_74739_34.615.pth'
 # ckt_path = 'models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
 
 git_hash = get_git_commit_hash(7)
@@ -44,23 +45,24 @@ tasks = load_tasks(tasks_path, solution_path)
 # for task in tasks:
 #     print(task.task_id, task.complexity())
 
-for task in tasks:
-    if task.task_id == 'ca8f78db':
-        break
-else:
-    print("Task not found")
+# for task in tasks:
+#     if task.task_id == 'ca8f78db':
+#         break
+# else:
+#     print("Task not found")
 
-print("Task ID: ", task.task_id)    
+# print("Task ID: ", task.task_id)    
 # print(tasks[0].task_id)
+task = tasks[0]
 #%%
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 solver.to(device)
 
 params = SolverParams(
-    thinking=5,
+    thinking=2,
     btc = 5000,
     min_bs = 4,
-    max_bs = 16,
+    max_bs = 4,
     patience=50,
     lr=0.01,
     lrs=1.0,
@@ -70,7 +72,10 @@ params = SolverParams(
     mode='vbs',
     confidence=0.000001,
     metric='L',
-    strategy='Rv1'
+    strategy='Rv1',
+    zero_init=True,
+    predict=True,
+    return_logs=True
 )
 
 # with autocast('cuda'):
@@ -79,6 +84,8 @@ solution = solver(
         params=params)
 
 # %%
+solution.log
+
 # %%
 # Solves tasks[0] of partial_solved
 # params = SolverParams(
