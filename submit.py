@@ -12,6 +12,8 @@ import warnings
 from torch import Tensor
 import hashlib
 import torch.multiprocessing as mp
+from typing import get_origin, get_args, get_type_hints, Union, Optional
+
 
 
 # Suppress the specific RNN UserWarning
@@ -163,6 +165,7 @@ class Worker(mp.Process):
         print(f"Worker {self.worker_id}: Model loaded on {device}")
 
     def run(self):
+
      # Load the model once when the process starts
         self.load_model()
         while True:
@@ -335,16 +338,38 @@ def parse_args_from_namedtuple(namedtuple_class, parser):
 
     for field, field_type in type_hints.items():
         default_value = defaults.get(field)
-        
-        # Map Python types to argparse argument types
-        if field_type == int:
-            parser.add_argument(f"--{field}", type=int, default=default_value, help=f"{field} (default: {default_value})")
-        elif field_type == float:
-            parser.add_argument(f"--{field}", type=float, default=default_value, help=f"{field} (default: {default_value})")
-        elif field_type == str:
-            parser.add_argument(f"--{field}", type=str, default=default_value, help=f"{field} (default: {default_value})")
+        arg_type = None
+
+        # Determine the base type, handling Optional and Union types
+        origin_type = get_origin(field_type)
+        if origin_type is Union:
+            # Handle Optional types (Union[..., NoneType])
+            args = get_args(field_type)
+            non_none_types = [arg for arg in args if arg is not type(None)]
+            if len(non_none_types) == 1:
+                arg_type = non_none_types[0]
+            else:
+                # If multiple non-None types, default to str or handle accordingly
+                arg_type = str
         else:
-            parser.add_argument(f"--{field}", default=default_value, help=f"{field} (default: {default_value})")
+            arg_type = field_type
+
+        # Map Python types to argparse argument types
+        if arg_type == int:
+            parser.add_argument(f"--{field}", type=int, default=default_value, help=f"{field} (default: {default_value})")
+        elif arg_type == float:
+            parser.add_argument(f"--{field}", type=float, default=default_value, help=f"{field} (default: {default_value})")
+        elif arg_type == str:
+            parser.add_argument(f"--{field}", type=str, default=default_value, help=f"{field} (default: {default_value})")
+        elif arg_type == bool:
+            # For booleans, use appropriate action
+            if default_value is True:
+                parser.add_argument(f"--{field}", action='store_false', help=f"{field} (default: {default_value})")
+            else:
+                parser.add_argument(f"--{field}", action='store_true', help=f"{field} (default: {default_value})")
+        else:
+            # For other or unknown types, default to str
+            parser.add_argument(f"--{field}", type=str, default=default_value, help=f"{field} (default: {default_value})")
 
     return parser
 
