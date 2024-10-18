@@ -409,6 +409,11 @@ def main():
 
     # Create the SolverParams instance with only the required fields
     model_params = ModelParams(**model_params_dict)
+
+    print("Model Parameters:")
+    for key, value in model_params._asdict().items():
+        print(f"\t{key}: {value}")
+
     model_path = args.mp
     tasks_path = args.tp
     solutions_path = args.sp
