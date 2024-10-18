@@ -24,7 +24,7 @@ class REPLConfig:
     n_embd: int # embedding dimension
     n_head: int # number of heads within each self-attention block
     n_layer: int = 1 # number of transformer blocks / layers
-    pnorm: Optional[float] = None
+    pnorm: bool = False # Whether to enforce 1 norm on all the embeddings
     dropout: float = 0.0 # dropout probability
     grid_vocab_size: int = len(GridTokenizer()) # number of array element tokens (one extra for niceness)
     perm_vocab_size: int = len(ColorPermutationTokenizer())
@@ -40,9 +40,6 @@ class REPLConfig:
     def __post_init__(self):
         if self.n_dim % self.n_head != 0:
             raise ValueError("n_dim must be divisible by n_head")
-        
-        if self.pnorm is not None:
-            assert 0.0 < self.pnorm, "p-norm must be greater than 0"
         
         head_dim = self.n_dim // self.n_head
         assert head_dim % 2 == 0, "Head dimension must be even"
@@ -455,7 +452,7 @@ class REPL(nn.Module):
         self.init_embedding()
 
     def init_embedding(self):
-        if self.pnorm is not None:
+        if self.pnorm:
             """Initialize prog embedding vectors with the target L2 norm."""
             with torch.no_grad():
                 for m in self.modules():
@@ -931,20 +928,23 @@ class REPL(nn.Module):
         if model_lr == 0:
             assert prog_lr > 0, "Program learning rate must be greater than 0"
             self.fine_tune_mode(enable_lora=True if self.config.lora_r > 0 else False)
+            # The Lora Params will be treated as model params with model LR without norm restrictions
+            model_lr = prog_lr  
 
-        program_param_keys = ['pte.0.weight', 'lm_head.A', 'lm_head.B']
+        program_param_keys = ['pte.0.weight']
+        embedding_param_keys = ['cte.0.weight', 'ate.0.weight', 'gte.0.weight']
+        non_model_param_keys = program_param_keys + embedding_param_keys
 
         # Separate the embedding parameters
         program_params = [p for n, p in self.named_parameters() if n in program_param_keys and p.requires_grad]
-        model_params = [p for n, p in self.named_parameters() if n not in program_param_keys and p.requires_grad]
+        embedding_params = [p for n, p in self.named_parameters() if n in embedding_param_keys and p.requires_grad]
+        model_params = [p for n, p in self.named_parameters() if n not in non_model_param_keys and p.requires_grad]
 
         if self.config.lora_r > 0:
-            assert len(program_params) == 3, "Program parameters must be 3"
+            assert len(program_params) == 1, "Program parameters must be 3"
+            assert len(model_params) == 2, "Model parameters must be 2 for LORA"
         else:
             assert len(program_params) == 1, "Program parameters must be 1"
-
-        if model_lr == 0:
-            assert len(model_params) == 0, "When model_lr == 0, there shouldn't be any model params to train!"
 
         # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
         # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
@@ -954,15 +954,27 @@ class REPL(nn.Module):
             {'params': program_params,
                 'lr': prog_lr,
                 'weight_decay': prog_wd,
-                'l1_coeff': prog_l1},
+                'l1_coeff': prog_l1,
+                'min_norm': 0.9 if self.config.pnorm else None,
+                'max_norm': 1.1 if self.config.pnorm else None
+            },
+            {'params': embedding_params,
+                'lr': model_lr,
+                'weight_decay': prog_wd,
+                'l1_coeff': 0.0,
+                'min_norm': 0.9 if self.config.pnorm else None,
+                'max_norm': 1.1 if self.config.pnorm else None,
+            },
             {'params': decay_params,
                 'lr': model_lr,
                 'weight_decay': model_wd,
-                'l1_coeff': 0.0},
+                'l1_coeff': 0.0
+            },
             {'params': nodecay_params,
                 'lr': model_lr,
                 'weight_decay': 0.0,
-                'l1_coeff': 0.0}]
+                'l1_coeff': 0.0
+            }]
         # Create AdamW optimizer and use the fused version if it is available
         use_fused = False
         if torch.cuda.is_available() and (device_type is None or device_type == 'cuda'):

@@ -59,26 +59,8 @@ class ArcTrainer(TrainerBase):
     def pre_train_step(self, batch):
         self.__train_batch_time_start = time.time()
 
-
     def post_optimizer_step(self):
-        if self.model.config.pnorm is not None:
-            target_norm = self.model.config.pnorm
-            with torch.no_grad():
-                prog_embedding = self.model.pte[0]
-                if prog_embedding.weight.grad is not None:
-                    grad = prog_embedding.weight.grad  # Dense gradient
-                    # Identify the embeddings that were updated (non-zero gradients)
-                    mask = grad.abs().sum(dim=1) != 0
-                    # indices = mask.nonzero(as_tuple=False).squeeze()
-                    indices = mask.nonzero(as_tuple=True)[0]  # Ensure indices is 1D
-
-
-                    if indices.numel() > 0:
-                        weights = prog_embedding.weight.data[indices]  # Get the updated embedding vectors
-                        # Normalize the L2 norm of each updated embedding vector
-                        norm = weights.norm(p=2, dim=1, keepdim=True)
-                        scaling_factor = target_norm / norm
-                        prog_embedding.weight.data[indices] = weights * scaling_factor  # Rescale the weights
+        pass 
 
     def pre_eval_step(self, batch):
         self.__eval_batch_time_start = time.time()

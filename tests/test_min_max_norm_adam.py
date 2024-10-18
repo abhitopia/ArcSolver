@@ -13,10 +13,23 @@ import torch.optim
 
 # Define the simple model
 class SimpleModel(nn.Module):
-    def __init__(self, vocab_size, embedding_dim, output_dim):
+    def __init__(self, vocab_size, embedding_dim, output_dim, pnorm=None):
         super(SimpleModel, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim, sparse=True)
         self.linear = nn.Linear(embedding_dim, output_dim)
+        self.pnorm = pnorm
+        self.init_embedding()
+
+    def init_embedding(self):
+        if self.pnorm is None:
+            return
+        with torch.no_grad():
+            for m in self.modules():
+                if isinstance(m, nn.Embedding):
+                    nn.init.normal_(m.weight)
+                    norm = m.weight.data.norm(p=2, dim=1, keepdim=True)
+                    m.weight.data.copy_(m.weight.data * (self.pnorm / norm))
+
 
     def forward(self, x):
         embedded = self.embedding(x)
@@ -26,14 +39,18 @@ class SimpleModel(nn.Module):
 
 # Hyperparameters
 vocab_size = 10
-embedding_dim = 50
+embedding_dim = 100
 output_dim = 1
 batch_size = 16
 sequence_length = 10
 
 # Instantiate the model
-model = SimpleModel(vocab_size, embedding_dim, output_dim)
+model = SimpleModel(vocab_size, embedding_dim, output_dim, pnorm=0.5)
+# list(model.modules())
+#%%
+print("Initial Embedding Norms", model.embedding.weight.norm(p=2, dim=1))
 
+#%%
 # Define optimizer with separate parameter groups
 optimizer = LazyAdamW(
     [
@@ -54,6 +71,9 @@ optimizer = LazyAdamW(
         },
     ]
 )
+
+
+
 
 criterion = nn.MSELoss()
 
