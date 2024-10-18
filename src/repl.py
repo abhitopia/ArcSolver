@@ -452,19 +452,19 @@ class REPL(nn.Module):
 
         # init params
         # self.apply(self._init_weights)
-        self.init_prog_embedding()
+        self.init_embedding()
 
-    def init_prog_embedding(self):
+    def init_embedding(self):
         if self.pnorm is not None:
             """Initialize prog embedding vectors with the target L2 norm."""
             with torch.no_grad():
-                # Initialize the embedding weights to random values
-                nn.init.normal_(self.pte[0].weight)
-                # Normalize each embedding vector to the target L2 norm
-                norm = self.pte[0].weight.norm(p=2, dim=1, keepdim=True)
-                self.pte[0].weight = nn.Parameter(self.pte[0].weight * (self.pnorm / norm))
-
-
+                for m in self.modules():
+                    if isinstance(m, nn.Embedding):
+                        # nn.init.normal_(m.weight)
+                        m.weight.uniform_(-0.1, 0.1)
+                        norm = m.weight.data.norm(p=2, dim=1, keepdim=True)
+                        m.weight.data.copy_(m.weight.data * (self.pnorm / norm))
+                        
     @torch.jit.export
     def get_pte_weight(self):
         return self.pte[0].weight
