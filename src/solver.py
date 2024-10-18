@@ -1,5 +1,4 @@
-from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 import torch
 from torch import Tensor
 import torch.nn as nn
@@ -19,10 +18,13 @@ class SolverParams(NamedTuple):
     wu: int = 1
     lrs: float = 0.5
     seed: int = 60065
-    mode: str = '60065'
-    confidence: float = 0.00001
+    confidence: Optional[float] = 0.00001
     metric: str = 'L'
     strategy: str = 'Rv1'
+    zero_init: bool = False # Whether to zero initialize the program embedding solution
+    mode: str = '60065'
+    predict: bool = True # Whether to return the solution or not, used in evaluation mode to save time
+    return_logs: bool = False
 
 
 class Solver(nn.Module):
@@ -52,12 +54,15 @@ class Solver(nn.Module):
         if self.verbose :
             print(f"{self.print_prefix}:\t{msg}")
 
-    def reset(self):
+    def reset(self, zero_init: bool = False):
         self.adam.reset()
         self.step = 0
         self.inner_step = 0
         self.model.get_pte_weight().data.copy_(self._init.data)
         self.solution.zero_()
+        if zero_init:
+            self.print("Zero Initialization")
+            self.model.get_pte_weight().data.zero_()
         self.min_loss = float('inf')
         self.bad_steps = 0
 
@@ -158,35 +163,22 @@ class Solver(nn.Module):
             }   
             return metrics
         
-    def log_stats(self, me: Dict[str, float], mt: Dict[str, float]) -> None:
-        if not self.model_updated():
-            return
-        
+    def log_stats(self, log: Dict[str, Union[float, int]]) -> None:
+
         if not self.verbose:
             return
-        
-        step: str = str(self.step)
-        step = ''.join([' ' for _ in range(max(0, 3 - len(step)))]) + step
-        
-        metrics: Dict[str, str] = {
-            'T': step,
-            'EL': format_float(me['L'], 4),
-            'EML': format_float(me['ML'], 4),
-            'ETA': format_float(me['TA'], 3),
-            'ESA': format_float(me['SA'], 2),
-            'MML': format_float(self.min_loss, 4),
-            'RS': str(self.patience - self.bad_steps),
-        }
-
-        if len(mt) > 0:
-            metrics['TL'] = format_float(mt['L'], 4)
-            metrics['TML'] = format_float(mt['ML'], 4)
-            metrics['TTE'] = format_float(mt['TA'], 3)
-            metrics['TSE'] = format_float(mt['SA'], 2)
 
         msg = ""
-        for k, v in metrics.items():
-            msg += f"{k}: {v} "
+        for k, v in log.items():
+            if isinstance(v, int):
+                msg += f"{k}: {v} "
+            elif isinstance(v, float):
+                if 'L' in k:
+                    msg += f"{k}: {format_float(v, 4)} "
+                elif 'TA' in k:
+                    msg += f"{k}: {format_float(v, 3)} "
+                elif 'SA':
+                    msg += f"{k}: {format_float(v, 2)} "
 
         self.print(msg)
         
@@ -202,7 +194,7 @@ class Solver(nn.Module):
         self.print(f"Params: {params}")
         self.print(f"Batch Size: {self.bs}")
         self.patience = params.patience
-        self.reset()
+        self.reset(zero_init=params.zero_init)
         device = str(self.model.get_pte_weight().device)
 
         if params.strategy == '1v1':
@@ -221,6 +213,8 @@ class Solver(nn.Module):
 
         lr_schedule = generate_lr_schedule(params.lr, params.wu, params.thinking, params.lrs)
 
+        logs = torch.jit.annotate(List[Dict[str, Union[float, int]]], [])
+
         self.print(f"Thinking...")
         while True:
             for idx in shuffled_indices(len(train_examples)):
@@ -233,7 +227,27 @@ class Solver(nn.Module):
                 me = self.evaluate(eval_examples)
                 self.update_solution(me, params.metric)
                 mt = self.evaluate(test_examples)
-                self.log_stats(me, mt)
+
+                if self.model_updated():
+                    log: Dict[str, Union[float, int]] = {
+                        'T': self.step,
+                        'EL': me['L'],
+                        'EML': me['ML'],
+                        'ETA': me['TA'],
+                        'ESA': me['SA'],
+                        'MEL': self.min_loss,
+                        'BS': self.bad_steps,
+                    }
+                    if len(mt) > 0:
+                        log['TL'] = mt['L']
+                        log['TML'] = mt['ML']
+                        log['TTE'] = mt['TA']
+                        log['TSE'] = mt['SA']
+
+                    if params.return_logs:
+                        logs.append(log)
+
+                    self.log_stats(log)
 
                 if self.step == params.thinking or self.bad_steps >= params.patience:
                     self.print(f"Bad Steps: {self.bad_steps}")
@@ -242,13 +256,16 @@ class Solver(nn.Module):
             if self.step == params.thinking or self.bad_steps >= params.patience:
                 break
 
-        preds, scores = self.predict(test_examples, params.confidence)
-        solution = TaskSolution(task.task_id, preds, scores)
+        if params.predict:
+            preds, scores = self.predict(test_examples, params.confidence)
+            solution = TaskSolution(task.task_id, preds, scores, logs)
+        else:
+            solution = TaskSolution(task.task_id, [], [], logs)
 
         return solution
 
 
-    def predict(self, test_examples: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]], confidence: float)-> Tuple[List[List[Tensor]], List[List[float]]]:
+    def predict(self, test_examples: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]], confidence: Optional[float])-> Tuple[List[List[Tensor]], List[List[float]]]:
         self.print("Generating predictions ...")
         # Load the best solution
         self.model.get_pte_weight().data.copy_(self.solution.data)
@@ -259,11 +276,16 @@ class Solver(nn.Module):
             x, y = example
             grid: List[int] = x.grid[0].tolist()
             indices: List[List[int]] = x.grid_indices[0].tolist()
-            # gp, gs = self.model.greedy_search(grid, indices)
-            # bps, bss = [gp], [gs]
-            bps, bss = self.model.beam_search(grid, 
+
+            if confidence is not None:
+                self.print("Using Beam Search")
+                bps, bss = self.model.beam_search(grid, 
                                               indices,
                                               prob_thresh=confidence)
+            else:
+                self.print("Using Greedy Search")
+                gp, gs = self.model.greedy_search(grid, indices)
+                bps, bss = [gp, gp], [gs, gs]
             
             self.print(f"Processed Test input: {eid + 1}")
             pred_tensors: List[Tensor] = []

@@ -83,10 +83,14 @@ class ModelParams(NamedTuple):
     wu: int = 1
     lrs: float = 0.5
     seed: int = 60065
-    mode: str = '60065'
-    confidence: float = 0.00001
+    confidence: Optional[float] = 0.00001
     metric: str = 'L'
     strategy: str = 'Rv1'
+    zero_init: bool = False # Whether to zero initialize the program embedding solution
+    mode: str = '60065'
+    predict: bool = True # Whether to return the solution or not, used in evaluation mode to save time
+    return_logs: bool = False
+
 
 def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None, sort_by_complexity=True) -> List[Task]:
     json_tasks = json.load(open(tasks_json_path, 'r'))
@@ -282,15 +286,15 @@ class SubmissionManager:
 
                 try:
                     # Get a result from the output queue with timeout
-                    result = self.output_queue.get(timeout=1)
-                    print(f"Main: Received result for {result.task_id}")
-                    if isinstance(result, Exception):
-                        print(f"Main: Error encountered in task: {result}")
+                    solution = self.output_queue.get(timeout=1)
+                    print(f"Main: Received result for {solution.task_id}")
+                    if isinstance(solution, Exception):
+                        print(f"Main: Error encountered in task: {solution}")
                     else:
                         # Process the result
-                        self.results[result.task_id] = result.to_dict()
+                        self.results[solution.task_id] = solution.to_dict()
                         json.dump(self.results, open(self.submission_path, 'w'), indent=2)
-                        print(f"Main: Saved Solution: Task {result.task_id}")
+                        print(f"Main: Saved Solution: Task {solution.task_id}")
                     num_processed += 1
                     pbar.update(1)
 

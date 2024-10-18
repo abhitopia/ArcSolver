@@ -1,6 +1,6 @@
 
 import math
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 import json
 from torch import Tensor
 import torch
@@ -27,6 +27,7 @@ class TaskSolution(NamedTuple):
     task_id: str
     predictions: List[List[Tensor]]
     scores: List[List[float]]
+    log: Optional[List[Dict[str, Union[float, int]]]] = None
 
 class MODEL_INPUT(NamedTuple):
     color_permutation: torch.Tensor
