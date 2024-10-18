@@ -17,6 +17,8 @@ class LazyAdamW(Optimizer):
         eps=1e-8,
         weight_decay=1e-2,
         l1_coeff=0.0,
+        min_norm=None,
+        max_norm=None,
         amsgrad=False,
         *,
         maximize: bool = False,
@@ -37,12 +39,21 @@ class LazyAdamW(Optimizer):
             raise ValueError(f"Invalid weight_decay value: {weight_decay}")
         if not 0.0 <= l1_coeff:
             raise ValueError("Invalid l1_coeff value: {}".format(l1_coeff))
+        if min_norm is not None and not 0.0 <= min_norm:
+            raise ValueError(f"Invalid min_norm value: {min_norm}")
+        if max_norm is not None and not 0.0 <= max_norm:
+            raise ValueError(f"Invalid max_norm value: {max_norm}")
+        if min_norm is not None and max_norm is not None and min_norm > max_norm:
+            raise ValueError(f"min_norm should be less than or equal to max_norm, got min_norm={min_norm} and max_norm={max_norm}")
+        
         defaults = dict(
             lr=lr,
             betas=betas,
             eps=eps,
             weight_decay=weight_decay,
             l1_coeff=l1_coeff,
+            min_norm=min_norm,
+            max_norm=max_norm,
             amsgrad=amsgrad,
             foreach=foreach,
             maximize=maximize,
@@ -179,6 +190,64 @@ class LazyAdamW(Optimizer):
 
             state_steps.append(state["step"])
 
+
+    def _apply_norm_constraints(self, group):
+        # Apply min_norm and max_norm weight correction
+        with torch.no_grad():
+            min_norm = group.get('min_norm', None)
+            max_norm = group.get('max_norm', None)
+            if min_norm is not None or max_norm is not None:
+                for p in group['params']:
+                    if p.grad is None:
+                        continue
+
+                    assert p.dim() == 2, "Weight norm correction is only supported for 2D parameters"
+                    if p.grad.is_sparse:
+                        # For sparse parameters, adjust only the accessed embeddings
+                        p.grad = p.grad.coalesce()
+                        indices = p.grad.indices()[0]  # Get indices as a 1D tensor
+                        param_vectors = p.data[indices]
+                        param_norms = param_vectors.norm(p=2, dim=1)
+                        desired_norms = param_norms.clone()
+                        if min_norm is not None:
+                            desired_norms = torch.max(desired_norms, torch.full_like(desired_norms, min_norm))
+                        if max_norm is not None:
+                            desired_norms = torch.min(desired_norms, torch.full_like(desired_norms, max_norm))
+                        scales = desired_norms / (param_norms + 1e-7)
+                        p.data[indices] = param_vectors * scales.unsqueeze(1)
+                    else:
+                        # For dense parameters, adjust the entire parameter tensor
+                        param_norms = p.data.norm(p=2, dim=1, keepdim=True)
+                        desired_norms = param_norms.clone()
+                    
+                        desired_norms = torch.clamp(param_norms, min=min_norm, max=max_norm)
+                        scales = desired_norms / (param_norms + 1e-7)
+                        p.data = p.data * scales
+
+    def _apply_l1_reg(self, group):
+        # Apply L1 regularization **after** the AdamW or Sparse Adam updates
+        l1_coeff = group['l1_coeff']
+        if l1_coeff == 0:
+            return
+
+        for p in group['params']:
+            if p.grad is None:
+                continue
+            if p.grad.is_sparse:
+                p.grad = p.grad.coalesce()  # Ensure the sparse gradient is coalesced
+                grad_indices = p.grad.indices()
+
+                # Apply L1 regularization to sparse parameters (only for accessed embeddings)
+                for i in range(grad_indices.size(1)):
+                    index = grad_indices[0, i]
+                    p.data[index] -= l1_coeff * torch.sign(p.data[index])
+
+            else:
+                # Apply L1 regularization to dense parameters (all parameters)
+                p.data -= l1_coeff * torch.sign(p.data)
+
+
+
     @_use_grad_for_differentiable
     def step(self, closure=None):
         """Performs a single optimization step.
@@ -267,24 +336,11 @@ class LazyAdamW(Optimizer):
                     maximize=False,
                 )
 
-            # Apply L1 regularization **after** the AdamW or Sparse Adam updates
-            l1_coeff = group['l1_coeff']
-            if l1_coeff == 0:
-                continue
+            # Apply L1 regularization
+            self._apply_l1_reg(group)
 
-            for p in group['params']:
-                if p.grad.is_sparse:
-                    p.grad = p.grad.coalesce()  # Ensure the sparse gradient is coalesced
-                    grad_indices = p.grad.indices()
-
-                    # Apply L1 regularization to sparse parameters (only for accessed embeddings)
-                    for i in range(grad_indices.size(1)):
-                        index = grad_indices[0, i]
-                        p.data[index] -= l1_coeff * torch.sign(p.data[index])
-
-                else:
-                    # Apply L1 regularization to dense parameters (all parameters)
-                    p.data -= l1_coeff * torch.sign(p.data)
+            # Renorm the embeddings to be within a range of min_norm and max_norm
+            self._apply_norm_constraints(group)
 
         return loss
 
