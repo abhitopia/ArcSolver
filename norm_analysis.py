@@ -1,7 +1,7 @@
 #%%
 # ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v8/D512E64H8L4I4.ftw6/ckt_240000_35.545.pth'
-ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v8/D256E64H8L4I4PN.v1/ckt_188000_37.940.pth'
 #%%
+from matplotlib import pyplot as plt
 from torch import nn
 from torch.nn import functional as F
 import torch
@@ -11,6 +11,8 @@ from src.task import ARC_SYNTH, ARC_TRAIN, ARC_EVAL
 from src.dataset import ArcExamplesDataset
 # %%
 ## Load model
+ckt_path = '/Users/abhishekaggarwal/synced_repos/ArcSolver/models/v9/D512E128H16B5I3.v1/ckt_281000_52.168.pth'
+
 data = torch.load(ckt_path, map_location='cpu', weights_only=False)
 model_config = REPLConfig.from_dict(data['model_config'])
 model_config.lora_r = 1
@@ -26,26 +28,14 @@ for name, param in model.named_parameters():
     print(f'{name}: {norm.item()}')
 
 # %%
-model.get_optimizer(0.0, 0.1, 0.1, 0.1)
-
 # Take 2-Norm of each embedding
+embd = model.pte
 
-torch.norm(model.ate[0].weight, dim=1, p=2)
-# %%
-torch.norm(model.type_emb.weight, dim=1, p=2)
+emdb_weight = embd[0].weight
+embd_proj_weight = embd[1].weight
 
-
-# %%
-model.pte[0].weight.size(), model.pte[1].weight.size()
-# %%
-## Multiple pte[0] with pte[1]
-torch.norm(model.pte[0].weight @ model.pte[1].weight.T, dim=1, p=2)
-
-# %%
-torch.norm(model.ate[0].weight @ model.ate[1].weight.T, dim=1, p=2).mean()
-
-# %%
-torch.norm(model.cte[0].weight @ model.cte[1].weight.T, dim=1, p=2).mean()
-# %%
-(model.pte[0].weight @ model.pte[1].weight.T).norm(dim=1, p=2).mean()
+projected_weight = torch.matmul( emdb_weight, embd_proj_weight.T )
+print(projected_weight.shape)
+plt.hist(projected_weight.norm(dim=1).detach().numpy(), bins=100)
+# torch.norm(model.ate[0].weight, dim=1, p=2)
 # %%

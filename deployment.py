@@ -18,7 +18,7 @@ warnings.filterwarnings(
 torch.manual_seed(42)
 # base_path = Path('/Users/abhishekaggarwal/synced_repos/ArcSolver/')
 base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.v1/'
-ckt_path = base_path / 'ckt_162000_39.205.pth'
+ckt_path = base_path / 'ckt_281000_52.168.pth'
 
 # base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.ft/'
 # ckt_path = base_path / 'ckt_74739_34.615.pth'

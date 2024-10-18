@@ -719,7 +719,6 @@ class REPL(nn.Module):
         input_grid: List[int],
         input_indices: List[List[int]],
         top_k: int = 5,
-        prob_thresh: float = 0.001,  # Finish when the probability of the top beam is below this threshold
         prog_idx: int = 0,
         color_perm_idx: int = 0,
         array_tform_idx: int = 0,
@@ -730,7 +729,7 @@ class REPL(nn.Module):
         max_grid_width: int = 35)-> Tuple[List[List[int]], List[float]]:
     
         # Compute log_prob_threshold from prob_threshold
-        log_prob_thresh = -float('inf') if prob_thresh == 0.0 else math.log(prob_thresh) 
+        # log_prob_thresh = -float('inf') if prob_thresh == 0.0 else math.log(prob_thresh) 
 
         # Assume prog_idx and inp_idx are lists of integers
         # Batch size is 1
@@ -776,6 +775,7 @@ class REPL(nn.Module):
 
         candidate_sequences: List[List[int]] = []  # Separate list for sequences
         candidate_log_probs: List[float] = []  # Separate list for log probabilities
+        min_candidate_log_prob = float('inf')
 
         for t in range(max_length):
             # # if torch.cuda.is_available():
@@ -847,6 +847,7 @@ class REPL(nn.Module):
             for seq, log_prob in zip(completed_sequences, completed_log_probs):
                 seq_list: List[int] = seq.tolist()
                 log_prob: float = float(log_prob.item())
+                min_candidate_log_prob = min(min_candidate_log_prob, log_prob)
                 candidate_sequences.append(seq_list)
                 candidate_log_probs.append(log_prob)
 
@@ -858,7 +859,9 @@ class REPL(nn.Module):
             if output_sequence.size(0) == 0:
                 break
 
-            if torch.all(output_log_probs.sum(dim=-1) < log_prob_thresh):
+            # Basically break if top_k candidates sequences and any new sequence won't have a chance to be in top_k
+            if len(candidate_sequences) >= top_k and torch.all(output_log_probs.sum(dim=-1) < min_candidate_log_prob):
+                print("Breaking early because new sequences won't be better")
                 break
 
             # If not, then prepare the next input

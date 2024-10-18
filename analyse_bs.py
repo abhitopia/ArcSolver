@@ -25,12 +25,11 @@ tasks = load_tasks(tasks_path, solution_path)
 # %%
 from matplotlib import pyplot as plt
 import numpy as np
-TRY_HARD = False
-BTC = 16000
-# BTC = 8000
+TRY_HARD = True
+# BTC = 16000
+BTC = 8000
 min_bs = 4
 max_bs = 16
-
 bss = []
 ttc = []
 for task in tasks:
@@ -48,7 +47,9 @@ weights = np.ones_like(bss)/float(len(bss))
 
 plt.hist(bss, weights=weights, bins=20)
 plt.show()
-plt.plot(ttc, bss, 'o')
+plt.plot(ttc, bss, '.')
 # %%
 np.mean(ttc)
+# %%
+11*3600+45*60, 11.75*3600
 # %%

@@ -18,13 +18,13 @@ class SolverParams(NamedTuple):
     wu: int = 1
     lrs: float = 0.5
     seed: int = 60065
-    confidence: Optional[float] = 0.00001
     metric: str = 'L'
     strategy: str = 'Rv1'
     zero_init: bool = False # Whether to zero initialize the program embedding solution
     mode: str = '60065'
     predict: bool = True # Whether to return the solution or not, used in evaluation mode to save time
     return_logs: bool = False
+    top_k: int = 5
 
 
 class Solver(nn.Module):
@@ -257,7 +257,7 @@ class Solver(nn.Module):
                 break
 
         if params.predict:
-            preds, scores = self.predict(test_examples, params.confidence)
+            preds, scores = self.predict(test_examples, params.top_k)
             solution = TaskSolution(task.task_id, preds, scores, logs)
         else:
             solution = TaskSolution(task.task_id, [], [], logs)
@@ -265,7 +265,7 @@ class Solver(nn.Module):
         return solution
 
 
-    def predict(self, test_examples: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]], confidence: Optional[float])-> Tuple[List[List[Tensor]], List[List[float]]]:
+    def predict(self, test_examples: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]], top_k: Optional[int])-> Tuple[List[List[Tensor]], List[List[float]]]:
         self.print("Generating predictions ...")
         # Load the best solution
         self.model.get_pte_weight().data.copy_(self.solution.data)
@@ -277,11 +277,11 @@ class Solver(nn.Module):
             grid: List[int] = x.grid[0].tolist()
             indices: List[List[int]] = x.grid_indices[0].tolist()
 
-            if confidence is not None:
+            if top_k is not None:
                 self.print("Using Beam Search")
                 bps, bss = self.model.beam_search(grid, 
                                               indices,
-                                              prob_thresh=confidence)
+                                              top_k=top_k)
             else:
                 self.print("Using Greedy Search")
                 gp, gs = self.model.greedy_search(grid, indices)

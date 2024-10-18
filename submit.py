@@ -92,13 +92,13 @@ class ModelParams(NamedTuple):
     wu: int = 1
     lrs: float = 0.5
     seed: int = 60065
-    confidence: Optional[float] = 0.00001
     metric: str = 'L'
     strategy: str = 'Rv1'
     zero_init: bool = False # Whether to zero initialize the program embedding solution
     mode: str = '60065'
     predict: bool = True # Whether to return the solution or not, used in evaluation mode to save time
     return_logs: bool = False
+    top_k: int = 5
 
 
 def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None, sort_by_complexity=True) -> List[Task]:
