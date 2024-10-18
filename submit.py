@@ -1,13 +1,12 @@
 import argparse
 import json
 from pathlib import Path
+import random
 import time
-from typing import List, NamedTuple, Optional, get_type_hints
+from typing import Dict, List, NamedTuple, Optional, Union, get_type_hints
 import torch
 import torch.jit
-import os
-import threading
-from queue import Queue, Empty
+from queue import Empty
 from tqdm import tqdm
 import warnings
 from torch import Tensor
@@ -24,6 +23,12 @@ warnings.filterwarnings(
 
 warnings.filterwarnings("ignore", category=UserWarning, message=r".*resource_tracker:.*")
 
+
+def deterministic_shuffle_local(N, seed=42):
+    numbers = list(range(N))
+    rng = random.Random(seed)
+    rng.shuffle(numbers)
+    return numbers
 
 def drain_queue(queue):
     """Drains the queue by retrieving and discarding all items."""
@@ -63,6 +68,8 @@ class TaskSolution(NamedTuple):
     task_id: str
     predictions: List[List[Tensor]]
     scores: List[List[float]]
+    log: Optional[List[Dict[str, Union[float, int]]]] = None
+
 
     def to_dict(self):
         result = []
@@ -181,7 +188,7 @@ class Worker(mp.Process):
                     # Run the task
                     # result = self.run_task(task)
                     solution = self.model.forward(task, self.model_params)
-                    result = TaskSolution(solution[0], solution[1], solution[2])
+                    result = TaskSolution(solution[0], solution[1], solution[2], solution[3])
 
                     # Task processing is done, mark the task as complete
                     self.input_queue.task_done()
@@ -217,8 +224,13 @@ class SubmissionManager:
         self.output_queue = mp.Queue()
         self.workers = []
         self.results = None
+        self.solutions = {}
         self.num_inputs = 0
         self.start_time = time.time()  # Track the start time
+
+        submission_file_name = Path(submission_path).name
+        self.solutions_path = Path(submission_path).parent / f"{submission_file_name}_solutions.pkl"
+        self.save_solutions = model_params.return_logs
     
     def start_workers(self):
         """Starts the worker processes."""
@@ -293,7 +305,12 @@ class SubmissionManager:
                     else:
                         # Process the result
                         self.results[solution.task_id] = solution.to_dict()
+                        self.solutions[solution.task_id] = solution
                         json.dump(self.results, open(self.submission_path, 'w'), indent=2)
+
+                        if self.save_solutions:
+                            torch.save(self.solutions, self.solutions_path)
+        
                         print(f"Main: Saved Solution: Task {solution.task_id}")
                     num_processed += 1
                     pbar.update(1)
@@ -346,6 +363,8 @@ def parse_arguments():
     parser.add_argument('--op', type=str, default='/kaggle/working/submission.json',
                         help='Path to save the output results.')
     parser.add_argument('--tl', type=int, default=int(11.75*3600), help=f'Time limit in seconds for processing tasks. {11.75} hours is the default limit.')
+
+    parser.add_argument('--nt', type=int, default=-1, help='Number of randomly chosen tasks')
     
     # Model Arguments
     parser = parse_args_from_namedtuple(ModelParams, parser)
@@ -373,7 +392,13 @@ def main():
         assert Path(solutions_path).exists(), f"Solutions file not found: {solutions_path}"
     
     tasks = load_tasks(tasks_json_path=tasks_path, solution_path=solutions_path, sort_by_complexity=True)
-    print(f"Number of Tasks: {len(tasks)}")
+
+    if args.nt > 0:
+        chosen_indices = deterministic_shuffle_local(len(tasks), seed=42)[:args.nt]
+        tasks = [tasks[i] for i in chosen_indices]
+        print(f"Randomly selected {args.nt} tasks")
+    else:
+        print(f"Number of Tasks: {len(tasks)}")
 
     checksum = checksum_json_file(tasks_path)
     if checksum == 'f346f614a275b133f1a88044ae38468d':
