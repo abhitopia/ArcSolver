@@ -77,8 +77,8 @@ def train(
         plt_warmup: int = typer.Option(0, min=0, help="Warm up in number of updates before Pleateau Scheduler starts tracking Plateau metric"),
 
         # Regularisation/ Weight Decay Config
-        mwd: float = typer.Option(0.1, min=0.0, help="Weight Decay"),
-        pwd: float = typer.Option(0.1, min=0.0, help="Program Weight Decay"),
+        mwd: float = typer.Option(0.5, min=0.0, help="Weight Decay"),
+        pwd: float = typer.Option(0.0, min=0.0, help="Program Weight Decay"),
         pl1: Optional[float] = typer.Option(0.0, min=0.0, help="Program L1 Regularization"),
         dropout: float = typer.Option(0.0, min=0.0, max=1.0, help="Dropout probability"),
 

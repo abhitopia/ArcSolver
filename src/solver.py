@@ -44,7 +44,8 @@ class Solver(nn.Module):
         self._init = torch.zeros_like(pte, requires_grad=False)
         self._init.data.copy_(pte.data)
         self.solution = torch.zeros_like(pte, requires_grad=False)
-        self.min_loss = float('inf')
+        self.solution.data.copy_(pte.data)
+        self.min_metric = float('inf')
         self.bad_steps = 0
         self.patience = -1
         self.bs = 5
@@ -60,11 +61,12 @@ class Solver(nn.Module):
         self.step = 0
         self.inner_step = 0
         self.model.get_pte_weight().data.copy_(self._init.data)
-        self.solution.zero_()
+        self.solution.data.copy_(self._init.data)
         if zero_init:
             self.print("Zero Initialization")
             self.model.get_pte_weight().data.zero_()
-        self.min_loss = float('inf')
+            self.solution.data.zero_()
+        self.min_metric = float('inf')
         self.bad_steps = 0
 
     def model_updated(self) -> bool:
@@ -74,9 +76,12 @@ class Solver(nn.Module):
         if not self.model_updated():
             return
         
-        loss = me[metric]
-        if loss < self.min_loss:
-            self.min_loss = loss
+        # The collapser is already applied, so zeroth element is the mean embedding
+        metric = me[metric]
+
+        # self.print(f"Metric: {metric}")
+        if metric < self.min_metric:
+            self.min_metric = metric
             self.solution.data.copy_(self.model.get_pte_weight().data)
             self.bad_steps = 0
         else:
@@ -156,11 +161,13 @@ class Solver(nn.Module):
             sample_accuracy = total_correct_samples / len(examples)
             token_accuracy = total_correct_tokens / total_tokens
 
+            norm = float(self.solution.data[0].norm(p=2).item())
             metrics: Dict[str, float] = {
                 'L': avg_loss,
                 'ML': max_loss,
                 'TA': token_accuracy,
                 'SA': sample_accuracy,
+                'NL': norm * avg_loss
             }   
             return metrics
         
@@ -198,6 +205,12 @@ class Solver(nn.Module):
         self.reset(zero_init=params.zero_init)
         device = str(self.model.get_pte_weight().device)
 
+        if params.metric == 'NL':
+            assert not params.zero_init, "Cannot use NL metric with zero initialization"
+
+        assert params.metric in ['L', 'NL'], "Invalid metric"
+        assert params.strategy in ['Rv1', '1vR', '1v1'], "Invalid strategy"
+
         if params.strategy == '1v1':
             self.num_programs = 0
             train_examples, eval_examples, test_examples = split_task(task, device=device)
@@ -233,17 +246,20 @@ class Solver(nn.Module):
                     log: Dict[str, Union[float, int]] = {
                         'T': self.step,
                         'EL': me['L'],
-                        'EML': me['ML'],
+                        'ENL': me['NL'],
                         'ETA': me['TA'],
                         'ESA': me['SA'],
-                        'MEL': self.min_loss,
+                        'MEL': self.min_metric,
                         'BS': self.bad_steps,
+                        'PN': float(self.solution.data[0].norm().item()),
+                        # 'EML': me['ML'],
                     }
                     if len(mt) > 0:
                         log['TL'] = mt['L']
-                        log['TML'] = mt['ML']
+                        # log['TNL'] = mt['NL']
                         log['TTE'] = mt['TA']
                         log['TSE'] = mt['SA']
+                        # log['TML'] = mt['ML']
 
                     if params.return_logs:
                         logs.append(log)

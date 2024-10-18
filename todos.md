@@ -4,9 +4,25 @@
 - [x] Make the ArcTrainer work again now that progressive loss is removed
 - [x] Separate out Learning Rate Metric and Checkpoint metric
     - Made it such that target metric track validation metric (either ARC_TRAIN/ARC_EVAL) and plateau metric track the train SampleAcc(%)
+- [x] Implement Max-Norm Regularisation https://github.com/mehhl/maxnorm
+- [x] Train a model with max-norm regularization
+
+
+# Model Improvements 
+- [x] Add num_beams and max_solutions to the beam search
+
 
 # Submission Experiments
 - [x] Increase batch size and resubmit 1v1
+- [x] Show norms in the logs, and see if there is a correlation.
+- [ ] Try out NL metric
+- [ ] bias beam search results based on output length
+- [ ] Remove the confidence, as that can be very low for the long outputs.
+- [ ] Analyse solution norms (Log it, and may be remove MML)
+- [ ] Allow for Zero Initialisation
+- [ ] Set up experiments on the training/eval set
+- [ ] Use a metric which maximized accuracy while also maximising the loss for the best solution (or norm)
+- [ ] Make augmentation faster by fork/wait jit
 - [ ] Implement Auto LR scheduler/scaler based on Eval Loss
 - [ ] Submit The new model with one of the same configs
 
