@@ -98,7 +98,8 @@ class ModelParams(NamedTuple):
     mode: str = '60065'
     predict: bool = True # Whether to return the solution or not, used in evaluation mode to save time
     return_logs: bool = False
-    top_k: int = 5
+    top_k: Optional[int] = 3
+    num_beams: int = 9
 
 
 def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None, sort_by_complexity=True) -> List[Task]:
@@ -188,8 +189,12 @@ class Worker(mp.Process):
                 print(f"Worker {self.worker_id} ({task.task_id}): Started")
 
                 try:
+
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize() # wait for the GPU to finish work
+                        torch.cuda.empty_cache()
+
                     # Run the task
-                    # result = self.run_task(task)
                     solution = self.model.forward(task, self.model_params)
                     result = TaskSolution(solution[0], solution[1], solution[2], solution[3])
 

@@ -718,7 +718,10 @@ class REPL(nn.Module):
     def beam_search(self, 
         input_grid: List[int],
         input_indices: List[List[int]],
-        top_k: int = 5,
+        top_k: int = 3,
+        num_beams: int = 9,
+        max_candidates: int = 9,
+        sample: bool = False,
         prog_idx: int = 0,
         color_perm_idx: int = 0,
         array_tform_idx: int = 0,
@@ -801,18 +804,17 @@ class REPL(nn.Module):
             next_logits = logits[:, -1, :]  # Shape: (1, vocab_size)
             log_probs = F.log_softmax(next_logits, dim=-1)  # Shape: (1, vocab_size)
 
-            # Convert log probabilities to probabilities for sampling
-            probs = torch.exp(log_probs)
-
-            sample_k_tokens = torch.multinomial(probs, top_k, replacement=False)
-            # Gather the log probabilities of the sampled tokens for each sequence
-            batch_indices = torch.arange(log_probs.size(0)).unsqueeze(-1).expand(-1, top_k)
-            sample_log_probs = log_probs[batch_indices, sample_k_tokens]
-
-            # Get top top_k tokens and their log probabilities
-            # topk_log_probs, topk_tokens = log_probs.topk(top_k, dim=-1)  # Each is (1, beam_width)
-
-            topk_log_probs, topk_tokens = sample_log_probs, sample_k_tokens
+            if sample:
+                # Convert log probabilities to probabilities for sampling
+                probs = torch.exp(log_probs)
+                sample_k_tokens = torch.multinomial(probs, top_k, replacement=False)
+                # Gather the log probabilities of the sampled tokens for each sequence
+                batch_indices = torch.arange(log_probs.size(0)).unsqueeze(-1).expand(-1, top_k)
+                sample_log_probs = log_probs[batch_indices, sample_k_tokens]
+                topk_log_probs, topk_tokens = sample_log_probs, sample_k_tokens
+            else:
+                # Get top top_k tokens and their log probabilities
+                topk_log_probs, topk_tokens = log_probs.topk(top_k, dim=-1)  # Each is (1, beam_width)
 
             # Expand the sequences and log_probs
             output_sequence = output_sequence.unsqueeze(1).expand(bs, top_k, seq_len)  # Shape: (bs,  top_k, seq_len)
@@ -829,13 +831,13 @@ class REPL(nn.Module):
 
             sorted_log_probs, sorted_indices = output_log_probs.sum(dim=-1).sort(descending=True)  # Shape: (top_k^2,)
 
-            # Select the top top_k sequences
-            topk_indices = sorted_indices[:top_k]  # Shape: (top_k,)
-            original_indices = topk_indices // top_k  # Shape: (top_k,)
+            # Select the top num_beams sequences
+            top_numbeams_indices = sorted_indices[:num_beams]  # Shape: (num_beams,)
+            original_indices = top_numbeams_indices // top_k  # Shape: (num_beams,)
 
             # Update the output sequence and log_probs
-            output_sequence = output_sequence[topk_indices]
-            output_log_probs = output_log_probs[topk_indices]
+            output_sequence = output_sequence[top_numbeams_indices]
+            output_log_probs = output_log_probs[top_numbeams_indices]
 
             mask_ends_eos = output_sequence[:, -1] == eos_idx
 
@@ -860,8 +862,7 @@ class REPL(nn.Module):
                 break
 
             # Basically break if top_k candidates sequences and any new sequence won't have a chance to be in top_k
-            if len(candidate_sequences) >= top_k and torch.all(output_log_probs.sum(dim=-1) < min_candidate_log_prob):
-                print("Breaking early because new sequences won't be better")
+            if len(candidate_sequences) >= max_candidates and torch.all(output_log_probs.sum(dim=-1) < min_candidate_log_prob):
                 break
 
             # If not, then prepare the next input

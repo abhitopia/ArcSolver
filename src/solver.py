@@ -24,7 +24,8 @@ class SolverParams(NamedTuple):
     mode: str = '60065'
     predict: bool = True # Whether to return the solution or not, used in evaluation mode to save time
     return_logs: bool = False
-    top_k: int = 5
+    top_k: int = 3
+    num_beams: int = 9
 
 
 class Solver(nn.Module):
@@ -257,7 +258,7 @@ class Solver(nn.Module):
                 break
 
         if params.predict:
-            preds, scores = self.predict(test_examples, params.top_k)
+            preds, scores = self.predict(test_examples, params)
             solution = TaskSolution(task.task_id, preds, scores, logs)
         else:
             solution = TaskSolution(task.task_id, [], [], logs)
@@ -265,7 +266,7 @@ class Solver(nn.Module):
         return solution
 
 
-    def predict(self, test_examples: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]], top_k: Optional[int])-> Tuple[List[List[Tensor]], List[List[float]]]:
+    def predict(self, test_examples: List[Tuple[MODEL_INPUT, Optional[MODEL_OUTPUT]]], params: SolverParams)-> Tuple[List[List[Tensor]], List[List[float]]]:
         self.print("Generating predictions ...")
         # Load the best solution
         self.model.get_pte_weight().data.copy_(self.solution.data)
@@ -277,11 +278,13 @@ class Solver(nn.Module):
             grid: List[int] = x.grid[0].tolist()
             indices: List[List[int]] = x.grid_indices[0].tolist()
 
-            if top_k is not None:
+            if params.num_beams > 1:
                 self.print("Using Beam Search")
                 bps, bss = self.model.beam_search(grid, 
                                               indices,
-                                              top_k=top_k)
+                                              top_k=params.top_k,
+                                              num_beams=params.num_beams,
+                                              max_candidates=params.num_beams)
             else:
                 self.print("Using Greedy Search")
                 gp, gs = self.model.greedy_search(grid, indices)

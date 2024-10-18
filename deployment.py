@@ -70,11 +70,12 @@ params = SolverParams(
     wu=1,
     seed=42,
     mode='vbs',
-    confidence=0.000001,
     metric='L',
     strategy='Rv1',
     zero_init=True,
     predict=True,
+    top_k=3,
+    num_beams=9,
     return_logs=True
 )
 
@@ -84,7 +85,7 @@ solution = solver(
         params=params)
 
 # %%
-solution.log
+# solution.log
 
 # %%
 # Solves tasks[0] of partial_solved
