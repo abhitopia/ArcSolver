@@ -276,11 +276,11 @@ def fork(
         max_train_pp: Optional[int] = typer.Option(None, help="Maximum number of Train Examples Per Program"),
         min_test_pp: Optional[int] = typer.Option(None, help="Minimum number of Test Examples Per Program"),
         max_test_pp: Optional[int] = typer.Option(None, help="Maximum number of Test Examples Per Program"),
-        include_train: bool = typer.Option(True, help="Include training data for training"),
-        include_aux: bool = typer.Option(True, help="Include auxiliary data for training"),
-        include_eval: bool = typer.Option(True, help="Include evaluation data for training"),
-        include_inv: bool = typer.Option(False, help="Include inverse data for training"),
-        permute: bool = typer.Option(False, help="Permute the training set for each batch"),
+        include_train: Optional[bool] = typer.Option(None, help="Include training data for training"),
+        include_aux: Optional[bool] = typer.Option(None, help="Include auxiliary data for training"),
+        include_eval: Optional[bool] = typer.Option(None, help="Include evaluation data for training"),
+        include_inv: Optional[bool] = typer.Option(None, help="Include inverse data for training"),
+        permute: Optional[bool] = typer.Option(None, help="Permute the training set for each batch"),
 
         # Misc Config
         eval_int: Optional[int] = typer.Option(None, help="Number of steps between evaluations. None means evaluation at the end of each epoch"),
@@ -313,7 +313,6 @@ def fork(
 
     }
 
-    assert include_eval or include_train, "At least one of include_eval or include_train must be True"
 
     data_config = {
         'include_train': include_train,
@@ -370,6 +369,9 @@ def fork(
     override_hparams(hparams.data, data_config)
     override_hparams(hparams.model, model_config)
     override_hparams(hparams.optim, optimizer_config)
+
+    assert hparams.data.include_eval or hparams.data.include_train, "At least one of include_eval or include_train must be True"
+
 
     assert n_steps >= hparams.optim.lr_warmup_steps + hparams.optim.lr_decay_steps, f"Number of steps {n_steps} must be greater than warmup steps {hparams.optim.lr_warmup_steps} + decay steps {hparams.optim.lr_decay_steps}"
     if hparams.optim.lr_min_scale == 0.0:
