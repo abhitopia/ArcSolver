@@ -161,6 +161,8 @@ def create_dummy_submission(tasks: List[Task]):
 class Worker(mp.Process):
     def __init__(self, device_id, worker_id, model_path, input_queue, output_queue, model_params: ModelParams, start_time, time_limit_seconds):
         super(Worker, self).__init__()
+        self.daemon = True  # Set the worker as a daemon process to ensure they are killed when the main process exits
+
         self.device_id = device_id
         self.worker_id = worker_id
         self.model_path = model_path
