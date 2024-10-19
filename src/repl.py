@@ -295,8 +295,7 @@ class StateAggregatorRNN(nn.Module):
             input_size=config.n_dim,
             hidden_size=config.n_dim,
             num_layers=1,
-            batch_first=True,
-            dropout=config.dropout
+            batch_first=True
         )
         self.rnn.flatten_parameters()
         self.rms_out = RMSNorm(config.n_dim)
