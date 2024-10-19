@@ -320,6 +320,8 @@ class SubmissionManager:
                     print(f"Main: Time limit reached ({elapsed_time:.2f} seconds). Terminating workers.")
                     self.terminate_workers()
                     break
+                else:
+                    print(f"Main: Elapsed time: {elapsed_time:.2f} (/{self.time_limit_seconds}) seconds")
 
                 try:
                     # Get a result from the output queue with timeout
