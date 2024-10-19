@@ -34,12 +34,12 @@ solver = create_solver(ckt_path,
 
 # solver = torch.load(save_path)
 #%%
-tasks_path = base_path / 'partial_solved_challenge.json'
-solution_path = base_path / 'partial_solved_solution.json'
+# tasks_path = base_path / 'partial_solved_challenge.json'
+# solution_path = base_path / 'partial_solved_solution.json'
 # tasks_path = base_path / 'solved_challenge.json'
 # solution_path = base_path / 'solved_solution.json'
-# tasks_path = base_path / 'unsolved_challenge.json'
-# solution_path = base_path / 'unsolved_solution.json'
+tasks_path = base_path / 'unsolved_challenge.json'
+solution_path = base_path / 'unsolved_solution.json'
 
 tasks = load_tasks(tasks_path, solution_path)
 #%%
@@ -56,27 +56,27 @@ tasks = load_tasks(tasks_path, solution_path)
 
 # print("Task ID: ", task.task_id)    
 # print(tasks[0].task_id)
-task = tasks[2]
+task = tasks[10]
 #%%
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 solver.to(device)
 
 params = SolverParams(
     thinking=200,
-    lr_factor=0.5,
-    lr_patience=10,
+    lr_factor=1.0,
+    lr_patience=1,
     btc = 5000,
     min_bs = 4,
     max_bs = 4,
     patience=50,
-    lr=0.01,
+    lr=0.05,
     lrs=1.0,
     wd=0.0,
     wu=1,
     seed=42,
     mode='vbs',
     metric='L',
-    strategy='Rv1',
+    strategy='1v1',
     zero_init=False,
     predict=True,
     top_k=3,

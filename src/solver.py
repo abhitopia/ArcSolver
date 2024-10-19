@@ -8,14 +8,14 @@ from .repl import REPL, REPLConfig
 
 
 class SolverParams(NamedTuple):
-    thinking: int = 300
+    thinking: int = 250
     btc: int = 8000
     min_bs: int = 4
-    max_bs: int = 16
-    patience: int = 75
+    max_bs: int = 4
+    patience: int = 50
     lr_patience: int = 25
     lr_factor: float = 1.0
-    lr: float = 0.1
+    lr: float = 0.05
     wd: float = 0.0
     wu: int = 1
     lrs: float = 1.0
@@ -91,12 +91,18 @@ class Solver(nn.Module):
 
     
     def collapse(self):
+        prog_embedding = self.model.get_pte_weight()
         if self.num_programs > 0:
-            prog_embedding = self.model.get_pte_weight()
             vocab_size = prog_embedding.size(0)
             mean_embedding = prog_embedding[1:(self.num_programs+1)].data.mean(dim=0).unsqueeze(0).repeat(vocab_size, 1)
             # print(f"Mean Embedding: {mean_embedding.shape}")
             prog_embedding.data.copy_(mean_embedding.data)
+
+        # with torch.no_grad():
+        #     # Sub tensor along zeroth dimension
+        #     torch.renorm(prog_embedding, p=2, dim=0, maxnorm=2.1, out=prog_embedding)
+
+            # print("Norms", prog_embedding.norm(dim=1, p=2))
         
     def train_step(self, x: MODEL_INPUT, y: Optional[MODEL_OUTPUT], lr: float, wd: float):
 
@@ -227,11 +233,13 @@ class Solver(nn.Module):
         self.print(f"# TRAIN: {len(train_examples)}")
         self.print(f"# EVAL: {len(eval_examples)}")
         self.print(f"# TEST: {len(test_examples)}")
+        self.print(f"# EBS: {len(task.train)}")
 
         lr_schedule = generate_lr_schedule(params.lr, params.wu, params.thinking, params.lrs)
 
         lr_multiplier = 1.0
         logs = torch.jit.annotate(List[Dict[str, Union[float, int]]], [])
+        ebs: int = len(task.train)
 
         self.print(f"Thinking...")
         while True:
@@ -242,11 +250,17 @@ class Solver(nn.Module):
 
                 lr_step = lr_schedule[self.step]
                 self.train_step(x, y, lr=lr_step * lr_multiplier, wd=params.wd)
-                me = self.evaluate(eval_examples)
-                self.update_solution(me, params.metric)
-                mt = self.evaluate(test_examples)
 
                 if self.model_updated():
+                    # self.print(shuffled_indices(len(eval_examples)))
+
+                    if len(eval_examples) > ebs:
+                        eval_batch = [eval_examples[i] for i in shuffled_indices(len(eval_examples))[:ebs]]
+                    else:
+                        eval_batch = eval_examples
+                    me = self.evaluate(eval_batch)
+                    self.update_solution(me, params.metric)
+
                     lr_bad_steps = self.bad_steps % params.lr_patience
                     if params.lr_factor < 1.0 and lr_bad_steps == 0 and self.bad_steps > 0 :
                         lr_multiplier *= params.lr_factor
@@ -265,6 +279,8 @@ class Solver(nn.Module):
                         'PN': float(self.solution.data[0].norm().item()),
                         # 'EML': me['ML'],
                     }
+
+                    mt = self.evaluate(test_examples)
                     if len(mt) > 0:
                         log['TL'] = mt['L']
                         # log['TNL'] = mt['NL']
