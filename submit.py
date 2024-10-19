@@ -1,7 +1,9 @@
 import argparse
 import json
+import os
 from pathlib import Path
 import random
+import threading
 import time
 from typing import Dict, List, NamedTuple, Optional, Union, get_type_hints
 import torch
@@ -32,13 +34,24 @@ def deterministic_shuffle_local(N, seed=42):
     rng.shuffle(numbers)
     return numbers
 
+
+def is_queue_closed(queue):
+    return queue._closed
+
 def drain_queue(queue):
     """Drains the queue by retrieving and discarding all items."""
+
+    if is_queue_closed(queue):
+        print("Main: Queue is already closed.")
+        return
+
+    print("Main: Draining queue...")
     try:
         while True:
             queue.get_nowait()  # Remove items without waiting
     except Empty:
         pass  # When the queue is empty, stop draining
+
 
 
 def checksum_json_file(filename):
@@ -71,7 +84,6 @@ class TaskSolution(NamedTuple):
     predictions: List[List[Tensor]]
     scores: List[List[float]]
     log: Optional[List[Dict[str, Union[float, int]]]] = None
-
 
     def to_dict(self):
         result = []
@@ -266,32 +278,35 @@ class SubmissionManager:
 
     def terminate_workers(self):
         """Forcefully terminate all running workers."""
+        print("Main: Terminating workers...")
         for worker in self.workers:
             if worker.is_alive():
                 print(f"Terminating worker {worker.pid}")
                 worker.terminate()
-                print(f"Joining worker {worker.pid}")
-                worker.join()
+        # Now, wait for workers to terminate, with a timeout
+        for worker in self.workers:
+            if worker.is_alive():
+                print(f"Joining worker {worker.pid} with timeout")
+                worker.join(timeout=5)
+                if worker.is_alive():
+                    print(f"Worker {worker.pid} did not terminate in time")
 
-        print("All workers terminated.")
+        self.close_queues()
 
     def all_workers_finished(self):
         return all(not worker.is_alive() for worker in self.workers)
     
-    def close_queues(self):
-        # Drain the queues before shutting down
-        print("Main: Draining input queue...")
-        drain_queue(self.input_queue)  # Empty the input queue
-        print("Main: Draining output queue...")
-        drain_queue(self.output_queue)  # Empty the output queue
 
-        # Close and join the queue in the manager only after all workers are finished
-        print("Main: Closing output queue")
-        self.output_queue.close()
-        self.output_queue.join_thread()
-        print("Main: Closing input queue")
-        self.input_queue.close()
-        self.input_queue.join_thread()
+    def close_queues(self):
+        try:
+            drain_queue(self.input_queue)
+            drain_queue(self.output_queue)
+            self.output_queue.close()
+            self.input_queue.close()
+            self.output_queue.join_thread()
+            self.input_queue.join_thread()
+        except Exception as e:
+            print(f"Exception while closing input/output queues: {e}")
 
     def process_inputs(self):
         num_processed = 0
@@ -329,7 +344,6 @@ class SubmissionManager:
                         print("Main: All workers finished, no more results.")
                         break  # Exit the loop if all workers are done
 
-        self.close_queues()
 
     def get_results(self):
         """Returns the final results."""
@@ -392,7 +406,7 @@ def parse_arguments():
                         help='Number of processes to run per device.')
     parser.add_argument('--op', type=str, default='/kaggle/working/submission.json',
                         help='Path to save the output results.')
-    parser.add_argument('--tl', type=int, default=int(11.75*3600), help=f'Time limit in seconds for processing tasks. {11.75} hours is the default limit.')
+    parser.add_argument('--tl', type=int, default=int(11.5*3600), help=f'Time limit in seconds for processing tasks. {11.5} hours is the default limit.')
 
     parser.add_argument('--nt', type=int, default=-1, help='Number of randomly chosen tasks')
     
@@ -403,6 +417,16 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
+
+    total_time_limit = args.tl  # Original time limit in seconds
+    grace_period = 60  # 60-second grace period
+    hard_exit_time = total_time_limit + grace_period
+
+    print(f"Total Time Limit: {total_time_limit} seconds")
+    print(f"Grace Period: {grace_period} seconds")
+    print(f"Hard Exit Time: {hard_exit_time} seconds")
+
+
 
     # Filter out extra arguments that aren't in SolverParams
     model_params_dict = {key: value for key, value in vars(args).items() if key in ModelParams._fields}
@@ -464,6 +488,16 @@ def main():
                                 submission_path=output_path, 
                                 time_limit_seconds=args.tl)  # Set time limit (e.g., 10 hours)
 
+
+    def force_exit():
+        print("Main: Force exiting due to time limit.")
+        manager.terminate_workers()  # Terminate all worker processes
+        os._exit(0)
+
+    # Start a timer to force exit after hard_exit_time
+    timer = threading.Timer(hard_exit_time, force_exit)
+    timer.start()
+
     try:
         # Start worker processes
         manager.start_workers()
@@ -476,8 +510,11 @@ def main():
     except KeyboardInterrupt:
         print("Keyboard interrupt detected. Terminating workers.")
         manager.terminate_workers()
-        manager.close_queues()
         raise # Re-raise the KeyboardInterrupt
+    finally:
+        manager.terminate_workers()
+        timer.cancel()  # Cancel the timer if we finished before time limit
+
 
 if __name__ == '__main__':
     mp.set_start_method('spawn', force=True)  # Use spawn method for multiprocessing with CUDA
