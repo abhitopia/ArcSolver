@@ -351,8 +351,9 @@ def split_task(task: Task, device: str = 'cpu'):
         inp, out = collate_fnc(example, augments[0], device=device)
         test_data.append((inp, out))
 
-    # Shuffle the training data
+    # Shuffle the training/eval data
     train_data = [train_data[i] for i in shuffled_indices(len(train_data))]
+    eval_data = [eval_data[i] for i in shuffled_indices(len(eval_data))]
 
     return train_data, eval_data, test_data
 
@@ -396,6 +397,10 @@ def split_task_cross(task: Task, device: str = 'cpu', mode: str = 'Rv1'):
     for example in task.test:
         inp, out = collate_fnc(example, augments[0], prog_idx=0, device=device)
         test_data.append((inp, out))
+
+    # Shuffle the training/eval data
+    train_data = [train_data[i] for i in shuffled_indices(len(train_data))]
+    eval_data = [eval_data[i] for i in shuffled_indices(len(eval_data))]
 
     return train_data, eval_data, test_data
 
@@ -476,6 +481,9 @@ class AdamWModule(nn.Module):
         denom = v_hat.sqrt() + self.eps
         new_param = self.param - lr * m_hat / denom
         self.param.data.copy_(new_param.data)
+
+        # with torch.no_grad():
+        #     torch.renorm(self.param, 2, 1, maxnorm=1, out=self.param)
         
     
 def format_float(val: float, decimals: int) -> str:
