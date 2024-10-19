@@ -18,7 +18,10 @@
 - [x] Try out NL metric
 - [x] Ensure instantaeous kill on timeout / may be threadout timeout for killing the queues/ processes
 - [x] Auto Learning rate scalings
-- [ ] Make 1vR faster by adjusting eval size
+- [x] Make 1vR faster by adjusting eval size
+- [x] Redistribute last 10 tasks uniformly (and interleave)
+- [x] Start works should do alternate device assignment
+- [x] Choose a prediction that is not empty
 - [ ] Increase max iters but decrease patience
 - [ ] Implement Example Scoring
 - [ ] Rerun exceeding time limit run to estimate time taken / errors

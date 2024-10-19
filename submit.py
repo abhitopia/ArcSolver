@@ -6,6 +6,7 @@ import random
 import threading
 import time
 from typing import Dict, List, NamedTuple, Optional, Union, get_type_hints
+import numpy as np
 import torch
 import torch.jit
 from queue import Empty
@@ -72,12 +73,13 @@ class Task(NamedTuple):
     train: List[Example]
     test: List[Example]
 
-    def complexity(self)-> float:
-        max_ratio = max([e.output.numel()/e.input.numel() for e in self.train])
-        max_inp_size = max([e.input.numel() for e in self.test])
-        max_test_output_size = max_ratio * max_inp_size
-        ratio_test2train = len(self.test) / len(self.train)
-        return max_test_output_size * ratio_test2train
+    def size(self)-> float:
+        # mean_ratio = np.mean([e.output.numel()/e.input.numel() for e in self.train])
+        mean_input_size = np.mean([e.input.numel() for e in self.test])
+        mean_output_size = np.mean([e.input.numel() for e in self.test])
+        mean_size = mean_input_size + mean_output_size
+        # By output_size as second because beam search length)
+        return (mean_size, mean_output_size)
 
 class TaskSolution(NamedTuple):
     task_id: str
@@ -87,10 +89,18 @@ class TaskSolution(NamedTuple):
 
     def to_dict(self):
         result = []
+       
         for pred in self.predictions:
-            pred1 = pred[0].tolist()
-            pred2 = pred[1].tolist() if len(pred) > 0 else pred1
-            result.append({'attempt_1': pred1, 'attempt_2': pred2})
+            chosen_preds = []
+            for p in pred:
+                if len(p) > 0:
+                    chosen_preds.append(p.tolist())
+                if len(chosen_preds) == 2:
+                    break
+                    
+            attempt_1 = chosen_preds[0] if len(chosen_preds) > 0 else [[6, 0, 0, 6, 5], [0, 4, 5, 5]]
+            attempt_2 = chosen_preds[1] if len(chosen_preds) > 1 else [[6, 0, 0, 6, 5], [0, 4, 5, 5]]
+            result.append({'attempt_1': attempt_1, 'attempt_2': attempt_2})
         return result
 
 class ModelParams(NamedTuple):
@@ -115,9 +125,30 @@ class ModelParams(NamedTuple):
     top_k: int = 3
     num_beams: int = 9
 
+def redistribute(N, D):
+    indices = list(range(N))
+    f = indices[::D]
+    s = indices[1::D][::-1]
+    final = []
+    for i in range(0, len(f), D):
+        final.append(f[i:i+D] + s[i:i+D])
+    final = sum(final, [])
+    assert len(final) == N
+    return final
+
+def redistribute_tasks(tasks: List[Task], num_devices: int):
+    tasks = sorted(tasks, key=lambda x: x.size())
+    N = len(tasks)
+    D = num_devices
+    if D == 2:
+        print(f"Redistributing {N} tasks across {D} devices")
+        indices = redistribute(N, D)
+    else:
+        indices = list(range(N))
+    return [tasks[i] for i in indices]
 
 
-def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None, sort_by_complexity=True) -> List[Task]:
+def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None) -> List[Task]:
     json_tasks = json.load(open(tasks_json_path, 'r'))
     solutions = json.load(open(solution_path, 'r')) if solution_path is not None else {}
 
@@ -142,11 +173,9 @@ def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None, sort_b
         
         task = Task(task_id, train_examples, test_examples)
         tasks.append(task)
-
-    if sort_by_complexity:
-        print("Sorting tasks by complexity")
-        tasks = sorted(tasks, key=lambda x: x.complexity())
     return tasks
+
+
 
 def create_dummy_submission(tasks: List[Task]):
     submission = {}
@@ -203,8 +232,9 @@ class Worker(mp.Process):
                     break
 
                 # Log task processing
-                print(f"Worker {self.worker_id} ({task.task_id}): Started")
-
+                print(f"Worker {self.worker_id}(Device { self.device_id}) ({task.task_id}): Started ")
+                print(f"Worker {self.worker_id}(Device {self.device_id}) Size: {task.size()}")
+            
                 try:
 
                     if torch.cuda.is_available():
@@ -259,8 +289,10 @@ class SubmissionManager:
     
     def start_workers(self):
         """Starts the worker processes."""
-        for device_id in range(self.num_devices):
-            for n in range(self.threads_per_device):
+
+        # The order is important so the redistributed tasks are processed in the correct order
+        for n in range(self.threads_per_device):
+            for device_id in range(self.num_devices):
                 worker_id = device_id * self.threads_per_device + n
                 worker = Worker(
                     device_id, worker_id, self.model_path,
@@ -318,9 +350,8 @@ class SubmissionManager:
 
         iters = 0
         with tqdm(total=self.num_inputs) as pbar:
-            iters += 1
             while num_processed < self.num_inputs:
-
+                iters += 1
                 elapsed_time = time.time() - self.start_time
                 if elapsed_time > self.time_limit_seconds:
                     print(f"Main: Time limit reached ({elapsed_time:.2f} seconds). Terminating workers.")
@@ -419,6 +450,7 @@ def parse_arguments():
     parser.add_argument('--tl', type=int, default=int(11.5*3600), help=f'Time limit in seconds for processing tasks. {11.5} hours is the default limit.')
 
     parser.add_argument('--nt', type=int, default=-1, help='Number of randomly chosen tasks')
+    parser.add_argument('--nodummy', action='store_true', help='Do not create dummy submission')
     
     # Model Arguments
     parser = parse_args_from_namedtuple(ModelParams, parser)
@@ -427,6 +459,9 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
+
+    print("Arguments:")
+    print(args)
 
     total_time_limit = args.tl  # Original time limit in seconds
     grace_period = 60  # 60-second grace period
@@ -460,7 +495,8 @@ def main():
     if solutions_path is not None:
         assert Path(solutions_path).exists(), f"Solutions file not found: {solutions_path}"
     
-    tasks = load_tasks(tasks_json_path=tasks_path, solution_path=solutions_path, sort_by_complexity=True)
+    tasks = load_tasks(tasks_json_path=tasks_path, solution_path=solutions_path)
+
 
     if args.nt > 0:
         chosen_indices = deterministic_shuffle_local(len(tasks), seed=42)[:args.nt]
@@ -470,7 +506,7 @@ def main():
         print(f"Number of Tasks: {len(tasks)}")
 
     checksum = checksum_json_file(tasks_path)
-    if checksum == 'f346f614a275b133f1a88044ae38468d':
+    if (not args.nodummy) and checksum == 'f346f614a275b133f1a88044ae38468d':
         print('Detected Dummy Test Data')
         print("Creating Dummy Submission")
         output_path = args.op
@@ -485,6 +521,9 @@ def main():
 
     devices = [f'cuda:{i}' for i in range(D)] if D > 0 else ['cpu']
     D = 1 if D == 0 else D  # Use CPU if no GPUs are available
+
+    # Redistribute tasks to balance the load across devices and threads
+    tasks = redistribute_tasks(tasks, num_devices=D)
     
     print(f"Using devices: {devices}")
     print(f'Number of Cuda devices: {D}')
