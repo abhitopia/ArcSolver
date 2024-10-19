@@ -17,9 +17,11 @@
 - [x] Show norms in the logs, and see if there is a correlation.
 - [x] Try out NL metric
 - [x] Ensure instantaeous kill on timeout / may be threadout timeout for killing the queues/ processes
+- [x] Auto Learning rate scalings
+- [ ] Make 1vR faster by adjusting eval size
+- [ ] Increase max iters but decrease patience
 - [ ] Implement Example Scoring
 - [ ] Rerun exceeding time limit run to estimate time taken / errors
-- [ ] Make 1vR faster by adjusting eval size
 - [ ] bias beam search results based on output length
 - [ ] Remove the confidence, as that can be very low for the long outputs.
 - [ ] Analyse solution norms (Log it, and may be remove MML)

@@ -22,21 +22,24 @@ ckt_path = base_path / 'ckt_281000_52.168.pth'
 
 # base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.ft/'
 # ckt_path = base_path / 'ckt_74739_34.615.pth'
-# ckt_path = 'models/v9/D512E128H16B5I3.v1/ckt_162000_39.205.pth'
 
 git_hash = get_git_commit_hash(7)
-save_path = f"{get_git_commit_hash(7)}_{ckt_path.parent.stem}_{ckt_path.stem}.pt" if git_hash else 'test.pt'
+save_path = f"{get_git_commit_hash(7)}_{ckt_path.parent.name}_{ckt_path.stem}.pt" if git_hash else 'test.pt'
 
 solver = create_solver(ckt_path,
                 jit=True,
-                save_path=save_path)
+                save_path=save_path,
+                optimize=False
+                )
+
+# solver = torch.load(save_path)
 #%%
-# tasks_path = base_path / 'partial_solved_challenge.json'
-# solution_path = base_path / 'partial_solved_solution.json'
+tasks_path = base_path / 'partial_solved_challenge.json'
+solution_path = base_path / 'partial_solved_solution.json'
 # tasks_path = base_path / 'solved_challenge.json'
 # solution_path = base_path / 'solved_solution.json'
-tasks_path = base_path / 'unsolved_challenge.json'
-solution_path = base_path / 'unsolved_solution.json'
+# tasks_path = base_path / 'unsolved_challenge.json'
+# solution_path = base_path / 'unsolved_solution.json'
 
 tasks = load_tasks(tasks_path, solution_path)
 #%%
@@ -59,7 +62,9 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 solver.to(device)
 
 params = SolverParams(
-    thinking=100,
+    thinking=200,
+    lr_factor=0.5,
+    lr_patience=10,
     btc = 5000,
     min_bs = 4,
     max_bs = 4,
@@ -70,7 +75,7 @@ params = SolverParams(
     wu=1,
     seed=42,
     mode='vbs',
-    metric='NL',
+    metric='L',
     strategy='Rv1',
     zero_init=False,
     predict=True,

@@ -8,15 +8,17 @@ from .repl import REPL, REPLConfig
 
 
 class SolverParams(NamedTuple):
-    thinking: int = 250
+    thinking: int = 300
     btc: int = 8000
     min_bs: int = 4
     max_bs: int = 16
-    patience: int = 50
-    lr: float = 0.01
+    patience: int = 75
+    lr_patience: int = 25
+    lr_factor: float = 1.0
+    lr: float = 0.1
     wd: float = 0.0
     wu: int = 1
-    lrs: float = 0.5
+    lrs: float = 1.0
     seed: int = 60065
     metric: str = 'L'
     strategy: str = 'Rv1'
@@ -210,6 +212,7 @@ class Solver(nn.Module):
 
         assert params.metric in ['L', 'NL'], "Invalid metric"
         assert params.strategy in ['Rv1', '1vR', '1v1'], "Invalid strategy"
+        assert params.lr_factor <= 1.0, "Invalid LR Factor"
 
         if params.strategy == '1v1':
             self.num_programs = 0
@@ -227,6 +230,7 @@ class Solver(nn.Module):
 
         lr_schedule = generate_lr_schedule(params.lr, params.wu, params.thinking, params.lrs)
 
+        lr_multiplier = 1.0
         logs = torch.jit.annotate(List[Dict[str, Union[float, int]]], [])
 
         self.print(f"Thinking...")
@@ -237,12 +241,17 @@ class Solver(nn.Module):
                 y: Optional[MODEL_OUTPUT] = batch[1]
 
                 lr_step = lr_schedule[self.step]
-                self.train_step(x, y, lr=lr_step, wd=params.wd)
+                self.train_step(x, y, lr=lr_step * lr_multiplier, wd=params.wd)
                 me = self.evaluate(eval_examples)
                 self.update_solution(me, params.metric)
                 mt = self.evaluate(test_examples)
 
                 if self.model_updated():
+                    lr_bad_steps = self.bad_steps % params.lr_patience
+                    if params.lr_factor < 1.0 and lr_bad_steps == 0 and self.bad_steps > 0 :
+                        lr_multiplier *= params.lr_factor
+                        self.print(f"Reducing LR by: {params.lr_factor}")
+
                     log: Dict[str, Union[float, int]] = {
                         'T': self.step,
                         'EL': me['L'],
@@ -251,6 +260,8 @@ class Solver(nn.Module):
                         'ESA': me['SA'],
                         'MEL': self.min_metric,
                         'BS': self.bad_steps,
+                        'LBS': lr_bad_steps,
+                        'LR': lr_step * lr_multiplier,
                         'PN': float(self.solution.data[0].norm().item()),
                         # 'EML': me['ML'],
                     }
@@ -330,7 +341,7 @@ class Solver(nn.Module):
         return preds, scores
 
 @staticmethod
-def load_inference_model(ckt_path, jit: bool = True, vocab_size: int = 10) -> REPL:
+def load_inference_model(ckt_path, jit: bool = True, optimize: bool = False, vocab_size: int = 10) -> REPL:
     data = torch.load(ckt_path, map_location='cpu', weights_only=False)
     programs = data['model_state_dict']['pte.0.weight']
     model_config = REPLConfig.from_dict(data['model_config'])
@@ -352,19 +363,28 @@ def load_inference_model(ckt_path, jit: bool = True, vocab_size: int = 10) -> RE
     model.pte[0].weight.data.copy_(program_mean.data)
     if jit:
         model = torch.jit.script(model)
+
+        # if optimize:
+        #    print("Optimizing the model for inference")
+        #    model = torch.jit.optimize_for_inference(model)
+
     return model 
 
 
 def create_solver(
         ckpt_path: str,
         jit=True,
-        save_path=None
+        save_path=None,
+        optimize=False
     ) -> Solver:
 
-    model = load_inference_model(ckpt_path, jit=jit)
+    model = load_inference_model(ckpt_path, jit=True, optimize=optimize)
     solver = Solver(model)
     if jit:
         solver = torch.jit.script(solver)
+        if optimize:
+            print("Optimizing the solver for inference")
+            solver = torch.jit.optimize_for_inference(solver)
         if save_path is not None:
             print(f"Saving the model to {save_path}")
             torch.jit.save(solver, save_path)
