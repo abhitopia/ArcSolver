@@ -97,12 +97,14 @@ class ModelParams(NamedTuple):
     thinking: int = 250
     btc: int = 8000
     min_bs: int = 4
-    max_bs: int = 16
+    max_bs: int = 4
     patience: int = 50
-    lr: float = 0.01
+    lr_patience: int = 25
+    lr_factor: float = 1.0
+    lr: float = 0.05
     wd: float = 0.0
     wu: int = 1
-    lrs: float = 0.5
+    lrs: float = 1.0
     seed: int = 60065
     metric: str = 'L'
     strategy: str = 'Rv1'
@@ -110,8 +112,9 @@ class ModelParams(NamedTuple):
     mode: str = '60065'
     predict: bool = True # Whether to return the solution or not, used in evaluation mode to save time
     return_logs: bool = False
-    top_k: Optional[int] = 3
+    top_k: int = 3
     num_beams: int = 9
+
 
 
 def load_tasks(tasks_json_path: str, solution_path: Optional[str] = None, sort_by_complexity=True) -> List[Task]:
@@ -312,7 +315,10 @@ class SubmissionManager:
 
     def process_inputs(self):
         num_processed = 0
+
+        iters = 0
         with tqdm(total=self.num_inputs) as pbar:
+            iters += 1
             while num_processed < self.num_inputs:
 
                 elapsed_time = time.time() - self.start_time
@@ -320,7 +326,7 @@ class SubmissionManager:
                     print(f"Main: Time limit reached ({elapsed_time:.2f} seconds). Terminating workers.")
                     self.terminate_workers()
                     break
-                else:
+                elif iters % 60 == 0:
                     print(f"Main: Elapsed time: {elapsed_time:.2f} (/{self.time_limit_seconds}) seconds")
 
                 try:

@@ -252,8 +252,6 @@ class Solver(nn.Module):
                 self.train_step(x, y, lr=lr_step * lr_multiplier, wd=params.wd)
 
                 if self.model_updated():
-                    # self.print(shuffled_indices(len(eval_examples)))
-
                     if len(eval_examples) > ebs:
                         eval_batch = [eval_examples[i] for i in shuffled_indices(len(eval_examples))[:ebs]]
                     else:
