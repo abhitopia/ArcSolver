@@ -1122,18 +1122,26 @@ class REPL(nn.Module):
 
         copy_embedding_weights('pte.0.', trg_token2idx, src_token2idx)
 
-
     def print_parameters(self):
+        # Total parameters
         total_params = sum(p.numel() for p in self.parameters())
         print(f"Total parameters: {total_params}")
 
-        ## Total Program Embedding parameters
-        total_prog_params = sum(p.numel() for p in self.pte[0].parameters())
+        # Get the names of program embedding parameters
+        prog_param_names = set(name for name, _ in self.pte[0].named_parameters())
+
+        # Total Program Embedding parameters
+        total_prog_params = sum(
+            p.numel() for name, p in self.named_parameters() if name in prog_param_names
+        )
         print(f"Total Program Embedding parameters: {total_prog_params}")
 
-        ## Total Non-Program Embedding parameters (except self.pte[0])
-        total_non_prog_params = sum(p.numel() for p in self.parameters() if p not in self.pte[0].parameters())
+        # Total Non-Program Embedding parameters
+        total_non_prog_params = sum(
+            p.numel() for name, p in self.named_parameters() if name not in prog_param_names
+        )
         print(f"Total Non-Program Embedding parameters: {total_non_prog_params}")
 
+        # Print all parameter names and their sizes
         for name, param in self.named_parameters():
             print(f"{name}: {param.numel()}")
