@@ -1125,7 +1125,8 @@ class REPL(nn.Module):
     def print_parameters(self, show_all: bool = False):
         # Total parameters
         total_params = sum(p.numel() for p in self.parameters())
-        print(f"Total parameters: {total_params}")
+        logger.info(f"---------------------------------")
+        logger.info(f"Total parameters: {total_params}")
 
         # Prefix to match parameter names in self.named_parameters()
         module_prefix = 'pte.0'
@@ -1140,11 +1141,11 @@ class REPL(nn.Module):
         total_prog_params = sum(
             p.numel() for name, p in self.named_parameters() if name in prog_param_names
         )
-        print(f"Total Program Embedding parameters: {total_prog_params}")
+        logger.info(f"Total Program Embedding parameters: {total_prog_params}")
 
         # Total Non-Program Embedding parameters
         total_non_prog_params = total_params - total_prog_params
-        print(f"Total Non-Program Embedding parameters: {total_non_prog_params}")
+        logger.info(f"Total Non-Program Embedding parameters: {total_non_prog_params}")
 
         if show_all:
             # Print all parameter names and their sizes
