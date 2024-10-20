@@ -53,6 +53,17 @@ class ArcTrainer(TrainerBase):
         sparsity = (self.model.pte[0].weight.abs() < threshold).float().mean().item()
         wandb.log({'Sparsity/Program': sparsity}, step =self.step, commit=False)
 
+        embedding = self.model.pte[0].weight
+
+        embedding_norms = embedding.norm(p=2, dim=1)
+        min_norm_value = embedding_norms.min().item()
+        max_norm_value = embedding_norms.max().item()
+        mean_norm_value = embedding_norms.mean().item()
+
+        wandb.log({'EmbeddingNorm/Min': min_norm_value}, step=self.step, commit=False)
+        wandb.log({'EmbeddingNorm/Max': max_norm_value}, step=self.step, commit=False)
+        wandb.log({'EmbeddingNorm/Mean': mean_norm_value}, step=self.step, commit=False)
+
     def at_eval_end(self):
         self.clear_gpu_cache()
 

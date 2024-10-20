@@ -974,6 +974,8 @@ class REPL(nn.Module):
                 'weight_decay': 0.0,
                 'l1_coeff': 0.0
             }]
+        
+
         # Create AdamW optimizer and use the fused version if it is available
         use_fused = False
         if torch.cuda.is_available() and (device_type is None or device_type == 'cuda'):
