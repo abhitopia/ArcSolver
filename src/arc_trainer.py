@@ -42,8 +42,6 @@ class ArcTrainer(TrainerBase):
             # Log params every 10 epochs
             wandb.watch(self.model, log='all', log_freq=max(len(self.train_dl)*10, 500)) 
 
-        self.log_embedding_norms()
-
     def log_embedding_norms(self):
         embedding = self.model.pte[0].weight
         embedding_norms = embedding.norm(p=2, dim=1)
