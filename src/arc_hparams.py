@@ -163,9 +163,11 @@ class ArcHparams(Hparams):
             lora_r=self.model.lora_r,
             lora_alpha=self.model.lora_alpha,
             n_iter=self.model.n_iter,
+            rope_base=self.model.rbase,
         )
 
         self.state['model'] = REPL(config)
+        self.state['model'].print_parameters()
 
         ## LOSS
         # loss = MultiLevelLoss(
