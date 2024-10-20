@@ -42,6 +42,19 @@ class ArcTrainer(TrainerBase):
             # Log params every 10 epochs
             wandb.watch(self.model, log='all', log_freq=max(len(self.train_dl)*10, 500)) 
 
+        self.log_embedding_norms()
+
+    def log_embedding_norms(self):
+        embedding = self.model.pte[0].weight
+        embedding_norms = embedding.norm(p=2, dim=1)
+        min_norm_value = embedding_norms.min().item()
+        max_norm_value = embedding_norms.max().item()
+        mean_norm_value = embedding_norms.mean().item()
+
+        wandb.log({'EmbeddingNorm/Min': min_norm_value}, step=self.step, commit=False)
+        wandb.log({'EmbeddingNorm/Max': max_norm_value}, step=self.step, commit=False)
+        wandb.log({'EmbeddingNorm/Mean': mean_norm_value}, step=self.step, commit=False)
+
     def at_epoch_end(self):
         self.clear_gpu_cache()
 
@@ -52,17 +65,7 @@ class ArcTrainer(TrainerBase):
         threshold = 1e-5 
         sparsity = (self.model.pte[0].weight.abs() < threshold).float().mean().item()
         wandb.log({'Sparsity/Program': sparsity}, step =self.step, commit=False)
-
-        embedding = self.model.pte[0].weight
-
-        embedding_norms = embedding.norm(p=2, dim=1)
-        min_norm_value = embedding_norms.min().item()
-        max_norm_value = embedding_norms.max().item()
-        mean_norm_value = embedding_norms.mean().item()
-
-        wandb.log({'EmbeddingNorm/Min': min_norm_value}, step=self.step, commit=False)
-        wandb.log({'EmbeddingNorm/Max': max_norm_value}, step=self.step, commit=False)
-        wandb.log({'EmbeddingNorm/Mean': mean_norm_value}, step=self.step, commit=False)
+        self.log_embedding_norms()
 
     def at_eval_end(self):
         self.clear_gpu_cache()
