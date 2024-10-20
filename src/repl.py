@@ -459,7 +459,7 @@ class REPL(nn.Module):
                         # nn.init.normal_(m.weight)
                         m.weight.uniform_(-0.1, 0.1)
                         norm = m.weight.data.norm(p=2, dim=1, keepdim=True)
-                        m.weight.data.copy_(m.weight.data * (self.pnorm / norm))
+                        m.weight.data.copy_(m.weight.data * (1.0 / norm))
                         
     @torch.jit.export
     def get_pte_weight(self):
