@@ -16,10 +16,11 @@ warnings.filterwarnings(
 
 #%%
 torch.manual_seed(42)
-# base_path = Path('/Users/abhishekaggarwal/synced_repos/ArcSolver/')
-base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.v1/'
-ckt_path = base_path / 'ckt_281000_52.168.pth'
+# base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.v1/'
+# ckt_path = base_path / 'ckt_281000_52.168.pth'
 
+base_path = Path(__file__).parent / 'models/v10/D384E256H12B6I4P.v2/'
+ckt_path = base_path / 'ckt_692000_53.555.pth'
 # base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.ft/'
 # ckt_path = base_path / 'ckt_74739_34.615.pth'
 
@@ -34,12 +35,13 @@ solver = create_solver(ckt_path,
 
 # solver = torch.load(save_path)
 #%%
+base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.v1/'
 # tasks_path = base_path / 'partial_solved_challenge.json'
 # solution_path = base_path / 'partial_solved_solution.json'
-# tasks_path = base_path / 'solved_challenge.json'
-# solution_path = base_path / 'solved_solution.json'
-tasks_path = base_path / 'unsolved_challenge.json'
-solution_path = base_path / 'unsolved_solution.json'
+tasks_path = base_path / 'solved_challenge.json'
+solution_path = base_path / 'solved_solution.json'
+# tasks_path = base_path / 'unsolved_challenge.json'
+# solution_path = base_path / 'unsolved_solution.json'
 
 tasks = load_tasks(tasks_path, solution_path)
 #%%
@@ -56,7 +58,7 @@ tasks = load_tasks(tasks_path, solution_path)
 
 # print("Task ID: ", task.task_id)    
 # print(tasks[0].task_id)
-task = tasks[10]
+task = tasks[4]
 #%%
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 solver.to(device)
@@ -76,7 +78,7 @@ params = SolverParams(
     seed=42,
     mode='vbs',
     metric='L',
-    strategy='1v1',
+    strategy='1vR',
     zero_init=False,
     predict=True,
     top_k=3,

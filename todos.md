@@ -1,3 +1,10 @@
+## v11
+- Inverse mapping as an augmentation
+- Implement Focal Loss, this could be a game changer!
+- To counter that there could be many ways to inverse, instead of using cross entropy, use a multi-class classification loss (sigmoid instead of softmax)
+- Differential attention to help different head focus on specific position
+- https://github.com/microsoft/unilm/tree/master/Diff-Transformer
+
 ## V10 
 - [x] Add inverse transform to the training mix?
 - [x] Add inverse dataset to Hparams
@@ -22,6 +29,12 @@
 - [x] Redistribute last 10 tasks uniformly (and interleave)
 - [x] Start works should do alternate device assignment
 - [x] Choose a prediction that is not empty
+- [x] Implement Zero Init
+- [x] Make prediction optional
+- [x] Log bad steps
+- [x] Store training logs
+- [x] Option to greedy search
+- [x] Implement save solution in submit.py
 - [ ] Increase max iters but decrease patience
 - [ ] Implement Example Scoring
 - [ ] Rerun exceeding time limit run to estimate time taken / errors

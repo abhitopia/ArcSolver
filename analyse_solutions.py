@@ -46,7 +46,7 @@ def find_k(task):
         best_k = None
         for k, pred in enumerate(preds):
             if pred.tolist() == target:
-                print("Match found", i, k + 1)
+                # print("Match found", i, k + 1)
                 best_k = k + 1
                 break
         ks.append(best_k)
@@ -58,6 +58,7 @@ for f in list(base_path.glob('*_solutions.pkl')):
     bs = f.stem.split('_')[2]
     strategy = f.stem.split('_')[-2].split('.')[0]
 
+    # print("BS", bs, type(bs))
     data = torch.load(open(f, 'rb'), weights_only=False)
     result[(ds, bs, strategy)] = []
     for task_id, task in data.items():
@@ -78,6 +79,11 @@ for f in list(base_path.glob('*_solutions.pkl')):
             "num_steps": len(task.log),
             "has_solution": has_solution
         }
+
+
+        # print(ds, bs, strategy, task_id, ks, len(task.log), has_solution)
+        if ds == 'solved' and task_id == '642d658d' and bs == '4':
+            print("Found KS", ks)
 
         result[(ds, bs, strategy)].append(agg)        
         # for i, solution in enumerate(task):
@@ -170,12 +176,12 @@ for outcome in outcomes:
 # %%
 result.keys()
 # %%
-('unsolved', '4', 'Rv1') 3.3333333333333335 0.09090909090909091 246.0 984.0
-('unsolved', '8', 'Rv1') 1.0 0.09090909090909091 247.0 1976.0
-('unsolved', '12', 'Rv1') 1.0 0.09090909090909091 227.1 2725.2
-('unsolved', '16', 'Rv1') 1.0 0.09090909090909091 227.0 3632.0
+# ('unsolved', '4', 'Rv1') 3.3333333333333335 0.09090909090909091 246.0 984.0
+# ('unsolved', '8', 'Rv1') 1.0 0.09090909090909091 247.0 1976.0
+# ('unsolved', '12', 'Rv1') 1.0 0.09090909090909091 227.1 2725.2
+# ('unsolved', '16', 'Rv1') 1.0 0.09090909090909091 227.0 3632.0
 
-('solved', '4', 'Rv1') 1.3 0.8181818181818182 258.4 1033.6
-('solved', '8', 'Rv1') 1.5 0.8181818181818182 237.7 1901.6
-('solved', '12', 'Rv1') 1.4 0.8181818181818182 242.2 2906.4
-('solved', '16', 'Rv1') 1.4545454545454546 0.8181818181818182 238.5 3816.0
+# ('solved', '4', 'Rv1') 1.3 0.8181818181818182 258.4 1033.6
+# ('solved', '8', 'Rv1') 1.5 0.8181818181818182 237.7 1901.6
+# ('solved', '12', 'Rv1') 1.4 0.8181818181818182 242.2 2906.4
+# ('solved', '16', 'Rv1') 1.4545454545454546 0.8181818181818182 238.5 3816.0
