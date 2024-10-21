@@ -140,6 +140,7 @@ class ArrayTransformTokenizer(Tokenizer):
 
 
 class MODEL_INPUT(NamedTuple):
+    is_inverse: torch.Tensor
     color_permutation: torch.Tensor
     array_transform: torch.Tensor
     program: torch.Tensor
@@ -147,11 +148,46 @@ class MODEL_INPUT(NamedTuple):
     grid_indices: torch.Tensor
     meta: Optional[List[Dict[str, str]]]
 
+    def unsqueeze(self, dim: int):
+        return MODEL_INPUT(
+            is_inverse=self.is_inverse.unsqueeze(dim),
+            color_permutation=self.color_permutation.unsqueeze(dim),
+            array_transform=self.array_transform.unsqueeze(dim),
+            program=self.program.unsqueeze(dim),
+            grid=self.grid.unsqueeze(dim),
+            grid_indices=self.grid_indices.unsqueeze(dim),
+            meta=self.meta
+        )
+    
+    def squeeze(self, dim: int):
+        return MODEL_INPUT(
+            is_inverse=self.is_inverse.squeeze(dim),
+            color_permutation=self.color_permutation.squeeze(dim),
+            array_transform=self.array_transform.squeeze(dim),
+            program=self.program.squeeze(dim),
+            grid=self.grid.squeeze(dim),
+            grid_indices=self.grid_indices.squeeze(dim),
+            meta=self.meta
+        )
 
 class MODEL_OUTPUT(NamedTuple):
     grid: torch.Tensor
     grid_indices: torch.Tensor
     target_grid: Optional[torch.Tensor]
+    
+    def unsqueeze(self, dim: int):
+        return MODEL_OUTPUT(
+            grid=self.grid.unsqueeze(dim),
+            grid_indices=self.grid_indices.unsqueeze(dim),
+            target_grid=self.target_grid.unsqueeze(dim) if self.target_grid is not None else None
+        )
+    
+    def squeeze(self, dim: int):
+        return MODEL_OUTPUT(
+            grid=self.grid.squeeze(dim),
+            grid_indices=self.grid_indices.squeeze(dim),
+            target_grid=self.target_grid.squeeze(dim) if self.target_grid is not None else None
+        )
 
 
 class ArcTokenizer:
@@ -171,45 +207,40 @@ class ArcTokenizer:
         array_transform_encoded = self.array_transform_tokenizer.encode(example.transform)
 
         x = MODEL_INPUT(
-            color_permutation = color_permutation_encoded,
-            array_transform = array_transform_encoded,
-            program = program_encoded,
-            grid = input_grid_encoded,
-            grid_indices = input_indices,
-            meta={'task_id': example.task_id, 
+            is_inverse=torch.tensor([int(example.is_inverse)], dtype=torch.long),
+            color_permutation = torch.tensor(color_permutation_encoded, dtype=torch.long),
+            array_transform = torch.tensor(array_transform_encoded, dtype=torch.long),
+            program = torch.tensor(program_encoded, dtype=torch.long),
+            grid = torch.tensor(input_grid_encoded, dtype=torch.long),
+            grid_indices = torch.tensor(input_indices, dtype=torch.long),
+            meta={'task_id': example.task_id,
+                  'is_inverse': example.is_inverse,
                   'example_id': example.idx, 
                   'complexity': example.complexity,
                   'dataset': example.dataset}
         )
         y = MODEL_OUTPUT(
-            grid = output_grid_encoded,
-            grid_indices = output_indices,
-            target_grid = output_grid_encoded[:-1] + [self.grid_tokenizer.PAD_IDX]
+            grid = torch.tensor(output_grid_encoded, dtype=torch.long),
+            grid_indices = torch.tensor(output_indices, dtype=torch.long),
+            target_grid = torch.tensor(output_grid_encoded[:-1] + [self.grid_tokenizer.PAD_IDX], dtype=torch.long)
             )
         return x, y
 
     def decode(self, x: MODEL_INPUT, y: MODEL_OUTPUT=None) -> Example:
-        
-        if isinstance(x.grid, torch.Tensor):
-            x = MODEL_INPUT(
-                color_permutation=x.color_permutation.tolist()[0],
-                array_transform=x.array_transform.tolist()[0],
-                program=x.program.tolist()[0],
-                grid=x.grid.tolist()[0],
-                grid_indices=x.grid_indices.tolist()[0],
-                meta=x.meta[0]
-            )
-        if y is not None and isinstance(y.grid, torch.Tensor):
-            y = MODEL_OUTPUT(
-                grid=y.grid.tolist()[0],
-                grid_indices=y.grid_indices.tolist()[0],
-                target_grid=y.target_grid.tolist()[0]
-            )
-        input_decoded = self.grid_tokenizer.decode(x.grid)
-        output_decoded = self.grid_tokenizer.decode(y.grid) if y else None
-        program_decoded = self.program_tokenizer.decode(x.program)
-        color_permutation_decoded = self.color_permutation_tokenizer.decode(x.color_permutation)
-        array_transform_decoded = self.array_transform_tokenizer.decode(x.array_transform)
+
+        if x.grid.dim() == 2:
+            assert x.grid.size(0) == 1
+            assert y.grid.size(0) == 1
+            x = x.squeeze(0)
+            y = y.squeeze(0)
+
+        assert x.grid.dim() == 1 and y.grid.dim() == 1, 'Grids must be 1D tensors.'
+  
+        input_decoded = self.grid_tokenizer.decode(x.grid.tolist())
+        output_decoded = self.grid_tokenizer.decode(y.grid.tolist()) if y else None
+        program_decoded = self.program_tokenizer.decode(x.program.tolist())
+        color_permutation_decoded = self.color_permutation_tokenizer.decode(x.color_permutation.tolist())
+        array_transform_decoded = self.array_transform_tokenizer.decode(x.array_transform.tolist())
 
         example = Example(
             idx=x.meta['example_id'],
@@ -219,7 +250,8 @@ class ArcTokenizer:
             output=GridSerializer.deserialize_array(output_decoded),
             program_id=program_decoded,
             color_perm=color_permutation_decoded,
-            transform=array_transform_decoded
+            transform=array_transform_decoded,
+            is_inverse=x.meta['is_inverse'],
         )
 
         return example
