@@ -57,7 +57,7 @@ class ArrayTransform(Enum):
 
 
 class Example:
-    def __init__(self, idx: int, input: np.array, output: np.array, program_id: str, task_id: str, dataset: str, color_perm: str, transform: str, is_test=False):
+    def __init__(self, idx: int, input: np.array, output: np.array, program_id: str, task_id: str, dataset: str, color_perm: str, transform: str, is_inverse=False, is_test=False):
         self.idx = idx    
         self.input = input
         self.output = output
@@ -67,6 +67,7 @@ class Example:
         self.color_perm = color_perm
         self.transform = transform
         self.is_test = is_test
+        self.is_inverse = is_inverse
         self._complexity = None
         self._is_original = color_perm == ColorPermutation.CPID.name and transform == ArrayTransform.IDENT.name
         self._original_input = None
@@ -91,6 +92,7 @@ class Example:
             "dataset": self.dataset,
             "color_perm": self.color_perm,
             "transform": self.transform,
+            "is_inverse": self.is_inverse,
             "is_test": self.is_test
         }
 
@@ -164,12 +166,13 @@ class Example:
 
 
 class ArcTask:
-    def __init__(self, id, prog_id, train: List[Example], test: List[Example], dataset=None):
+    def __init__(self, id, prog_id, train: List[Example], test: List[Example], dataset=None, is_inverse=False):
         self.id = id
         self.prog_id = prog_id
         self.dataset = dataset
         self.train = train
         self.test = test
+        self.is_inverse = is_inverse
         self._complexity = None
 
     def __repr__(self):
@@ -181,7 +184,8 @@ class ArcTask:
             "prog_id": self.prog_id,
             "dataset": self.dataset,
             "train": [e.to_dict() for e in self.train],
-            "test": [e.to_dict() for e in self.test]
+            "test": [e.to_dict() for e in self.test],
+            "is_inverse": self.is_inverse
         }
         return result
     
@@ -193,8 +197,8 @@ class ArcTask:
                        train=task_dict['train'],
                        test=task_dict['test'],
                        dataset=task_dict.get('dataset'),
-                       version=task_dict.get('version'),
-                       augmentation_group=task_dict.get('augmentation_group'))
+                       is_inverse=task_dict.get('is_inverse', False)
+                       )
 
 
     def compute_complexity(self):
@@ -251,13 +255,15 @@ class ArcTasksLoader:
                     dataset=self.name,
                     color_perm=ColorPermutation.CPID.name, # This is the identity transformation
                     transform=ArrayTransform.IDENT.name,
-                    is_test=is_test
+                    is_test=is_test,
+                    is_inverse=self.inverse
                     )
                 )
         return examples
 
     def stats(self):
         logger.info(f"\n\nDataset: {self.name}")
+        logger.info(f"Inverse Tasks: {self.inverse}")
         logger.info(f"Number of programs: {len(set([task.prog_id for task in self.tasks]))}")
         logger.info(f"Number of tasks: {len(self.tasks)}")
         logger.info(f"Number of train examples: {len(self.train)}")
@@ -291,7 +297,8 @@ class ArcTasksLoader:
                     prog_id=prog_id,
                     train=train,
                     test=test,
-                    dataset=self.name
+                    dataset=self.name,
+                    is_inverse=self.inverse
                 )  
             tasks.append(task)
 
@@ -299,6 +306,16 @@ class ArcTasksLoader:
 
     def __len__(self):
         return len(self.tasks)
+    
+    def get_inverse_loader(self, suffix='_INV'):
+        assert not self.inverse, "Cannot get inverse loader for an inverse loader"
+
+        return ArcTasksLoader(
+                    name=f"{self.name}{suffix}", 
+                    path=self.path, 
+                    prog_prefix=self.prog_prefix, 
+                    identical_task_per_folder=self.identical_task_per_folder, 
+                    inverse=True)
 
 
 class ArcTrainingDataset:
@@ -488,7 +505,6 @@ class ArcTrainingDataset:
         self._test = new_test
 
 
-
     
 #%%
 ARC_1D = ArcTasksLoader(name='ARC_1D', path='data/arc_dataset_collection/dataset/1D-ARC/data', identical_task_per_folder=True)
@@ -510,14 +526,7 @@ ARC_SYNTH_RIDDLES = ArcTasksLoader(name='ARC_SYNTH_RIDDLES', path='data/arc_data
 ARC_TAMA = ArcTasksLoader(name='ARC_TAMA', path='data/arc_dataset_collection/dataset/arc-dataset-tama/data')
 ARC_TRAIN = ArcTasksLoader(name='ARC_TRAIN', path='data/arc_dataset_collection/dataset/ARC/data/training')
 
-## Inverse loaders
-ARC_EVAL_INV = ArcTasksLoader(name='ARC_EVAL_INV', path='data/arc_dataset_collection/dataset/ARC/data/evaluation', inverse=True, prog_prefix='inv_')
-ARC_TAMA_INV = ArcTasksLoader(name='ARC_TAMA_INV', path='data/arc_dataset_collection/dataset/arc-dataset-tama/data', inverse=True, prog_prefix='inv_')
-ARC_TRAIN_INV = ArcTasksLoader(name='ARC_TRAIN_INV', path='data/arc_dataset_collection/dataset/ARC/data/training', inverse=True, prog_prefix='inv_')
-ARC_COMMUNITY_INV = ArcTasksLoader(name='ARC_COMMUNITY_INV', path='data/arc_dataset_collection/dataset/arc-community/data', inverse=True, prog_prefix='inv_')
-ARC_NOSOUND_INV = ArcTasksLoader(name='ARC_NOSOUND_INV', path='data/arc_dataset_collection/dataset/nosound/data', inverse=True, prog_prefix='inv_')
-ARC_MINI_INV = ArcTasksLoader(name='ARC_MINI_INV', path='data/arc_dataset_collection/dataset/Mini-ARC/data', inverse=True, prog_prefix='inv_')
-ARC_SYNTH_RIDDLES_INV = ArcTasksLoader(name='ARC_SYNTH_RIDDLES_INV', path='data/arc_dataset_collection/dataset/synth_riddles/data', inverse=True, prog_prefix='inv_')
+
 
 train_collection = [
     ARC_TRAIN
@@ -546,27 +555,22 @@ aux_collection = [
     ARC_TAMA,
 ]
 
-inv_collection = [
-    ARC_EVAL_INV,
-    ARC_TAMA_INV,
-    ARC_TRAIN_INV,
-    ARC_COMMUNITY_INV,
-    ARC_NOSOUND_INV,
-    ARC_MINI_INV,
-    ARC_SYNTH_RIDDLES_INV
-]
 
 
 def get_task_loaders(*, train=True, evl=True, aux=True, inv=False):
     loaders = []
     if train:
         loaders.extend(train_collection)
+        if inv:
+            loaders.extend([loader.get_inverse_loader() for loader in train_collection])
     if evl:
         loaders.extend(eval_collection)
+        if inv:
+            loaders.extend([loader.get_inverse_loader() for loader in eval_collection])
     if aux:
         loaders.extend(aux_collection)
-    if inv:
-        loaders.extend(inv_collection)
+        if inv:
+            loaders.extend([loader.get_inverse_loader() for loader in aux_collection])
     return loaders
 
 
