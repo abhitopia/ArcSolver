@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 import math
-from typing import Callable, List, Tuple
+from typing import Callable, List, Optional, Tuple
 import torch.optim as optim
 import torch.nn as nn
 import math
@@ -144,8 +144,6 @@ class ArcHparams(Hparams):
             n_layer=self.model.n_layer, 
             pnorm=self.model.pnorm, 
             dropout=self.optim.dropout,
-            lora_r=self.model.lora_r,
-            lora_alpha=self.model.lora_alpha,
             n_iter=self.model.n_iter,
             rope_base=self.model.rbase,
             gamma=self.model.gamma,

@@ -2,14 +2,13 @@
 from dataclasses import dataclass
 import re
 import math
-from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.nn import functional as F
+from typing import List, Optional, Tuple
 
-from src.focal_loss import focal_bce, focal_cross_entropy
-
+from .focal_loss import focal_bce, focal_cross_entropy
 from .lazy_adamw import LazyAdamW
 from .rope2d import RoPE2D
 from .tokenizer import MODEL_INPUT, MODEL_OUTPUT, ArrayTransformTokenizer, ColorPermutationTokenizer, GridTokenizer
@@ -17,7 +16,6 @@ from .mask_utils import create_enc_dec_mask
 from .utils import get_logger
 
 logger = get_logger()
-
 # %%
 @dataclass
 class REPLConfig:
