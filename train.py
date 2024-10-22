@@ -56,12 +56,12 @@ def train(
         n_embd: int = typer.Option(16, min=4, max=512, help="Embedding dimension"),
         n_head: int = typer.Option(4, min=1, max=64, help="Number of heads within each self-attention block"),
         n_layer: int = typer.Option(3, min=1, max=20, help="Number of blocks in the Interpreter"),
-        pnorm: bool = typer.Option(False, min=0.0, help="Program Norm. If True, then enforce 1 norm on all the embeddings"),
+        pnorm: bool = typer.Option(False, help="Program Norm. If True, then enforce 1 norm on all the embeddings"),
         rbase: int = typer.Option(10_000, min=5000, help="Base for geometric progression in angle computation"),
         n_iter: int = typer.Option(8, min=1, help="Number of iterations for the model"),
 
         # Loss / Compute Config
-        gamma: Optional[float] = typer.Option(1.0, min=1.0, help="Loss Gamma"),
+        gamma: Optional[float] = typer.Option(2.0, min=1.0, help="Loss Gamma. Gamma == 1 is equivalent to Cross Entropy Loss"),
         # edr: Optional[float] = typer.Option(-1, min=-1.0, max=1.0,  help="Rate of error decay gradient. -1 falls back to regular cross entropy if mctp is 0.0"),
         # mctp: Optional[float] = typer.Option(0.0, min=0.0, help="Error % aftr the first iteration."),
 
@@ -239,7 +239,7 @@ def fork(
         n_iter: Optional[int] = typer.Option(None, min=2, help="Number of iterations for the model"),
 
         # Loss Config
-        gamma: Optional[float] = typer.Option(None, min=1.0, help="Loss Gamma"),
+        gamma: Optional[float] = typer.Option(None, min=1.0, help="Loss Gamma. Gamma == 1 is equivalent to Cross Entropy Loss"),
         # edr: Optional[float] = typer.Option(None, min=0.0, help="Loss Error Decay Rate"),
         # mctp: Optional[float] = typer.Option(None, min=0.0, help="Min Correct Tokens Percentage"),
 
