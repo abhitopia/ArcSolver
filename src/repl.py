@@ -408,6 +408,11 @@ class REPL(nn.Module):
         self.pnorm = config.pnorm
         self.PAD_IDX = config.pad_idx
 
+        self.ipe = nn.Sequential(
+            nn.Embedding(2, config.n_embd),
+            nn.Linear(config.n_embd, config.n_dim, bias=False)
+        )
+
         self.pte = nn.Sequential(
             nn.Embedding(config.prog_vocab_size, config.n_embd),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
@@ -429,14 +434,15 @@ class REPL(nn.Module):
         )
 
         # color + array + program + inp_grid + out_grid
-        self.type_emb = nn.Embedding(5, config.n_dim)
+        self.type_emb = nn.Embedding(6, config.n_dim)
 
         dummy_idx = torch.ones((1, 1), dtype=torch.long, requires_grad=False)
-        self.register_buffer('prog_type_idx', (0 * dummy_idx.clone()))
-        self.register_buffer('color_type_idx', (1 * dummy_idx.clone()))
-        self.register_buffer('tform_type_idx', (2 * dummy_idx.clone()))
-        self.register_buffer('inp_grid_type_idx', (3 * dummy_idx.clone()))
-        self.register_buffer('out_grid_type_idx', (4 * dummy_idx.clone()))
+        self.register_buffer('inv_type_idx', (0 * dummy_idx.clone()))
+        self.register_buffer('prog_type_idx', (1 * dummy_idx.clone()))
+        self.register_buffer('color_type_idx', (2 * dummy_idx.clone()))
+        self.register_buffer('tform_type_idx', (3 * dummy_idx.clone()))
+        self.register_buffer('inp_grid_type_idx', (4 * dummy_idx.clone()))
+        self.register_buffer('out_grid_type_idx', (5 * dummy_idx.clone()))
 
         self.interpreter = Interpreter(config)
         self.state_agg = StateAggregatorRNN(config)
@@ -466,6 +472,11 @@ class REPL(nn.Module):
         return self.pte[0].weight
 
     def contruct_encoder_input(self, x: MODEL_INPUT):
+
+        inv = self.ipe(x.is_inverse)
+        inv_type = self.type_emb(self.inv_type_idx)
+        inv = inv + inv_type
+
         program = self.pte(x.program)
         program_type = self.type_emb(self.prog_type_idx)
         program = program + program_type
@@ -481,17 +492,17 @@ class REPL(nn.Module):
         inp_grid = self.gte(x.grid)
         inp_grid_type = self.type_emb(self.inp_grid_type_idx)
         inp_grid = inp_grid + inp_grid_type
+        enc_inp = torch.cat([inv, program, color_permutation, array_transform, inp_grid], dim=1)
 
         grid_valid_mask = x.grid != self.PAD_IDX
         grid_indices = x.grid_indices
 
-        pca_valid_mask = torch.ones((x.grid.size(0), 3), dtype=torch.bool, device=x.grid.device)
-        pca_indices = torch.full((x.grid.size(0), 3, 2), -1, dtype=grid_indices.dtype, device=x.grid.device)
+        ipca_valid_mask = torch.ones((x.grid.size(0), 4), dtype=torch.bool, device=x.grid.device)
+        ipca_indices = torch.full((x.grid.size(0), 4, 2), -1, dtype=grid_indices.dtype, device=x.grid.device)
 
-        enc_valid_mask = torch.cat([pca_valid_mask, grid_valid_mask], dim=1)
-        enc_indices = torch.cat([pca_indices, grid_indices], dim=1)
+        enc_valid_mask = torch.cat([ipca_valid_mask, grid_valid_mask], dim=1)
+        enc_indices = torch.cat([ipca_indices, grid_indices], dim=1)
 
-        enc_inp = torch.cat([program, color_permutation, array_transform, inp_grid], dim=1)
         return enc_inp, enc_valid_mask, enc_indices
 
     def contruct_decoder_input(self, y: MODEL_OUTPUT):
@@ -599,6 +610,7 @@ class REPL(nn.Module):
             input_grid: List[int],
             input_indices: List[List[int]],
             prog_idx: int = 0,
+            is_inverse: bool = False,
             color_perm_idx: int = 0,
             array_tform_idx: int = 0,
             max_length: int = 30*30,
@@ -616,6 +628,7 @@ class REPL(nn.Module):
         # input_indices_list = [list(t) for t in input_indices]
 
         x = MODEL_INPUT(
+            is_inverse=torch.tensor([[int(is_inverse)]], dtype=torch.long, device=device),
             program=torch.tensor([[prog_idx]], dtype=torch.long, device=device),
             color_permutation=torch.tensor([[color_perm_idx]], dtype=torch.long, device=device),
             array_transform=torch.tensor([[array_tform_idx]], dtype=torch.long, device=device),
@@ -719,6 +732,7 @@ class REPL(nn.Module):
         max_candidates: int = 9,
         sample: bool = False,
         prog_idx: int = 0,
+        is_inverse: bool = False,
         color_perm_idx: int = 0,
         array_tform_idx: int = 0,
         bos_idx: int = GridTokenizer().BOS_IDX,
@@ -744,6 +758,7 @@ class REPL(nn.Module):
         # input_indices_list = [list(t) for t in input_indices]
 
         x = MODEL_INPUT(
+            is_inverse=torch.tensor([[int(is_inverse)]], dtype=torch.long, device=device),
             program=torch.tensor([[prog_idx]], dtype=torch.long, device=device),
             color_permutation=torch.tensor([[color_perm_idx]], dtype=torch.long, device=device),
             array_transform=torch.tensor([[array_tform_idx]], dtype=torch.long, device=device),
@@ -931,7 +946,7 @@ class REPL(nn.Module):
             model_lr = prog_lr  
 
         program_param_keys = ['pte.0.weight']
-        embedding_param_keys = ['cte.0.weight', 'ate.0.weight', 'gte.0.weight']
+        embedding_param_keys = ['ice.0.weight', 'cte.0.weight', 'ate.0.weight', 'gte.0.weight']
         non_model_param_keys = program_param_keys + embedding_param_keys
 
         # Separate the embedding parameters
