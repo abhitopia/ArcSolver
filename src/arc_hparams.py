@@ -1,13 +1,12 @@
 from dataclasses import dataclass, field
 import math
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Tuple
 import torch.optim as optim
 import torch.nn as nn
 import math
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from .dataset import ArcExamplesDataset
-from .multilevel_loss import MultiLevelLoss, exp_spacing
 from .repl import REPL, REPLConfig
 from .task import get_task_loaders, load_dataset
 from .tokenizer import ArcTokenizer
@@ -54,21 +53,6 @@ def const_schedule(step, warmup_steps):
     
     return max_lr
 
-def loss_func(logits, target, pad_idx):
-    """
-    Compute the loss function for the model.
-
-    Args:
-        logits (torch.Tensor): Model predictions.
-        target (torch.Tensor): Target values.
-        pad_idx (int): Padding index.
-
-    Returns:
-        torch.Tensor: Loss value.
-    """
-    # Compute the loss
-    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), target.view(-1), ignore_index=pad_idx, reduction='mean')
-    return loss
 
 def lin_decay_schedule(step, warmup_steps, decay_steps, min_lr_scale=0.1):
     max_lr = 1.0
@@ -164,6 +148,7 @@ class ArcHparams(Hparams):
             lora_alpha=self.model.lora_alpha,
             n_iter=self.model.n_iter,
             rope_base=self.model.rbase,
+            gamma=self.model.gamma,
         )
 
         self.state['model'] = REPL(config)
@@ -178,8 +163,6 @@ class ArcHparams(Hparams):
         # spacing = exp_spacing(self.optim.n_iter, self.optim.edr, self.optim.mctp)
         # logger.info(f"\nLoss Error Rate per Iteration: {[f'{c:.2f}' for c in spacing.tolist()]}")
 
-        self.state['loss'] = loss_func
-
 
     def init_dataloaders(self)-> Tuple[DataLoader, DataLoader]:
         if 'train_dl' not in self.state:
@@ -193,11 +176,6 @@ class ArcHparams(Hparams):
         if 'model' not in self.state:
             self.build_state()
         return self.state['model']
-
-    def init_loss_fn(self) -> nn.Module:
-        if 'loss' not in self.state:
-            self.build_state()
-        return self.state['loss']
     
 
     def init_optimizer_and_lr_schedule(self, model: REPL)-> Tuple[optim.Optimizer, List[Callable[[int], float]]]:

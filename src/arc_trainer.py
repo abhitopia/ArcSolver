@@ -169,14 +169,14 @@ class ArcTrainer(TrainerBase):
     def train_step(self, batch):
         x, y = batch
         logits, _ = self.model(x, y)
-        loss = self.loss_fn(logits, y.target_grid, self.pad_idx)
+        loss = self.model.loss_fn(logits, x, y)
         self._add_step_metrics(loss, x, y, [logits], is_train=True)
         return loss
     
     def eval_step(self, batch):
         x, y = batch
         logits, _ = self.model(x, y)
-        loss = self.loss_fn(logits, y.target_grid, self.pad_idx)
+        loss = self.model.loss_fn(logits, x, y)
         self._add_step_metrics(loss, x, y, [logits], is_train=False)
         return loss
     

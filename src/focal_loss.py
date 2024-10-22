@@ -3,26 +3,73 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class FocalLossMultiClassSelective(nn.Module):
-    def __init__(self, alpha=1.0, gamma=2.0, reduction='mean', ignore_index=None):
-        """
-        Args:
-            alpha (float, optional): Weighting factor for the target class. Default is 1.0.
-            gamma (float, optional): Focusing parameter to reduce the loss contribution from easy examples. Default is 2.0.
-            reduction (str, optional): Specifies the reduction to apply to the output: 'none' | 'mean' | 'sum'. Default is 'mean'.
-            ignore_index (int, optional): Specifies a target value that is ignored and does not contribute to the input gradient.
-        """
-        super(FocalLossMultiClassSelective, self).__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.reduction = reduction
-        self.ignore_index = ignore_index
 
-    def forward(self, outputs, targets):
+
+def focal_cross_entropy(outputs, targets, gamma: float = 2.0, alpha: float = 1.0, reduction='mean', ignore_index=None):
+    """
+    Args:
+        outputs (torch.Tensor): Logits tensor of shape (B, S, D).
+        targets (torch.Tensor): Ground truth labels of shape (B, S) with integer values in [0, D-1].
+        alpha (float, optional): Weighting factor for the target class. Default is 1.0.
+        gamma (float, optional): Focusing parameter to reduce the loss contribution from easy examples. Default is 2.0.
+        reduction (str, optional): Specifies the reduction to apply to the output: 'none' | 'mean' | 'sum'. Default is 'mean'.
+        ignore_index (int, optional): Specifies a target value that is ignored and does not contribute to the input gradient.
+    Returns:
+        torch.Tensor: Computed focal loss.
+    """
+    # Ensure outputs and targets are of expected dimensions
+    if outputs.dim() != 3:
+        raise ValueError(f"Expected outputs of shape (B, S, D), got {outputs.shape}")
+    if targets.dim() != 2:
+        raise ValueError(f"Expected targets of shape (B, S), got {targets.shape}")
+
+    B, S, D = outputs.shape
+
+    # Flatten the batch and sequence dimensions
+    outputs = outputs.view(-1, D)  # Shape: (B*S, D)
+    targets = targets.view(-1)     # Shape: (B*S)
+
+    # Handle ignore_index if specified
+    if ignore_index is not None:
+        valid_mask = targets != ignore_index
+        outputs = outputs[valid_mask]
+        targets = targets[valid_mask]
+
+    # Compute the standard cross entropy loss without reduction
+    ce_loss = F.cross_entropy(
+        outputs,
+        targets,
+        reduction='none'
+    )  # Shape: (N,)
+
+    # Compute pt (probability of the true class)
+    pt = torch.exp(-ce_loss)  # pt = exp(-loss) = P(class)
+
+    # Compute the focal loss modulation factor
+    focal_weight = alpha * (1 - pt) ** gamma
+
+    # Compute the focal loss
+    focal_loss = focal_weight * ce_loss  # Shape: (N,)
+
+    # Apply reduction
+    if reduction == 'mean':
+        return focal_loss.mean()
+    elif reduction == 'sum':
+        return focal_loss.sum()
+    else:
+        return focal_loss  # Shape: (N,)
+
+
+
+def focal_bce(outputs, targets, gamma: float = 2.0, alpha: float = 1.0, reduction='mean', ignore_index=None):
         """
         Args:
             outputs (torch.Tensor): Logits tensor of shape (B, S, D).
             targets (torch.Tensor): Ground truth labels of shape (B, S) with integer values in [0, D-1].
+            alpha (float, optional): Weighting factor for the target class. Default is 1.0.
+            gamma (float, optional): Focusing parameter to reduce the loss contribution from easy examples. Default is 2.0.
+            reduction (str, optional): Specifies the reduction to apply to the output: 'none' | 'mean' | 'sum'. Default is 'mean'.
+            ignore_index (int, optional): Specifies a target value that is ignored and does not contribute to the input gradient.
         Returns:
             torch.Tensor: Computed focal loss.
         """
@@ -39,8 +86,8 @@ class FocalLossMultiClassSelective(nn.Module):
         targets = targets.view(-1)      # Shape: (B*S)
 
         # Handle ignore_index if specified
-        if self.ignore_index is not None:
-            valid_mask = targets != self.ignore_index
+        if ignore_index is not None:
+            valid_mask = targets != ignore_index
             outputs = outputs[valid_mask]
             targets = targets[valid_mask]
 
@@ -57,15 +104,15 @@ class FocalLossMultiClassSelective(nn.Module):
         BCE_loss = F.binary_cross_entropy_with_logits(logits_target, torch.ones_like(probs), reduction='none')
 
         # Compute the focal loss modulation factor
-        focal_weight = self.alpha * (1 - probs) ** self.gamma
+        focal_weight = alpha * (1 - probs) ** gamma
 
         # Compute the focal loss
         F_loss = focal_weight * BCE_loss
 
         # Apply reduction
-        if self.reduction == 'mean':
+        if reduction == 'mean':
             return F_loss.mean()
-        elif self.reduction == 'sum':
+        elif reduction == 'sum':
             return F_loss.sum()
         else:
             return F_loss  # Shape: (N,)

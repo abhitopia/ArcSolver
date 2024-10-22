@@ -8,6 +8,8 @@ import torch.nn as nn
 from torch import Tensor
 from torch.nn import functional as F
 
+from src.focal_loss import focal_bce, focal_cross_entropy
+
 from .lazy_adamw import LazyAdamW
 from .rope2d import RoPE2D
 from .tokenizer import MODEL_INPUT, MODEL_OUTPUT, ArrayTransformTokenizer, ColorPermutationTokenizer, GridTokenizer
@@ -36,6 +38,7 @@ class REPLConfig:
     lora_r: int = 0 # Rank for LoRA linear layer
     lora_alpha: Optional[int] = None # Alpha for LoRA linear layer, it None, it defaults to lora_r
     n_iter: int = 4
+    gamma: float = 2.0
 
     def __post_init__(self):
         if self.n_dim % self.n_head != 0:
@@ -43,6 +46,8 @@ class REPLConfig:
         
         head_dim = self.n_dim // self.n_head
         assert head_dim % 2 == 0, "Head dimension must be even"
+
+        assert self.gamma >= 1.0, "Gamma must be greater than or equal to 1.0"
 
         if self.lora_alpha is None:
             self.lora_alpha = self.lora_r
@@ -69,6 +74,7 @@ class REPLConfig:
             'lora_r': self.lora_r,
             'lora_alpha': self.lora_alpha,
             'n_iter': self.n_iter,
+            'gamma': self.gamma
         }
     
     @staticmethod
@@ -407,6 +413,7 @@ class REPL(nn.Module):
         self.n_layer = config.n_layer
         self.pnorm = config.pnorm
         self.PAD_IDX = config.pad_idx
+        self.gamma = config.gamma
 
         self.ipe = nn.Sequential(
             nn.Embedding(2, config.n_embd),
@@ -603,8 +610,57 @@ class REPL(nn.Module):
 
         cache = (updated_kv_cache, past_enc_valid_mask, dec_valid_mask)
         return logits, cache
-
     
+
+    @torch.jit.export
+    def loss_fn(self, logits: torch.Tensor, x: MODEL_INPUT, y: MODEL_OUTPUT, reduction: str = 'mean'):
+        ignore_index = self.PAD_IDX
+        inverse = x.is_inverse
+        targets = y.target_grid
+        device = targets.device
+        gamma = self.gamma
+        # Get indices where inverse is enabled or disabled
+        inverse_enabled_indices = (inverse == 1).nonzero(as_tuple=True)[0]
+        inverse_disabled_indices = (inverse == 0).nonzero(as_tuple=True)[0]
+
+        inverse_enabled_indices, inverse_disabled_indices
+        # Extract logits and targets for each group
+        logits_enabled = logits[inverse_enabled_indices]      # Shape: (N1, T, D)
+        targets_enabled = targets[inverse_enabled_indices]    # Shape: (N1, T)
+
+        logits_disabled = logits[inverse_disabled_indices]    # Shape: (N2, T, D)
+        targets_disabled = targets[inverse_disabled_indices]  # Shape: (N2, T)
+        # Compute per-element losses for the enabled group
+        if len(inverse_enabled_indices) > 0:
+            loss_enabled = focal_bce(logits_enabled, targets_enabled, gamma=gamma, ignore_index=ignore_index, reduction='none')  # Shape: (M1,)
+        else:
+            loss_enabled = torch.tensor([], device=device)
+
+        # Compute per-element losses for the disabled group
+        if len(inverse_disabled_indices) > 0:
+            loss_disabled = focal_cross_entropy(logits_disabled, targets_disabled, gamma=gamma, ignore_index=ignore_index, reduction='none')  # Shape: (M2,)
+        else:
+            loss_disabled = torch.tensor([], device=device)
+
+        # Total number of valid elements (excluding pad_idx)
+        total_valid_elements = len(loss_enabled) + len(loss_disabled)
+
+        # Compute the total loss
+        if total_valid_elements > 0:
+            total_loss = (loss_enabled.sum() + loss_disabled.sum()) 
+        else:
+            total_loss = torch.tensor(0.0, device=device)
+
+        if reduction == 'mean':
+            total_loss /= total_valid_elements
+            return total_loss
+        elif reduction == 'none':
+            return torch.cat([loss_enabled, loss_disabled], dim=0)
+        else:
+            raise ValueError(f"Reduction '{reduction}' is not supported. Use 'mean' or 'none'.")
+
+
+        
     @torch.jit.export
     def greedy_search(self, 
             input_grid: List[int],

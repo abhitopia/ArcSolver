@@ -63,6 +63,7 @@ def train(
         n_iter: int = typer.Option(8, min=1, help="Number of iterations for the model"),
 
         # Loss / Compute Config
+        gamma: Optional[float] = typer.Option(1.0, min=1.0, help="Loss Gamma"),
         # edr: Optional[float] = typer.Option(-1, min=-1.0, max=1.0,  help="Rate of error decay gradient. -1 falls back to regular cross entropy if mctp is 0.0"),
         # mctp: Optional[float] = typer.Option(0.0, min=0.0, help="Error % aftr the first iteration."),
 
@@ -165,6 +166,7 @@ def train(
         "pnorm": pnorm,
         "lora_r": lora_r,
         "lora_alpha": lora_alpha if lora_alpha is not None else lora_r,
+        "gamma": gamma
     }
 
     if lora_r > 0:
@@ -244,6 +246,7 @@ def fork(
         n_iter: Optional[int] = typer.Option(None, min=2, help="Number of iterations for the model"),
 
         # Loss Config
+        gamma: Optional[float] = typer.Option(None, min=1.0, help="Loss Gamma"),
         # edr: Optional[float] = typer.Option(None, min=0.0, help="Loss Error Decay Rate"),
         # mctp: Optional[float] = typer.Option(None, min=0.0, help="Min Correct Tokens Percentage"),
 
@@ -330,6 +333,7 @@ def fork(
 
     model_config = {
         "n_iter": n_iter,
+        "gamma": gamma
     }
 
     if any(option is not None for option in [mlr, plr, lr_decay, lr_min_scale, lr_warmup, lr_schedule, plt_patience, plt_factor]):

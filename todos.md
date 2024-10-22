@@ -1,6 +1,14 @@
 ## v11
 - Inverse mapping as an augmentation
+    - [x] Implement data augmentation for inverse mapping
+    - [x] Change tokenizer to handle inverse mapping
+    - [x] Change ArcDataset
+    - [x] Change the model to handle inverse mapping
+
 - Implement Focal Loss, this could be a game changer!
+    - [x] Implement Focal BCE and Focal CE
+    - [x] Integrate Focal Losses into the training
+
 - To counter that there could be many ways to inverse, instead of using cross entropy, use a multi-class classification loss (sigmoid instead of softmax)
 - Differential attention to help different head focus on specific position
 - https://github.com/microsoft/unilm/tree/master/Diff-Transformer

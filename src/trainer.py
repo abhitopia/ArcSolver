@@ -174,9 +174,6 @@ class Hparams:
     def init_model(self)-> nn.Module:
         raise NotImplementedError('init_model method must be implemented')
     
-    def init_loss_fn(self)-> nn.Module:
-        raise NotImplementedError('init_loss_fn method must be implemented')
-    
     def init_optimizer_and_lr_schedule(self, model)-> Tuple[optim.Optimizer, Union[Callable[[int], float], List[Callable[[int], float]]]]:
         raise NotImplementedError('init_optimizer method must be implemented')
     
@@ -265,9 +262,7 @@ class TrainerBase:
         self._schedule = None
         self._scheduler = None
         self._train_dl = None
-        self._eval_dl = None
-        self._loss_fn = None
-        
+        self._eval_dl = None        
 
         self.train_metrics = MetricLogger()
         self.eval_metrics = MetricLogger()
@@ -307,13 +302,6 @@ class TrainerBase:
             self._model.to(self.device)
         return self._model
     
-    @property
-    def loss_fn(self):
-        if self._loss_fn is None:
-            self._loss_fn = self.hparams.init_loss_fn()
-            if hasattr(self._loss_fn, 'to'):
-                self._loss_fn.to(self.device)
-        return self._loss_fn
     
     @property
     def optimizer(self):
