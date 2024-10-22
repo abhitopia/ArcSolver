@@ -77,7 +77,19 @@ class ArcTrainer(TrainerBase):
     def pre_eval_step(self, batch):
         self.__eval_batch_time_start = time.time()
     
-    def _accuracy(self, logits, y):
+    def _accuracy(self, logits_all, x, y):
+        inverse = x.is_inverse
+        targets = y.target_grid
+
+        # inverse_enabled_indices = (inverse == 1).nonzero(as_tuple=True)[0]
+        inverse_disabled_indices = (inverse == 0).nonzero(as_tuple=True)[0]
+        # Extract logits and targets for each group
+        # logits_enabled = logits[inverse_enabled_indices]      # Shape: (N1, T, D)
+        # targets_enabled = targets[inverse_enabled_indices]    # Shape: (N1, T)
+
+        logits = logits_all[inverse_disabled_indices]    # Shape: (N2, T, D)
+        y = targets[inverse_disabled_indices]  # Shape: (N2, T)
+
         _, predicted_tokens = torch.max(logits, dim=2)
         correct_token_predictions = (predicted_tokens == y)
         output_mask = y != self.model.PAD_IDX
@@ -107,9 +119,8 @@ class ArcTrainer(TrainerBase):
             level_indices[level_name].append(idx)
             level_dataset_indices[(level_name, dataset)].append(idx)
 
-
         for i, logits in enumerate(iter_logits):
-            correct_tokens_mask, correct_samples_mask, total_tokens = self._accuracy(logits, y.target_grid)
+            correct_tokens_mask, correct_samples_mask, total_tokens = self._accuracy(logits, x, y)
             num_tokens_correct = correct_tokens_mask.sum().item()
             num_samples_correct = correct_samples_mask.sum().item()
             total_samples_batch = y.grid.size(0)
@@ -140,7 +151,7 @@ class ArcTrainer(TrainerBase):
                         total_samples)
 
                 for dataset, indices in dataset_indices.items():
-                    if not indices:
+                    if not indices or 'INV' in dataset:
                         continue  # Skip if there are no samples for this dataset
                     correct_samples_in_dataset = correct_samples_mask[indices]
                     num_correct = correct_samples_in_dataset.sum().item()
@@ -153,6 +164,8 @@ class ArcTrainer(TrainerBase):
 
                 # Compute Sample Accuracy per level per dataset
                 for (level, dataset), indices in level_dataset_indices.items():
+                    if not indices or 'INV' in dataset:
+                        continue
                     correct_samples_in_group = correct_samples_mask[indices]
                     num_correct = correct_samples_in_group.sum().item()
                     total_samples = len(indices)

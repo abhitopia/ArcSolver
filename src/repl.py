@@ -640,7 +640,6 @@ class REPL(nn.Module):
         inverse_enabled_indices = (inverse == 1).nonzero(as_tuple=True)[0]
         inverse_disabled_indices = (inverse == 0).nonzero(as_tuple=True)[0]
 
-        inverse_enabled_indices, inverse_disabled_indices
         # Extract logits and targets for each group
         logits_enabled = logits[inverse_enabled_indices]      # Shape: (N1, T, D)
         targets_enabled = targets[inverse_enabled_indices]    # Shape: (N1, T)
