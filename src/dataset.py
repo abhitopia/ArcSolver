@@ -1,9 +1,10 @@
 #%%
-import functools
 from typing import List, Tuple
+import functools
 import random
 import numpy as np
 import torch
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset, BatchSampler, DataLoader
 from .task import Example
 from .tokenizer import ArcTokenizer, MODEL_OUTPUT, MODEL_INPUT
@@ -188,35 +189,22 @@ class ArcExamplesDataset(Dataset):
 
         x, y = zip(*[tokenizer.encode(ex) for ex in batch])
 
-        cps = [xi.color_permutation for xi in x]
-        ats = [xi.array_transform for xi in x] 
+        is_inverse = torch.stack([xi.is_inverse for xi in x], dim=0).to(device, non_blocking=True)
+        cps = torch.stack([xi.color_permutation for xi in x], dim=0).to(device, non_blocking=True)
+        ats = torch.stack([xi.array_transform for xi in x] , dim=0).to(device, non_blocking=True)
         prgs = [xi.program for xi in x] if prog_idx is None else [[prog_idx]] * len(x)
-        inp_grids = [xi.grid for xi in x]
-        inp_indices = [xi.grid_indices for xi in x]
-        out_grids = [yi.grid for yi in y]
-        out_indices = [yi.grid_indices for yi in y]
+        prgs = torch.stack(prgs, dim=0).to(device, non_blocking=True)
+        inp_grids = pad_sequence([xi.grid for xi in x], batch_first=True, padding_value=pad_idx).to(device, non_blocking=True)
+        inp_indices = pad_sequence([xi.grid_indices for xi in x], batch_first=True, padding_value=-1).to(device, non_blocking=True)
         meta = [xi.meta for xi in x] if keep_meta else None
 
-        prgs = torch.tensor(prgs, dtype=torch.long).to(device, non_blocking=True)
-        cps = torch.tensor(cps, dtype=torch.long).to(device, non_blocking=True)
-        ats = torch.tensor(ats, dtype=torch.long).to(device, non_blocking=True)
-
-        inp_seq_len = max([len(i) for i in inp_grids])
-        out_seq_len = max([len(o) for o in out_grids])
-
-        inp_grids = [i + [pad_idx] * (inp_seq_len - len(i)) for i in inp_grids]
-        out_grids = [o + [pad_idx] * (out_seq_len - len(o)) for o in out_grids]
-        inp_indices = [i + [(-1, -1)] * (inp_seq_len - len(i)) for i in inp_indices]
-        out_indices = [o + [(-1, -1)] * (out_seq_len - len(o)) for o in out_indices]
-
-        inp_grids = torch.tensor(inp_grids, dtype=torch.long).to(device, non_blocking=True)
-        out_grids = torch.tensor(out_grids, dtype=torch.long).to(device, non_blocking=True)
-        inp_indices = torch.tensor(inp_indices, dtype=torch.long).to(device, non_blocking=True)
-        out_indices = torch.tensor(out_indices, dtype=torch.long).to(device, non_blocking=True)
+        out_grids = pad_sequence([yi.grid for yi in y], batch_first=True, padding_value=pad_idx).to(device, non_blocking=True)
+        out_indices = pad_sequence([yi.grid_indices for yi in y], batch_first=True, padding_value=-1).to(device, non_blocking=True)
 
         target_grid = torch.cat([out_grids[:, 1:], torch.full((out_grids.size(0), 1), pad_idx, dtype=out_grids.dtype, device=device)], dim=1)
 
         x = MODEL_INPUT(
+            is_inverse=is_inverse,
             color_permutation=cps,
             array_transform=ats,
             program=prgs,
@@ -231,8 +219,7 @@ class ArcExamplesDataset(Dataset):
             target_grid=target_grid
         )
 
-        return x, y
-        
+        return x, y        
     
     def get_dataloader(self,
                     token_count: int,
