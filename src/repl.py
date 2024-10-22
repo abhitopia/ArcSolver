@@ -35,8 +35,6 @@ class REPLConfig:
     max_grid_height: int = 60
     max_grid_width: int = 60
     rope_base: int = 10_000 # Base for geometric progression in angle computation
-    lora_r: int = 0 # Rank for LoRA linear layer
-    lora_alpha: Optional[int] = None # Alpha for LoRA linear layer, it None, it defaults to lora_r
     n_iter: int = 4
     gamma: float = 2.0
 
@@ -44,15 +42,15 @@ class REPLConfig:
         if self.n_dim % self.n_head != 0:
             raise ValueError("n_dim must be divisible by n_head")
         
-        head_dim = self.n_dim // self.n_head
+        C = self.n_dim // self.n_head # Pseudo dimension for each head
+        assert C % 2 == 0, "n_dim // n_head must be divisible by 2"
+
+        head_dim = C // 2  # Actual Head Dimension. This is due to differential attention
+
+        # This is to ensure Rope2D can be applied
         assert head_dim % 2 == 0, "Head dimension must be even"
 
         assert self.gamma >= 1.0, "Gamma must be greater than or equal to 1.0"
-
-        if self.lora_alpha is None:
-            self.lora_alpha = self.lora_r
-
-        assert isinstance(self.lora_r, int) and self.lora_r >= 0, "LoRA rank must be a non-negative integer"
 
 
     def to_dict(self):
@@ -157,64 +155,85 @@ class RMSNorm(nn.Module):
 
 
 
-class SelfAttention(nn.Module):
-    def __init__(self, config: REPLConfig, rope: Optional[RoPE2D]=None):
+def lambda_init_fn(depth: int) -> float:
+    return 0.8 - 0.6 * math.exp(-0.3 * depth) # Zero indexed on depth
+
+# Your SelfAttention class
+class DiffSelfAttention(nn.Module):
+    def __init__(self, config: REPLConfig, depth: int, rope =None):
         super().__init__()
         self.config = config
         self.rope = rope
-        assert config.n_dim % config.n_head == 0
+        assert config.n_dim % config.n_head == 0, "n_dim must be divisible by n_head"
         # key, query, value projections for all heads, but in a batch
         self.c_attn = nn.Linear(config.n_dim, 3 * config.n_dim, bias=False)
         # output projection
         self.c_proj = nn.Linear(config.n_dim, config.n_dim, bias=False)
 
-        # regularization
-        self.n_head = config.n_head
+        C = config.n_dim // config.n_head
+        assert C % 2 == 0, "config.n_dim // config.n_head must be divisible by 2"
         self.n_dim = config.n_dim
-        self.dropout = config.dropout
+        self.n_head = config.n_head
+        self.h_dim = C // 2  # Because Q, K are split into 2 parts
 
+        # regularization
+        self.dropout = nn.Dropout(config.dropout)
 
-    # def forward(self, x, attn_mask=None, kv_cache=None, return_kv_cache=False):
+        self.lambda_init = lambda_init_fn(depth)
+        self.lambda_q1 = nn.Parameter(torch.zeros(self.h_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_k1 = nn.Parameter(torch.zeros(self.h_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_q2 = nn.Parameter(torch.zeros(self.h_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_k2 = nn.Parameter(torch.zeros(self.h_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+
+        self.rms_head = RMSNorm(2*self.h_dim)
+
 
     def forward(self,
-            x: Tensor, 
-            attn_mask: Optional[Tensor],
-            positions: Optional[Tensor] = None,
-            kv_cache: Optional[Tuple[Tensor, Tensor]] = None, 
-            return_kv_cache: bool = False) -> Tuple[Tensor, Optional[Tuple[Tensor, Tensor]]]:
+                x: torch.Tensor, 
+                attn_mask: Optional[torch.Tensor] = None,
+                positions: Optional[torch.Tensor] = None,
+                kv_cache: Optional[Tuple[torch.Tensor, torch.Tensor]] = None, 
+                return_kv_cache: bool = False) -> Tuple[torch.Tensor, Optional[Tuple[torch.Tensor, torch.Tensor]]]:
         
         B, T, C = x.size() 
         qkv = self.c_attn(x)        # qkv: (B, T, 3 * C)
         q, k, v = qkv.split(self.n_dim, dim=2)
 
         # Reshape for multi-head attention, but do not transpose yet!
-        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, n_head, T,  head_dim)
-        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) 
-        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)  
+        q = q.view(B, T, 2 * self.n_head, self.h_dim).transpose(1, 2) # (B, 2*n_head, T, head_dim)
+        k = k.view(B, T, 2 * self.n_head, self.h_dim).transpose(1, 2) # (B, 2*n_head, T, head_dim)
+        v = v.view(B, T, self.n_head, 2 * self.h_dim).transpose(1, 2) # (B, n_head, T, 2*head_dim)
 
         # Apply Rope2D to q and k
         if self.rope is not None and positions is not None:
             k = self.rope(k, positions.unsqueeze(1))
             q = self.rope(q, positions.unsqueeze(1))
 
-
-        # # If kv_cache is present, concatenate past keys and values
-        # Assume kv_cache is has rope applied to it already
-        if kv_cache is not None and torch.jit.isinstance(kv_cache, Tuple[Tensor, Tensor]):
-            past_k, past_v = kv_cache  # K: (B, n_head, T_past, head_dim)
+        # If kv_cache is present, concatenate past keys and values
+        if kv_cache is not None and isinstance(kv_cache, tuple):
+            past_k, past_v = kv_cache  # K: (B, 2 * n_head, T_past, head_dim), V: (B, n_head, T_past, 2 * head_dim)
             k = torch.cat([past_k, k], dim=2)  # Concatenate along sequence length dimension
             v = torch.cat([past_v, v], dim=2)
-            # print("Past K", past_k.size(), "New K", k.size())
 
         # Update new_kv_cache
-        new_kv_cache: Optional[Tuple[Tensor, Tensor]] = (k, v) if return_kv_cache else None
+        new_kv_cache: Optional[Tuple[torch.Tensor, torch.Tensor]] = (k, v) if return_kv_cache else None
+
+        q1, q2 = q.chunk(2, dim=1) # Split q into 2 parts (B, n_head, T, head_dim)
+        k1, k2 = k.chunk(2, dim=1) # Split k into 2 parts (B, n_head, T, head_dim)
 
         # Compute attention
         dropout_p = self.dropout if self.training else 0.0
 
         # attn_output: (B, n_head, T, head_dim)
-        # print("QKV", q.size(), k.size(), v.size(), attn_mask.size())
-        attn_output = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=dropout_p)
+        attn_output_1 = F.scaled_dot_product_attention(q1, k1, v, attn_mask=attn_mask, dropout_p=dropout_p)
+        attn_output_2 = F.scaled_dot_product_attention(q2, k2, v, attn_mask=attn_mask, dropout_p=dropout_p)
+
+        lambda_1 = torch.exp(torch.sum(self.lambda_q1 * self.lambda_k1, dim=-1).float()).type_as(q)
+        lambda_2 = torch.exp(torch.sum(self.lambda_q2 * self.lambda_k2, dim=-1).float()).type_as(q)
+        lambda_full = lambda_1 - lambda_2 + self.lambda_init
+        attn_output = attn_output_1 - lambda_full * attn_output_2
+        attn_output = self.rms_head(attn_output)
+        attn_output = attn_output * (1 - self.lambda_init)
 
         # Reshape back to (B, T, C)
         attn_output = attn_output.transpose(1, 2).contiguous().view(B, T, C)
@@ -222,19 +241,16 @@ class SelfAttention(nn.Module):
         # Output projection
         y = self.c_proj(attn_output)
 
-        # Zero out NaN values, so they don't affect future computations
-        # I have also verified that the it doesn't matter what the nan values are set to
-        # y = torch.nan_to_num(y, nan=0.0)
-
         return y, new_kv_cache
 
+
 class TransformerBlock(nn.Module):
-    def __init__(self, config: REPLConfig, rope: Optional[RoPE2D]):
+    def __init__(self, config: REPLConfig, depth: int, rope: Optional[RoPE2D]):
         super().__init__()
         self.config = config
         self.dropout = nn.Dropout(config.dropout)
         self.rmsnorm = RMSNorm(config.n_dim)
-        self.attn = SelfAttention(config, rope)
+        self.attn = DiffSelfAttention(config, depth=depth, rope=rope)
         self.normed_mlp = nn.Sequential(
                             RMSNorm(config.n_dim),
                             SwiGLUFFN(config.n_dim, 4 * config.n_dim))
@@ -256,11 +272,14 @@ class Interpreter(nn.Module):
         super().__init__()
         self.config = config
 
-        rope_2d = RoPE2D(config.n_dim // config.n_head,
+        assert config.n_dim % config.n_head == 0, "n_dim must be divisible by n_head"
+        assert (config.n_dim // config.n_head) % 2 == 0, "(config.n_dim // config.n_head) must be divisible by 2"
+        h_dim = config.n_dim // config.n_head // 2
+        rope_2d = RoPE2D(h_dim,
                         max_height=config.max_grid_height,
                         max_width=config.max_grid_width,
                         base=config.rope_base)
-        self.blocks = nn.ModuleList([TransformerBlock(config, rope=rope_2d) for _ in range(config.n_layer)])
+        self.blocks = nn.ModuleList([TransformerBlock(config, d, rope=rope_2d) for d in range(config.n_layer)])
         self.rms_out = RMSNorm(config.n_dim)
 
 
@@ -288,7 +307,6 @@ class Interpreter(nn.Module):
 
         x = self.rms_out(x)
         return x, loop_kv_caches
-
 
 
 
@@ -454,7 +472,8 @@ class REPL(nn.Module):
         self.interpreter = Interpreter(config)
         self.state_agg = StateAggregatorRNN(config)
 
-        self.lm_head = LoRALinear(config.n_dim, config.grid_vocab_size, bias=False, r=config.lora_r, alpha=config.lora_alpha)
+        self.lm_head = nn.Linear(config.n_dim, config.grid_vocab_size, bias=False)
+        # self.lm_head = LoRALinear(config.n_dim, config.grid_vocab_size, bias=False, r=config.lora_r, alpha=config.lora_alpha)
         # weight sharing scheme. Transformer++ (Llama architecture does not tie weights)
         # Reference: https://youtu.be/pRM_P6UfdIc?t=1500
         # self.wte.weight = self.lm_head.weight
@@ -997,7 +1016,7 @@ class REPL(nn.Module):
 
         if model_lr == 0:
             assert prog_lr > 0, "Program learning rate must be greater than 0"
-            self.fine_tune_mode(enable_lora=True if self.config.lora_r > 0 else False)
+            self.fine_tune_mode()
             # The Lora Params will be treated as model params with model LR without norm restrictions
             model_lr = prog_lr  
 
@@ -1010,11 +1029,7 @@ class REPL(nn.Module):
         embedding_params = [p for n, p in self.named_parameters() if n in embedding_param_keys and p.requires_grad]
         model_params = [p for n, p in self.named_parameters() if n not in non_model_param_keys and p.requires_grad]
 
-        if self.config.lora_r > 0:
-            assert len(program_params) == 1, "Program parameters must be 3"
-            assert len(model_params) == 2, "Model parameters must be 2 for LORA"
-        else:
-            assert len(program_params) == 1, "Program parameters must be 1"
+        assert len(program_params) == 1, "Program parameters must be 1"
 
         # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
         # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
@@ -1056,7 +1071,7 @@ class REPL(nn.Module):
         optimizer = LazyAdamW(optim_groups, lr=model_lr, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
         return optimizer
 
-    def fine_tune_mode(self, enable_lora: bool = False):
+    def fine_tune_mode(self):
         # Freeze model params if model_lr is 0, needed for finetuning
         logger.warning("Freezing model parameters. Only Program embedding parameters will be trained.")
         logger.warning("This setting should only be used for training without resuming/forkin (with optimizer state load disabled)")
@@ -1065,9 +1080,9 @@ class REPL(nn.Module):
             if 'pte.0' not in n:
                 p.requires_grad = False
 
-        if enable_lora:
-            logger.warning("Unfreezing LoRA parameters for fine-tuning.")
-            self.lm_head.fine_tune_mode()
+        # if enable_lora:
+        #     logger.warning("Unfreezing LoRA parameters for fine-tuning.")
+        #     self.lm_head.fine_tune_mode()
 
     def load_state_dict(self, state_dict, strict: bool=True, assign: bool=False):
 
