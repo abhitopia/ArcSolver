@@ -67,8 +67,6 @@ class REPLConfig:
             'max_grid_height': self.max_grid_height,
             'max_grid_width': self.max_grid_width,
             'rope_base': self.rope_base,
-            'lora_r': self.lora_r,
-            'lora_alpha': self.lora_alpha,
             'n_iter': self.n_iter,
             'gamma': self.gamma
         }
