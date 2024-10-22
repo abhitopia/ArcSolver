@@ -58,8 +58,6 @@ def train(
         n_layer: int = typer.Option(3, min=1, max=20, help="Number of blocks in the Interpreter"),
         pnorm: bool = typer.Option(False, min=0.0, help="Program Norm. If True, then enforce 1 norm on all the embeddings"),
         rbase: int = typer.Option(10_000, min=5000, help="Base for geometric progression in angle computation"),
-        lora_r: int = typer.Option(0, min=0, help="Rank of the Lora Matrix. 0 disabled Lora"),
-        lora_alpha: Optional[float] = typer.Option(None, min=0.0, help="Lora Alpha, None set alpha to lora_r"),
         n_iter: int = typer.Option(8, min=1, help="Number of iterations for the model"),
 
         # Loss / Compute Config
@@ -164,13 +162,8 @@ def train(
         "n_iter": n_iter,
         "rbase": rbase,
         "pnorm": pnorm,
-        "lora_r": lora_r,
-        "lora_alpha": lora_alpha if lora_alpha is not None else lora_r,
         "gamma": gamma
     }
-
-    if lora_r > 0:
-        assert mlr == 0.0, "Lora is enabled, so mlr must be 0.0"
 
     optimizer_config = {
         # Batch Size
