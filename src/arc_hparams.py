@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import math
 from typing import Callable, List, Optional, Tuple
+import torch
 import torch.optim as optim
 import torch.nn as nn
 import math
@@ -119,13 +120,13 @@ class ArcHparams(Hparams):
                                            pin_memory=True,
                                            shuffle=True,
                                            permute=self.data.permute,
-                                           num_workers=4)
+                                           num_workers=4 if torch.cuda.is_available() else 0)
         
         eval_dl = eval_ds.get_dataloader(token_count=optim_config.eval_batch_token_count,
                                          pin_memory=True,
                                          shuffle=False,
                                          permute=False,
-                                         num_workers=4)
+                                         num_workers=4 if torch.cuda.is_available() else 0)
         
         self.state['train_dl'] = train_dl
         self.state['eval_dl'] = eval_dl

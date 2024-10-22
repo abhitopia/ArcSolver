@@ -80,21 +80,20 @@ class ArcTrainer(TrainerBase):
     def _accuracy(self, logits_all, x, y):
         inverse = x.is_inverse
         targets = y.target_grid
-
-        # inverse_enabled_indices = (inverse == 1).nonzero(as_tuple=True)[0]
         inverse_disabled_indices = (inverse == 0).nonzero(as_tuple=True)[0]
-        # Extract logits and targets for each group
-        # logits_enabled = logits[inverse_enabled_indices]      # Shape: (N1, T, D)
-        # targets_enabled = targets[inverse_enabled_indices]    # Shape: (N1, T)
 
-        logits = logits_all[inverse_disabled_indices]    # Shape: (N2, T, D)
-        y = targets[inverse_disabled_indices]  # Shape: (N2, T)
+        _, predicted_tokens = torch.max(logits_all, dim=2)
+        correct_token_predictions = (predicted_tokens == targets)
+        output_mask = targets != self.model.PAD_IDX
 
-        _, predicted_tokens = torch.max(logits, dim=2)
-        correct_token_predictions = (predicted_tokens == y)
-        output_mask = y != self.model.PAD_IDX
+        output_mask[inverse_disabled_indices, :] = False # Set all inverse indices to False
+
+        # print(f"Output Mask: {output_mask.shape}, {inverse}, {inverse_disabled_indices}")
+
         mask_correct_tokens = correct_token_predictions & output_mask
         mask_correct_samples = output_mask.sum(axis=1) == mask_correct_tokens.sum(axis=1)
+
+        mask_correct_samples[inverse_disabled_indices] = False
         total_tokens = output_mask.sum().item()
         return mask_correct_tokens, mask_correct_samples, total_tokens
 
@@ -121,6 +120,9 @@ class ArcTrainer(TrainerBase):
 
         for i, logits in enumerate(iter_logits):
             correct_tokens_mask, correct_samples_mask, total_tokens = self._accuracy(logits, x, y)
+            if total_tokens == 0:
+                continue
+
             num_tokens_correct = correct_tokens_mask.sum().item()
             num_samples_correct = correct_samples_mask.sum().item()
             total_samples_batch = y.grid.size(0)
@@ -142,6 +144,8 @@ class ArcTrainer(TrainerBase):
 
                 # Compute Sample Accuracy per level
                 for level, indices in level_indices.items():
+                    if not indices:
+                        continue
                     correct_samples_in_level = correct_samples_mask[indices]
                     num_correct = correct_samples_in_level.sum().item()
                     total_samples = len(indices)
