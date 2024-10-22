@@ -175,7 +175,7 @@ class DiffSelfAttention(nn.Module):
         self.h_dim = C // 2  # Because Q, K are split into 2 parts
 
         # regularization
-        self.dropout = nn.Dropout(config.dropout)
+        self.dropout_p = config.dropout
 
         self.lambda_init = lambda_init_fn(depth)
         self.lambda_q1 = nn.Parameter(torch.zeros(self.h_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
@@ -220,7 +220,7 @@ class DiffSelfAttention(nn.Module):
         k1, k2 = k.chunk(2, dim=1) # Split k into 2 parts (B, n_head, T, head_dim)
 
         # Compute attention
-        dropout_p = self.dropout if self.training else 0.0
+        dropout_p = self.dropout_p if self.training else 0.0
 
         # attn_output: (B, n_head, T, head_dim)
         attn_output_1 = F.scaled_dot_product_attention(q1, k1, v, attn_mask=attn_mask, dropout_p=dropout_p)
