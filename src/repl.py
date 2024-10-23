@@ -35,6 +35,7 @@ class REPLConfig:
     rope_base: int = 10_000 # Base for geometric progression in angle computation
     n_iter: int = 4
     gamma: float = 2.0
+    lalpha: float = 0.5 # Portion of inverse loss, 0 <= lalpha <= 0.5
 
     def __post_init__(self):
         if self.n_dim % self.n_head != 0:
@@ -49,6 +50,7 @@ class REPLConfig:
         assert head_dim % 2 == 0, "Head dimension must be even"
 
         assert self.gamma >= 1.0, "Gamma must be greater than or equal to 1.0"
+        assert 0 <= self.lalpha <= 0.5, "lalpha must be less than or equal to 0.5"
 
 
     def to_dict(self):
@@ -68,7 +70,8 @@ class REPLConfig:
             'max_grid_width': self.max_grid_width,
             'rope_base': self.rope_base,
             'n_iter': self.n_iter,
-            'gamma': self.gamma
+            'gamma': self.gamma,
+            'lalpha': self.lalpha,
         }
     
     @staticmethod
@@ -428,6 +431,7 @@ class REPL(nn.Module):
         self.pnorm = config.pnorm
         self.PAD_IDX = config.pad_idx
         self.gamma = config.gamma
+        self.lalpha = config.lalpha
 
         self.ipe = nn.Sequential(
             nn.Embedding(2, config.n_embd),
@@ -628,7 +632,7 @@ class REPL(nn.Module):
     
 
     @torch.jit.export
-    def loss_fn(self, logits: torch.Tensor, x: MODEL_INPUT, y: MODEL_OUTPUT, reduction: str = 'mean'):
+    def loss_fn(self, logits: torch.Tensor, x: MODEL_INPUT, y: MODEL_OUTPUT):
         ignore_index = self.PAD_IDX
         inverse = x.is_inverse
         targets = y.target_grid
@@ -639,44 +643,29 @@ class REPL(nn.Module):
         inverse_disabled_indices = (inverse == 0).nonzero(as_tuple=True)[0]
 
         # Extract logits and targets for each group
-        logits_enabled = logits[inverse_enabled_indices]      # Shape: (N1, T, D)
-        targets_enabled = targets[inverse_enabled_indices]    # Shape: (N1, T)
+        logits_inv = logits[inverse_enabled_indices]      # Shape: (N1, T, D)
+        targets_inv = targets[inverse_enabled_indices]    # Shape: (N1, T)
 
-        logits_disabled = logits[inverse_disabled_indices]    # Shape: (N2, T, D)
-        targets_disabled = targets[inverse_disabled_indices]  # Shape: (N2, T)
+        logits_ninv = logits[inverse_disabled_indices]    # Shape: (N2, T, D)
+        targets_ninv = targets[inverse_disabled_indices]  # Shape: (N2, T)
         # Compute per-element losses for the enabled group
         if len(inverse_enabled_indices) > 0:
-            loss_enabled = focal_bce(logits_enabled, targets_enabled, gamma=gamma, ignore_index=ignore_index, reduction='none')  # Shape: (M1,)
-            loss_enabled_mean = loss_enabled.mean()
+            loss_inv = focal_bce(logits_inv, targets_inv, gamma=gamma, ignore_index=ignore_index, reduction='none')  # Shape: (M1,)
+            loss_inv_mean = loss_inv.mean()
         else:
-            loss_enabled = torch.tensor([], device=device)
-            loss_enabled_mean = torch.tensor(0.0, device=device)
+            loss_inv = torch.tensor([], device=device)
+            loss_inv_mean = torch.tensor(0.0, device=device)
 
         # Compute per-element losses for the disabled group
         if len(inverse_disabled_indices) > 0:
-            loss_disabled = focal_cross_entropy(logits_disabled, targets_disabled, gamma=gamma, ignore_index=ignore_index, reduction='none')  # Shape: (M2,)
-            loss_disabled_mean = loss_disabled.mean()
+            loss_ninv = focal_cross_entropy(logits_ninv, targets_ninv, gamma=gamma, ignore_index=ignore_index, reduction='none')  # Shape: (M2,)
+            loss_ninv_mean = loss_ninv.mean()
         else:
-            loss_disabled = torch.tensor([], device=device)
-            loss_disabled_mean = torch.tensor(0.0, device=device)
+            loss_ninv = torch.tensor([], device=device)
+            loss_ninv_mean = torch.tensor(0.0, device=device)
 
-        # Total number of valid elements (excluding pad_idx)
-        total_valid_elements = len(loss_enabled) + len(loss_disabled)
-
-        # Compute the total loss
-        if total_valid_elements > 0:
-            total_loss = loss_enabled.sum() + loss_disabled.sum()
-        else:
-            total_loss = torch.tensor(0.0, device=device)
-
-        if reduction == 'mean':
-            total_loss_mean = total_loss / total_valid_elements
-            return total_loss_mean, loss_disabled_mean, loss_enabled_mean
-        elif reduction == 'none':
-            return torch.cat([loss_enabled, loss_disabled], dim=0), len(loss_disabled), len(loss_enabled)
-        else:
-            raise ValueError(f"Reduction '{reduction}' is not supported. Use 'mean' or 'none'.")
-
+        total_loss_mean = loss_ninv_mean + self.lalpha * loss_inv_mean 
+        return total_loss_mean, loss_ninv_mean, loss_inv_mean
 
         
     @torch.jit.export

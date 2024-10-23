@@ -62,6 +62,7 @@ def train(
 
         # Loss / Compute Config
         gamma: Optional[float] = typer.Option(2.0, min=1.0, help="Loss Gamma. Gamma == 1 is equivalent to Cross Entropy Loss"),
+        lalpha: Optional[float] = typer.Option(0.5, min=0.0, max=0.5, help="Portion of inverse loss, 0 <= lalpha <= 0.5"),
         # edr: Optional[float] = typer.Option(-1, min=-1.0, max=1.0,  help="Rate of error decay gradient. -1 falls back to regular cross entropy if mctp is 0.0"),
         # mctp: Optional[float] = typer.Option(0.0, min=0.0, help="Error % aftr the first iteration."),
 
@@ -162,7 +163,8 @@ def train(
         "n_iter": n_iter,
         "rbase": rbase,
         "pnorm": pnorm,
-        "gamma": gamma
+        "gamma": gamma,
+        "lalpha": lalpha
     }
 
     optimizer_config = {
@@ -240,6 +242,7 @@ def fork(
 
         # Loss Config
         gamma: Optional[float] = typer.Option(None, min=1.0, help="Loss Gamma. Gamma == 1 is equivalent to Cross Entropy Loss"),
+        lalpha: Optional[float] = typer.Option(None, min=0.0, max=0.5, help="Portion of inverse loss, 0 <= lalpha <= 0.5"),
         # edr: Optional[float] = typer.Option(None, min=0.0, help="Loss Error Decay Rate"),
         # mctp: Optional[float] = typer.Option(None, min=0.0, help="Min Correct Tokens Percentage"),
 
@@ -326,7 +329,8 @@ def fork(
 
     model_config = {
         "n_iter": n_iter,
-        "gamma": gamma
+        "gamma": gamma,
+        "lalpha": lalpha
     }
 
     if any(option is not None for option in [mlr, plr, lr_decay, lr_min_scale, lr_warmup, lr_schedule, plt_patience, plt_factor]):

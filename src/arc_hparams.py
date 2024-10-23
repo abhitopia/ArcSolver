@@ -148,6 +148,7 @@ class ArcHparams(Hparams):
             n_iter=self.model.n_iter,
             rope_base=self.model.rbase,
             gamma=self.model.gamma,
+            lalpha=self.model.lalpha
         )
 
         self.state['model'] = REPL(config)
