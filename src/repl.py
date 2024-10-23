@@ -156,7 +156,7 @@ def lambda_init_fn(depth: int) -> float:
 
 # Your SelfAttention class
 class DiffSelfAttention(nn.Module):
-    def __init__(self, config: REPLConfig, depth: int, rope =None):
+    def __init__(self, config: REPLConfig, depth: int, rope=None):
         super().__init__()
         self.config = config
         self.rope = rope

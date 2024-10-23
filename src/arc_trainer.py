@@ -80,20 +80,20 @@ class ArcTrainer(TrainerBase):
     def _accuracy(self, logits_all, x, y):
         inverse = x.is_inverse
         targets = y.target_grid
-        inverse_disabled_indices = (inverse == 0).nonzero(as_tuple=True)[0]
+        inverse_enabled = (inverse == 1).nonzero(as_tuple=True)[0]
 
         _, predicted_tokens = torch.max(logits_all, dim=2)
         correct_token_predictions = (predicted_tokens == targets)
         output_mask = targets != self.model.PAD_IDX
 
-        output_mask[inverse_disabled_indices, :] = False # Set all inverse indices to False
+        output_mask[inverse_enabled, :] = False # Set all inverse indices to False
 
         # print(f"Output Mask: {output_mask.shape}, {inverse}, {inverse_disabled_indices}")
 
         mask_correct_tokens = correct_token_predictions & output_mask
         mask_correct_samples = output_mask.sum(axis=1) == mask_correct_tokens.sum(axis=1)
 
-        mask_correct_samples[inverse_disabled_indices] = False
+        mask_correct_samples[inverse_enabled] = False # Set all inverse indices to False
         total_tokens = output_mask.sum().item()
         return mask_correct_tokens, mask_correct_samples, total_tokens
 
