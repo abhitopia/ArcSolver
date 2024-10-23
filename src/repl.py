@@ -664,7 +664,7 @@ class REPL(nn.Module):
             loss_ninv = torch.tensor([], device=device)
             loss_ninv_mean = torch.tensor(0.0, device=device)
 
-        total_loss_mean = loss_ninv_mean + self.lalpha * loss_inv_mean 
+        total_loss_mean = (1.0 - self.lalpha) * loss_ninv_mean + self.lalpha * loss_inv_mean 
         return total_loss_mean, loss_ninv_mean, loss_inv_mean
 
         
