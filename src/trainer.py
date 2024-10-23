@@ -69,7 +69,7 @@ class MetricLogger:
 
     def last(self, name):
         n, d = self._data[name][-1]
-        return (n / d)
+        return (n / d) if d != 0 else 0
     
     def mean(self, name):
         data = self._data[name]

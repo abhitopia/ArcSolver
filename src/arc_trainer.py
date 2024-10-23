@@ -81,6 +81,7 @@ class ArcTrainer(TrainerBase):
         inverse = x.is_inverse
         targets = y.target_grid
         inverse_enabled = (inverse == 1).nonzero(as_tuple=True)[0]
+        total_non_inv_samples = y.grid.size(0) - inverse_enabled.size(0)
 
         _, predicted_tokens = torch.max(logits_all, dim=2)
         correct_token_predictions = (predicted_tokens == targets)
@@ -95,12 +96,11 @@ class ArcTrainer(TrainerBase):
 
         mask_correct_samples[inverse_enabled] = False # Set all inverse indices to False
         total_tokens = output_mask.sum().item()
-        return mask_correct_tokens, mask_correct_samples, total_tokens
+        return mask_correct_tokens, mask_correct_samples, total_tokens, total_non_inv_samples
 
     @torch.no_grad()
-    def _add_step_metrics(self, loss, x, y, iter_logits, is_train):
+    def _add_step_metrics(self, x, y, iter_logits, is_train):
         metrics_obj = self.train_metrics if is_train else self.eval_metrics
-        metrics_obj.add_metric('Loss', loss.item())
 
         assert len(iter_logits) == 1, "Only one iteration is supported for now."
         # Extract the dataset names and  complexities for each sample in the batch
@@ -119,13 +119,13 @@ class ArcTrainer(TrainerBase):
             level_dataset_indices[(level_name, dataset)].append(idx)
 
         for i, logits in enumerate(iter_logits):
-            correct_tokens_mask, correct_samples_mask, total_tokens = self._accuracy(logits, x, y)
+            correct_tokens_mask, correct_samples_mask, total_tokens, total_samples_batch = self._accuracy(logits, x, y)
             if total_tokens == 0:
                 continue
 
             num_tokens_correct = correct_tokens_mask.sum().item()
             num_samples_correct = correct_samples_mask.sum().item()
-            total_samples_batch = y.grid.size(0)
+
             # metrics_obj.add_metric(
             #         f'TokenAcc/I{i+1}',
             #         num_tokens_correct,
@@ -133,10 +133,9 @@ class ArcTrainer(TrainerBase):
             
             # metrics_obj.add_metric(
             #         f'SampleAcc/I{i+1}',
-            #         num_samples_correct, 
+            #         num_samples_correct,
             #         total_samples_batch)
-                
-
+            
             # Only for last iteration!
             if i == len(iter_logits) - 1:
                 metrics_obj.add_metric('TokenAcc(%)', num_tokens_correct * 100, total_tokens)
@@ -186,15 +185,21 @@ class ArcTrainer(TrainerBase):
     def train_step(self, batch):
         x, y = batch
         logits, _ = self.model(x, y)
-        loss = self.model.loss_fn(logits, x, y)
-        self._add_step_metrics(loss, x, y, [logits], is_train=True)
+        loss, loss_ninv, loss_inv = self.model.loss_fn(logits, x, y)
+        self._add_step_metrics(x, y, [logits], is_train=True)
+        self.train_metrics.add_metric('Loss', loss.item())
+        self.train_metrics.add_metric('Loss/NINV', loss_ninv.item())
+        self.train_metrics.add_metric('Loss/INV', loss_inv.item())
         return loss
     
     def eval_step(self, batch):
         x, y = batch
         logits, _ = self.model(x, y)
-        loss = self.model.loss_fn(logits, x, y)
-        self._add_step_metrics(loss, x, y, [logits], is_train=False)
+        loss, loss_ninv, loss_inv = self.model.loss_fn(logits, x, y)
+        self._add_step_metrics(x, y, [logits], is_train=False)
+        self.eval_metrics.add_metric('Loss', loss.item())
+        self.eval_metrics.add_metric('Loss/NINV', loss_ninv.item())
+        self.eval_metrics.add_metric('Loss/INV', loss_inv.item())
         return loss
     
     def post_train_step(self, batch):

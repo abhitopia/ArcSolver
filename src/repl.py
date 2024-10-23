@@ -647,29 +647,33 @@ class REPL(nn.Module):
         # Compute per-element losses for the enabled group
         if len(inverse_enabled_indices) > 0:
             loss_enabled = focal_bce(logits_enabled, targets_enabled, gamma=gamma, ignore_index=ignore_index, reduction='none')  # Shape: (M1,)
+            loss_enabled_mean = loss_enabled.mean()
         else:
             loss_enabled = torch.tensor([], device=device)
+            loss_enabled_mean = torch.tensor(0.0, device=device)
 
         # Compute per-element losses for the disabled group
         if len(inverse_disabled_indices) > 0:
             loss_disabled = focal_cross_entropy(logits_disabled, targets_disabled, gamma=gamma, ignore_index=ignore_index, reduction='none')  # Shape: (M2,)
+            loss_disabled_mean = loss_disabled.mean()
         else:
             loss_disabled = torch.tensor([], device=device)
+            loss_disabled_mean = torch.tensor(0.0, device=device)
 
         # Total number of valid elements (excluding pad_idx)
         total_valid_elements = len(loss_enabled) + len(loss_disabled)
 
         # Compute the total loss
         if total_valid_elements > 0:
-            total_loss = (loss_enabled.sum() + loss_disabled.sum()) 
+            total_loss = loss_enabled.sum() + loss_disabled.sum()
         else:
             total_loss = torch.tensor(0.0, device=device)
 
         if reduction == 'mean':
-            total_loss /= total_valid_elements
-            return total_loss
+            total_loss_mean = total_loss / total_valid_elements
+            return total_loss_mean, loss_disabled_mean, loss_enabled_mean
         elif reduction == 'none':
-            return torch.cat([loss_enabled, loss_disabled], dim=0)
+            return torch.cat([loss_enabled, loss_disabled], dim=0), len(loss_disabled), len(loss_enabled)
         else:
             raise ValueError(f"Reduction '{reduction}' is not supported. Use 'mean' or 'none'.")
 
