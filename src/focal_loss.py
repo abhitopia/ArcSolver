@@ -96,12 +96,17 @@ def focal_bce(outputs, targets, gamma: float = 2.0, alpha: float = 1.0, reductio
         # Shape of logits_target: (N,)
         logits_target = outputs.gather(dim=1, index=targets.unsqueeze(1)).squeeze(1)
 
-        # Compute the probabilities for the target class using sigmoid
-        probs = torch.sigmoid(logits_target)
+        # # Compute the probabilities for the target class using sigmoid
+        # probs = torch.sigmoid(logits_target)
+
 
         # Compute the binary cross-entropy loss with logits for the target class
         # Since we're only focusing on the target class, the target is 1
-        BCE_loss = F.binary_cross_entropy_with_logits(logits_target, torch.ones_like(probs), reduction='none')
+        BCE_loss = F.binary_cross_entropy_with_logits(logits_target, torch.ones_like(logits_target), reduction='none')
+
+
+        # Compute the probabilities for the target class
+        probs = torch.exp(-BCE_loss)
 
         # Compute the focal loss modulation factor
         focal_weight = alpha * (1 - probs) ** gamma
