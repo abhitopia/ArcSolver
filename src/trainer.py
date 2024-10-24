@@ -583,7 +583,8 @@ class TrainerBase:
         epoch_metrics = self.train_metrics.mean_metrics()
 
         # Track for plateau if the training metric stopped improving
-        self.scheduler.step_metric(epoch_metrics[self.hparams.plt_metric])
+        if self.hparams.plt_metric in epoch_metrics:
+            self.scheduler.step_metric(epoch_metrics[self.hparams.plt_metric])
 
         self.info(self._metrics_string("(TRAIN-EPOCH)", epoch_metrics))
         self._log_metrics(suffix='train', metrics=epoch_metrics)
