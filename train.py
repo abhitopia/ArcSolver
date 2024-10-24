@@ -306,7 +306,6 @@ def fork(
         "grok_alpha": grok_alpha,
         "grok_lambda": grok_lambda,
         "eval_interval": eval_int,
-        "target_metric": 'ARC_EVAL/Accuracy(%)' if include_eval else 'ARC_TRAIN/Accuracy(%)',
         "plateau_patience": plt_patience,
         "plateau_factor": plt_factor,
         "plt_warmup": plt_warmup,
