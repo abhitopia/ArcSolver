@@ -577,7 +577,10 @@ class REPL(nn.Module):
                                             kv_cache=None,
                                             return_kv_caches=return_cache)
             
-            agg_out, current_state = self.state_agg(interpreter_out, current_state)
+            if self.n_iter > 1:
+                agg_out, current_state = self.state_agg(interpreter_out, current_state)
+            else:
+                agg_out = interpreter_out
             # iter_outs.append(agg_out)
             if iter_kv_cache is not None:
                 updated_kv_cache.append(iter_kv_cache)
@@ -620,7 +623,10 @@ class REPL(nn.Module):
                                             kv_cache=past_kv_cache[i],
                                             return_kv_caches=True)
             
-            agg_out, current_state = self.state_agg(interpreter_out, current_state)
+            if self.n_iter > 1:
+                agg_out, current_state = self.state_agg(interpreter_out, current_state)
+            else:
+                agg_out = interpreter_out
             # iter_outs.append(agg_out)
             # Store the updated kv-cache for this loop iteration
             updated_kv_cache.append(iter_kv_cache)
