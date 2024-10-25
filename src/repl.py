@@ -652,7 +652,7 @@ class REPL(nn.Module):
         targets_ninv = targets[ninv_indices]  # Shape: (N2, T)
         # Compute per-element losses for the enabled group
         if len(inv_indices) > 0:
-            loss_inv = focal_cross_entropy(logits_inv, targets_inv, gamma=gamma, ignore_index=ignore_index, reduction='none', label_smoothing=self.label_smoothing)  # Shape: (M1,)
+            loss_inv = focal_cross_entropy(logits_inv, targets_inv, gamma=0.0, ignore_index=ignore_index, reduction='none', label_smoothing=self.label_smoothing)  # Shape: (M1,)
             loss_inv_mean = loss_inv.mean()
         else:
             loss_inv = torch.tensor([], device=device)
