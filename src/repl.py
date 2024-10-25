@@ -36,6 +36,7 @@ class REPLConfig:
     n_iter: int = 4
     gamma: float = 2.0
     lalpha: float = 0.5 # Portion of inverse loss, 0 <= lalpha <= 0.5
+    label_smoothing: float = 0.3
 
     def __post_init__(self):
         if self.n_dim % self.n_head != 0:
@@ -72,6 +73,7 @@ class REPLConfig:
             'n_iter': self.n_iter,
             'gamma': self.gamma,
             'lalpha': self.lalpha,
+            'label_smoothing': self.label_smoothing
         }
     
     @staticmethod
@@ -432,29 +434,30 @@ class REPL(nn.Module):
         self.PAD_IDX = config.pad_idx
         self.gamma = config.gamma
         self.lalpha = config.lalpha
+        self.label_smoothing = config.label_smoothing
 
         self.ipe = nn.Sequential(
-            nn.Embedding(2, config.n_embd),
+            nn.Embedding(2, config.n_embd, sparse=True),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
         self.pte = nn.Sequential(
-            nn.Embedding(config.prog_vocab_size, config.n_embd),
+            nn.Embedding(config.prog_vocab_size, config.n_embd, sparse=True),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
         self.cte = nn.Sequential(
-            nn.Embedding(config.perm_vocab_size, config.n_embd),
+            nn.Embedding(config.perm_vocab_size, config.n_embd, sparse=True),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
         self.ate = nn.Sequential(
-            nn.Embedding(config.tform_vocab_size, config.n_embd),
+            nn.Embedding(config.tform_vocab_size, config.n_embd, sparse=True),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
         self.gte = nn.Sequential(
-            nn.Embedding(config.grid_vocab_size, config.n_embd),
+            nn.Embedding(config.grid_vocab_size, config.n_embd, sparse=True),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
@@ -498,7 +501,6 @@ class REPL(nn.Module):
         return self.pte[0].weight
 
     def contruct_encoder_input(self, x: MODEL_INPUT):
-
         inv = self.ipe(x.is_inverse)
         inv_type = self.type_emb(self.inv_type_idx)
         inv = inv + inv_type
@@ -542,7 +544,7 @@ class REPL(nn.Module):
     def forward(self, x: MODEL_INPUT,
             y: Optional[MODEL_OUTPUT] = None,
             return_cache: bool = False
-        )-> Tuple[Tensor, Optional[Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]]:
+        ) -> Tuple[Tensor, Optional[Tuple[List[List[Tuple[Tensor, Tensor]]], Tensor, Tensor]]]:
 
         if y is None:
             bs = x.grid.size(0)
@@ -639,26 +641,26 @@ class REPL(nn.Module):
         device = targets.device
         gamma = self.gamma
         # Get indices where inverse is enabled or disabled
-        inverse_enabled_indices = (inverse == 1).nonzero(as_tuple=True)[0]
-        inverse_disabled_indices = (inverse == 0).nonzero(as_tuple=True)[0]
+        inv_indices = (inverse == 1).nonzero(as_tuple=True)[0]
+        ninv_indices = (inverse == 0).nonzero(as_tuple=True)[0]
 
         # Extract logits and targets for each group
-        logits_inv = logits[inverse_enabled_indices]      # Shape: (N1, T, D)
-        targets_inv = targets[inverse_enabled_indices]    # Shape: (N1, T)
+        logits_inv = logits[inv_indices]      # Shape: (N1, T, D)
+        targets_inv = targets[inv_indices]    # Shape: (N1, T)
 
-        logits_ninv = logits[inverse_disabled_indices]    # Shape: (N2, T, D)
-        targets_ninv = targets[inverse_disabled_indices]  # Shape: (N2, T)
+        logits_ninv = logits[ninv_indices]    # Shape: (N2, T, D)
+        targets_ninv = targets[ninv_indices]  # Shape: (N2, T)
         # Compute per-element losses for the enabled group
-        if len(inverse_enabled_indices) > 0:
-            loss_inv = focal_bce(logits_inv, targets_inv, gamma=gamma, ignore_index=ignore_index, reduction='none')  # Shape: (M1,)
+        if len(inv_indices) > 0:
+            loss_inv = focal_cross_entropy(logits_inv, targets_inv, gamma=gamma, ignore_index=ignore_index, reduction='none', label_smoothing=self.label_smoothing)  # Shape: (M1,)
             loss_inv_mean = loss_inv.mean()
         else:
             loss_inv = torch.tensor([], device=device)
             loss_inv_mean = torch.tensor(0.0, device=device)
 
         # Compute per-element losses for the disabled group
-        if len(inverse_disabled_indices) > 0:
-            loss_ninv = focal_cross_entropy(logits_ninv, targets_ninv, gamma=gamma, ignore_index=ignore_index, reduction='none')  # Shape: (M2,)
+        if len(ninv_indices) > 0:
+            loss_ninv = focal_cross_entropy(logits_ninv, targets_ninv, gamma=gamma, ignore_index=ignore_index, reduction='none', label_smoothing=0.0)  # Shape: (M2,)
             loss_ninv_mean = loss_ninv.mean()
         else:
             loss_ninv = torch.tensor([], device=device)

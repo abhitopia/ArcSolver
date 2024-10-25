@@ -5,13 +5,14 @@ import torch.nn.functional as F
 
 
 
-def focal_cross_entropy(outputs, targets, gamma: float = 2.0, alpha: float = 1.0, reduction='mean', ignore_index=None):
+def focal_cross_entropy(outputs, targets, gamma: float = 2.0, label_smoothing=0.0,  alpha: float = 1.0, reduction='mean', ignore_index=None):
     """
     Args:
         outputs (torch.Tensor): Logits tensor of shape (B, S, D).
         targets (torch.Tensor): Ground truth labels of shape (B, S) with integer values in [0, D-1].
         alpha (float, optional): Weighting factor for the target class. Default is 1.0.
         gamma (float, optional): Focusing parameter to reduce the loss contribution from easy examples. Default is 2.0.
+        label_smoothing (float, optional): Label smoothing factor that smooths the one-hot encoded target distribution. Default is 0.0. (0.1 means 90% to the true class and 10% spread to the other classes)
         reduction (str, optional): Specifies the reduction to apply to the output: 'none' | 'mean' | 'sum'. Default is 'mean'.
         ignore_index (int, optional): Specifies a target value that is ignored and does not contribute to the input gradient.
     Returns:
@@ -39,6 +40,7 @@ def focal_cross_entropy(outputs, targets, gamma: float = 2.0, alpha: float = 1.0
     ce_loss = F.cross_entropy(
         outputs,
         targets,
+        label_smoothing=label_smoothing,
         reduction='none'
     )  # Shape: (N,)
 
