@@ -179,7 +179,7 @@ class ArcTrainer(TrainerBase):
             
 
         metrics_obj.add_metric('BatchSize(#Tokens)', y.grid.numel())
-        metrics_obj.add_metric('BatchSize(#Samples)', y.grid.size(0))
+        metrics_obj.add_metric('BS(#)', y.grid.size(0))
         metrics_obj.add_metric('#Samples', y.grid.size(0))
         metrics_obj.add_metric('SeqLen', y.grid.size(1))
 
@@ -208,7 +208,7 @@ class ArcTrainer(TrainerBase):
         num_tokens = x.grid.size(0) * (x.grid.size(1) + 3) + y.grid.numel()
         train_batch_time = (time.time() - self.__train_batch_time_start)*1000
         self.train_metrics.add_metric('ΔT(ms)', train_batch_time)
-        self.train_metrics.add_metric('#TokensPerSec', num_tokens, (train_batch_time / 1000))
+        self.train_metrics.add_metric('TPS', num_tokens, (train_batch_time / 1000))
 
         if self.step % self.hparams.optim.clear_cache_interval == 0:
             self.clear_gpu_cache()
@@ -218,7 +218,7 @@ class ArcTrainer(TrainerBase):
         num_tokens = x.grid.size(0) * (x.grid.size(1) + 3) + y.grid.numel()
         eval_batch_time = (time.time() - self.__eval_batch_time_start)*1000
         self.eval_metrics.add_metric('ΔT(ms)', eval_batch_time)
-        self.eval_metrics.add_metric('#TokensPerSec', num_tokens, (eval_batch_time / 1000))
+        self.eval_metrics.add_metric('TPS', num_tokens, (eval_batch_time / 1000))
 
     def state_dict(self):
         state_dict = super().state_dict()
