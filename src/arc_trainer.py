@@ -179,6 +179,7 @@ class ArcTrainer(TrainerBase):
             
 
         metrics_obj.add_metric('BatchSize(#Tokens)', y.grid.numel())
+        metrics_obj.add_metric('BatchSize(#Samples)', y.grid.size(0))
         metrics_obj.add_metric('#Samples', y.grid.size(0))
         metrics_obj.add_metric('SeqLen', y.grid.size(1))
 
