@@ -88,7 +88,9 @@ class ArcHparams(Hparams):
                         train=self.data.include_train,
                         evl=self.data.include_eval,
                         aux=self.data.include_aux,
-                        inv=self.data.include_inv)
+                        inv=self.data.include_inv,
+                        separate_inv_prog=self.data.sep_inv_prog,
+                        )
         
         assert len(task_loaders) > 0, "No Task Loaders Selected"
         logger.info(f"Augmenting examples to be in range:\n Test: [{self.data.min_test_pp}, {self.data.max_test_pp}], Train:[{self.data.min_train_pp}, {self.data.max_train_pp}]")

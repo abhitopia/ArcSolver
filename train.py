@@ -100,6 +100,7 @@ def train(
         include_aux: bool = typer.Option(True, help="Include auxiliary data for training"),
         include_eval: bool = typer.Option(True, help="Include evaluation data for training"),
         include_inv: bool = typer.Option(False, help="Include inverse data for training"),
+        sep_inv_prog: bool = typer.Option(False, help="Separate Inverse Programs from Regular Programs"),
 
         # Misc Config
         n_steps: Optional[int] = typer.Option(1000000, min=1, help="Number of steps to train for. If None, lr_decay + lr_warmup is used"),
@@ -149,6 +150,7 @@ def train(
         'include_aux': include_aux,
         'include_eval': include_eval,
         'include_inv': include_inv,
+        'sep_inv_prog': sep_inv_prog,
         'min_train_pp': min_train_pp,
         'max_train_pp': max_train_pp if max_train_pp is not None else min_train_pp,
         'min_test_pp': min_test_pp,
@@ -284,6 +286,7 @@ def fork(
         include_aux: Optional[bool] = typer.Option(None, help="Include auxiliary data for training"),
         include_eval: Optional[bool] = typer.Option(None, help="Include evaluation data for training"),
         include_inv: Optional[bool] = typer.Option(None, help="Include inverse data for training"),
+        sep_inv_prog: Optional[bool] = typer.Option(None, help="Separate Inverse Programs from Regular Programs"),
         permute: Optional[bool] = typer.Option(None, help="Permute the training set for each batch"),
 
         # Misc Config
@@ -320,6 +323,7 @@ def fork(
         'include_aux': include_aux,
         'include_eval': include_eval,
         'include_inv': include_inv,
+        'sep_inv_prog': sep_inv_prog,
         'min_train_pp': min_train_pp,
         'max_train_pp': max_train_pp,
         'min_test_pp': min_test_pp,

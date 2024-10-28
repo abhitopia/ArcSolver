@@ -307,13 +307,13 @@ class ArcTasksLoader:
     def __len__(self):
         return len(self.tasks)
     
-    def get_inverse_loader(self, suffix='_INV'):
+    def get_inverse_loader(self, suffix='_INV', separate_prog=False):
         assert not self.inverse, "Cannot get inverse loader for an inverse loader"
 
         return ArcTasksLoader(
                     name=f"{self.name}{suffix}", 
                     path=self.path, 
-                    prog_prefix=self.prog_prefix, 
+                    prog_prefix=f'INV_{self.prog_prefix}' if separate_prog else self.prog_prefix,
                     identical_task_per_folder=self.identical_task_per_folder, 
                     inverse=True)
 
@@ -389,8 +389,6 @@ class ArcTrainingDataset:
         logger.info("Programs per dataset:")
         for k, v in sorted(dataset_progs.items(), key=lambda x: len(x[1]), reverse=True):
             logger.info(f"\t{k}: {len(v)}")
-
-        
 
     @property
     def train(self):
@@ -557,20 +555,20 @@ aux_collection = [
 
 
 
-def get_task_loaders(*, train=True, evl=True, aux=True, inv=False):
+def get_task_loaders(*, train=True, evl=True, aux=True, inv=False, separate_inv_prog=False):
     loaders = []
     if train:
         loaders.extend(train_collection)
         if inv:
-            loaders.extend([loader.get_inverse_loader() for loader in train_collection])
+            loaders.extend([loader.get_inverse_loader(separate_prog=separate_inv_prog) for loader in train_collection])
     if evl:
         loaders.extend(eval_collection)
         if inv:
-            loaders.extend([loader.get_inverse_loader() for loader in eval_collection])
+            loaders.extend([loader.get_inverse_loader(separate_prog=separate_inv_prog) for loader in eval_collection])
     if aux:
         loaders.extend(aux_collection)
         if inv:
-            loaders.extend([loader.get_inverse_loader() for loader in aux_collection])
+            loaders.extend([loader.get_inverse_loader(separate_prog=separate_inv_prog) for loader in aux_collection])
     return loaders
 
 

@@ -73,7 +73,9 @@ class MetricLogger:
     
     def mean(self, name):
         data = self._data[name]
-        return sum([n for n, d in data]) / sum([d for n, d in data])
+        denom = sum([d for n, d in data])
+        numer = sum([n for n, d in data])
+        return numer / denom if denom != 0 else 0
 
     def reset(self):
         self._data = defaultdict(list)
