@@ -79,7 +79,7 @@ def get_alt_schedulers(num_steps_in_epoch):
 
 @dataclass
 class ArcHparams(Hparams):
-    console_metrics: List[str] = field(default_factory=lambda: ['Loss', 'Loss/NINV', 'Loss/INV', 'SampleAcc(%)', 'TokenAcc(%)', 'ΔT(ms)', 'TPS', 'BS(#)'])
+    console_metrics: List[str] = field(default_factory=lambda: ['Loss', 'Loss/NINV', 'Loss/INV', 'SampleAcc(%)', 'TokenAcc(%)', 'ΔT(ms)', 'TPS', 'BS(#)', 'BL(#)'])
 
     def build_state(self):
         self.reset_state()

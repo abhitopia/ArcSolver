@@ -178,8 +178,9 @@ class ArcTrainer(TrainerBase):
                         total_samples)
             
 
-        metrics_obj.add_metric('BatchSize(#Tokens)', y.grid.numel())
+        metrics_obj.add_metric('BatchSize(#Tokens)', y.grid.numel() + x.grid.numel())
         metrics_obj.add_metric('BS(#)', y.grid.size(0))
+        metrics_obj.add_metric('BL(#)', y.grid.size(1) + x.grid.size(1))
         metrics_obj.add_metric('#Samples', y.grid.size(0))
         metrics_obj.add_metric('SeqLen', y.grid.size(1))
 
@@ -205,7 +206,7 @@ class ArcTrainer(TrainerBase):
     
     def post_train_step(self, batch):
         x, y = batch
-        num_tokens = x.grid.size(0) * (x.grid.size(1) + 3) + y.grid.numel()
+        num_tokens = x.grid.size(0) * (x.grid.size(1) + 4) + y.grid.numel()
         train_batch_time = (time.time() - self.__train_batch_time_start)*1000
         self.train_metrics.add_metric('ΔT(ms)', train_batch_time)
         self.train_metrics.add_metric('TPS', num_tokens, (train_batch_time / 1000))
@@ -215,7 +216,7 @@ class ArcTrainer(TrainerBase):
         
     def post_eval_step(self, batch):        
         x, y = batch
-        num_tokens = x.grid.size(0) * (x.grid.size(1) + 3) + y.grid.numel()
+        num_tokens = x.grid.size(0) * (x.grid.size(1) + 4) + y.grid.numel()
         eval_batch_time = (time.time() - self.__eval_batch_time_start)*1000
         self.eval_metrics.add_metric('ΔT(ms)', eval_batch_time)
         self.eval_metrics.add_metric('TPS', num_tokens, (eval_batch_time / 1000))
