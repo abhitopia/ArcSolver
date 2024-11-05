@@ -359,6 +359,8 @@ def load_inference_model(ckt_path, jit: bool = True, optimize: bool = False, voc
     data = torch.load(ckt_path, map_location='cpu', weights_only=False)
     programs = data['model_state_dict']['pte.0.weight']
     model_config = REPLConfig.from_dict(data['model_config'])
+    model_config.sparse = False # Make it not sparse so no issues with optimisation
+    print(model_config)
     model_config.prog_vocab_size = vocab_size
     model_config.dropout = 0.0 # this is important for inference as I cannot change dropout in the scripted Solver
     model = REPL(model_config)

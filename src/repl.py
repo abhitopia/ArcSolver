@@ -37,6 +37,7 @@ class REPLConfig:
     gamma: float = 2.0
     lalpha: float = 0.5 # Portion of inverse loss, 0 <= lalpha <= 0.5
     label_smoothing: float = 0.3
+    sparse: bool = True
 
     def __post_init__(self):
         if self.n_dim % self.n_head != 0:
@@ -436,28 +437,29 @@ class REPL(nn.Module):
         self.lalpha = config.lalpha
         self.label_smoothing = config.label_smoothing
 
+
         self.ipe = nn.Sequential(
-            nn.Embedding(2, config.n_embd, sparse=True),
+            nn.Embedding(2, config.n_embd, sparse=self.config.sparse),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
         self.pte = nn.Sequential(
-            nn.Embedding(config.prog_vocab_size, config.n_embd, sparse=True),
+            nn.Embedding(config.prog_vocab_size, config.n_embd, sparse=self.config.sparse),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
         self.cte = nn.Sequential(
-            nn.Embedding(config.perm_vocab_size, config.n_embd, sparse=True),
+            nn.Embedding(config.perm_vocab_size, config.n_embd, sparse=self.config.sparse),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
         self.ate = nn.Sequential(
-            nn.Embedding(config.tform_vocab_size, config.n_embd, sparse=True),
+            nn.Embedding(config.tform_vocab_size, config.n_embd, sparse=self.config.sparse),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
         self.gte = nn.Sequential(
-            nn.Embedding(config.grid_vocab_size, config.n_embd, sparse=True),
+            nn.Embedding(config.grid_vocab_size, config.n_embd, sparse=self.config.sparse),
             nn.Linear(config.n_embd, config.n_dim, bias=False)
         )
 
