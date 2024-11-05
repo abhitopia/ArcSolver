@@ -29,7 +29,23 @@ class TaskSolution(NamedTuple):
     scores: List[List[float]]
     log: Optional[List[Dict[str, Union[float, int]]]] = None
 
+# class MODEL_INPUT(NamedTuple):
+#     color_permutation: torch.Tensor
+#     array_transform: torch.Tensor
+#     program: torch.Tensor
+#     grid: torch.Tensor
+#     grid_indices: torch.Tensor
+#     meta: Optional[List[Dict[str, str]]] = None
+
+# class MODEL_OUTPUT(NamedTuple):
+#     grid: torch.Tensor
+#     grid_indices: torch.Tensor
+#     target_grid: Optional[torch.Tensor] = None
+
+
+
 class MODEL_INPUT(NamedTuple):
+    is_inverse: torch.Tensor
     color_permutation: torch.Tensor
     array_transform: torch.Tensor
     program: torch.Tensor
@@ -37,10 +53,46 @@ class MODEL_INPUT(NamedTuple):
     grid_indices: torch.Tensor
     meta: Optional[List[Dict[str, str]]] = None
 
+    def unsqueeze(self, dim: int):
+        return MODEL_INPUT(
+            is_inverse=self.is_inverse.unsqueeze(dim),
+            color_permutation=self.color_permutation.unsqueeze(dim),
+            array_transform=self.array_transform.unsqueeze(dim),
+            program=self.program.unsqueeze(dim),
+            grid=self.grid.unsqueeze(dim),
+            grid_indices=self.grid_indices.unsqueeze(dim),
+            meta=self.meta
+        )
+    
+    def squeeze(self, dim: int):
+        return MODEL_INPUT(
+            is_inverse=self.is_inverse.squeeze(dim),
+            color_permutation=self.color_permutation.squeeze(dim),
+            array_transform=self.array_transform.squeeze(dim),
+            program=self.program.squeeze(dim),
+            grid=self.grid.squeeze(dim),
+            grid_indices=self.grid_indices.squeeze(dim),
+            meta=self.meta
+        )
+
 class MODEL_OUTPUT(NamedTuple):
     grid: torch.Tensor
     grid_indices: torch.Tensor
-    target_grid: Optional[torch.Tensor] = None
+    target_grid: Optional[torch.Tensor]
+    
+    def unsqueeze(self, dim: int):
+        return MODEL_OUTPUT(
+            grid=self.grid.unsqueeze(dim),
+            grid_indices=self.grid_indices.unsqueeze(dim),
+            target_grid=self.target_grid.unsqueeze(dim) if self.target_grid is not None else None
+        )
+    
+    def squeeze(self, dim: int):
+        return MODEL_OUTPUT(
+            grid=self.grid.squeeze(dim),
+            grid_indices=self.grid_indices.squeeze(dim),
+            target_grid=self.target_grid.squeeze(dim) if self.target_grid is not None else None
+        )
 
 
 @torch.jit.script
@@ -275,6 +327,7 @@ def collate_fnc(ex: Example, augmentation: Tuple[Tuple[int, str], Tuple[int, str
     inpt_grid, inpt_indices = serialize_array(x)
 
     inp = MODEL_INPUT(
+        is_inverse=torch.tensor([[0]], device=x.device),
         color_permutation=torch.tensor([[cpid]], device=x.device),
         array_transform=torch.tensor([[aid]], device=x.device),
         program=torch.tensor([[prog_idx]], device=x.device),

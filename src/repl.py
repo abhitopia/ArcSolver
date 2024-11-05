@@ -639,12 +639,11 @@ class REPL(nn.Module):
         return logits, cache
     
 
-    @torch.jit.export
     def loss_fn(self, logits: torch.Tensor, x: MODEL_INPUT, y: MODEL_OUTPUT):
         ignore_index = self.PAD_IDX
         inverse = x.is_inverse
         targets = y.target_grid
-        device = targets.device
+        device = x.grid.device
         gamma = self.gamma
         # Get indices where inverse is enabled or disabled
         inv_indices = (inverse == 1).nonzero(as_tuple=True)[0]
@@ -674,6 +673,44 @@ class REPL(nn.Module):
 
         total_loss_mean = (1.0 - self.lalpha) * loss_ninv_mean + self.lalpha * loss_inv_mean 
         return total_loss_mean, loss_ninv_mean, loss_inv_mean
+
+
+    # @torch.jit.export
+    # def loss_fn(self, logits: torch.Tensor, x: MODEL_INPUT, y: MODEL_OUTPUT):
+    #     ignore_index = self.PAD_IDX
+    #     inverse = x.is_inverse
+    #     targets = y.target_grid
+    #     assert targets is not None
+    #     device = x.grid.device
+    #     gamma = self.gamma
+    #     # Get indices where inverse is enabled or disabled
+    #     inv_indices = (inverse == 1).nonzero().squeeze(1)
+    #     ninv_indices = (inverse == 0).nonzero().squeeze(1)
+
+    #     # Extract logits and targets for each group
+    #     logits_inv = logits[inv_indices]      # Shape: (N1, T, D)
+    #     targets_inv = targets[inv_indices]    # Shape: (N1, T)
+
+    #     logits_ninv = logits[ninv_indices]    # Shape: (N2, T, D)
+    #     targets_ninv = targets[ninv_indices]  # Shape: (N2, T)
+    #     # Compute per-element losses for the enabled group
+    #     if len(inv_indices) > 0:
+    #         loss_inv = focal_cross_entropy(logits_inv, targets_inv, gamma=0.0, ignore_index=ignore_index, reduction='none', label_smoothing=self.label_smoothing)  # Shape: (M1,)
+    #         loss_inv_mean = loss_inv.mean()
+    #     else:
+    #         loss_inv = torch.tensor([], device=device)
+    #         loss_inv_mean = torch.tensor(0.0, device=device)
+
+    #     # Compute per-element losses for the disabled group
+    #     if len(ninv_indices) > 0:
+    #         loss_ninv = focal_cross_entropy(logits_ninv, targets_ninv, gamma=gamma, ignore_index=ignore_index, reduction='none', label_smoothing=0.0)  # Shape: (M2,)
+    #         loss_ninv_mean = loss_ninv.mean()
+    #     else:
+    #         loss_ninv = torch.tensor([], device=device)
+    #         loss_ninv_mean = torch.tensor(0.0, device=device)
+
+    #     total_loss_mean = (1.0 - self.lalpha) * loss_ninv_mean + self.lalpha * loss_inv_mean 
+    #     return total_loss_mean, loss_ninv_mean, loss_inv_mean
 
         
     @torch.jit.export

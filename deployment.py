@@ -19,8 +19,10 @@ torch.manual_seed(42)
 # base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.v1/'
 # ckt_path = base_path / 'ckt_281000_52.168.pth'
 
-base_path = Path(__file__).parent / 'models/v10/D384E256H12B6I4P.v2/'
-ckt_path = base_path / 'ckt_692000_53.555.pth'
+
+ckt_path = Path("/Users/abhishekaggarwal/backed_up/ArcSolver/Models/v12/D512e128H16B5I4.NVv1/D512E128H16B5I4.NVv1/checkpoints/ckt_790500_30.995.pth")
+# base_path = Path(__file__).parent / 'models/v10/D384E256H12B6I4P.v2/'
+# ckt_path = base_path / 'ckt_692000_53.555.pth'
 # base_path = Path(__file__).parent / 'models/v9/D512E128H16B5I3.ft/'
 # ckt_path = base_path / 'ckt_74739_34.615.pth'
 
@@ -64,7 +66,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 solver.to(device)
 
 params = SolverParams(
-    thinking=200,
+    thinking=20,
     lr_factor=1.0,
     lr_patience=1,
     btc = 5000,

@@ -1,11 +1,12 @@
 #%%
+from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
 
-def focal_cross_entropy(outputs, targets, gamma: float = 2.0, label_smoothing=0.0,  alpha: float = 1.0, reduction='mean', ignore_index=None):
+def focal_cross_entropy(outputs, targets, gamma: float = 2.0, label_smoothing: float = 0.0,  alpha: float = 1.0, reduction: str = 'mean', ignore_index: Optional[int] = None):
     """
     Args:
         outputs (torch.Tensor): Logits tensor of shape (B, S, D).
@@ -63,7 +64,7 @@ def focal_cross_entropy(outputs, targets, gamma: float = 2.0, label_smoothing=0.
 
 
 
-def focal_bce(outputs, targets, gamma: float = 2.0, alpha: float = 1.0, reduction='mean', ignore_index=None):
+def focal_bce(outputs, targets, gamma: float = 2.0, alpha: float = 1.0, reduction: str = 'mean', ignore_index: Optional[int] = None):
         """
         Args:
             outputs (torch.Tensor): Logits tensor of shape (B, S, D).
