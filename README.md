@@ -1,5 +1,5 @@
 # ArcSolver
-This is my attempt to solving arc puzzles using Deep Learning.
+This is my attempt to solving arc puzzles using Deep Learning. The code is NOT ORGANISED for public consumption.
 
 ## Innovation Tracker
 - Task Augmentation
