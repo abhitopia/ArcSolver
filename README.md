@@ -1,11 +1,5 @@
-# ArcSolver
-This is my attempt to solving arc puzzles using Deep Learning. The code is NOT ORGANISED for public consumption.
-
-# Results: 
-- 65/100 Public Training Set
-- 44/100 Public Test Set
-- 19/100 Private Test Set
-
+# ArcSolver (ARC-AGI 1)
+65/100 Public Training,  44/100 Public Test, 19/100 Private Test
 
 ## Innovation Tracker
 - Task Augmentation
